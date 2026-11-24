@@ -250,13 +250,13 @@ export function resolveSpell(
     delivery = 'ROCK_THROW';
     stackPower = composition.counts.KINETIC ?? 1;
   } else if (has('CRYSTAL')) {
-    delivery = 'ICICLE_VOLLEY';
-  } else if (hasAny('VOID', 'NANO')) {
+    delivery = 'CRYSTAL_SHARDS';
+  } else if (hasAny('VOID', 'NANO', 'TOXIN')) {
     delivery = 'BEAM';
   } else if (has('VOLT')) {
     delivery = 'LIGHTNING_BOLT';
     stackPower = composition.counts.VOLT ?? 1;
-  } else if (hasAny('THERMAL', 'CRYO', 'FLUX', 'PLASMA', 'TOXIN')) {
+  } else if (hasAny('THERMAL', 'CRYO', 'FLUX', 'PLASMA')) {
     delivery = 'SPRAY';
   }
 
@@ -265,7 +265,7 @@ export function resolveSpell(
   const isChannelable =
     !isNova && (delivery === 'SPRAY' || delivery === 'BEAM' || delivery === 'LIGHTNING_BOLT');
   const isChargeable =
-    !isNova && (delivery === 'ROCK_THROW' || delivery === 'ICICLE_VOLLEY');
+    !isNova && (delivery === 'ROCK_THROW' || delivery === 'CRYSTAL_SHARDS');
 
   return {
     delivery,

@@ -4,6 +4,10 @@ import { ELEMENT_META, EnemyEntity, QueueElement, SimSnapshot } from '../sim/typ
 export class EntityRenderer {
   private readonly scene: THREE.Scene;
   private readonly playerGroup = new THREE.Group();
+  private readonly shipChevrons: THREE.LineLoop[] = [];
+  private readonly noseTipMesh: THREE.Mesh;
+  private readonly thrusterLine: THREE.Line;
+  private readonly rearHaloLine: THREE.Line;
   private readonly hullArcLine: THREE.Line;
   private readonly wardArcLine: THREE.Line;
   private readonly wardInnerArcLine: THREE.Line;
@@ -11,8 +15,6 @@ export class EntityRenderer {
   private readonly chargeGroup = new THREE.Group();
   private readonly chargeCore: THREE.Line;
   private readonly chargeRing: THREE.Line;
-  private readonly noseCone: THREE.LineLoop;
-  private readonly thrusterLine: THREE.Line;
   private readonly reticleGroup = new THREE.Group();
   private readonly waypointGroup = new THREE.Group();
   private readonly pipMeshes: THREE.Group[] = [];
@@ -23,54 +25,65 @@ export class EntityRenderer {
   constructor(scene: THREE.Scene) {
     this.scene = scene;
 
-    // Player asymmetrical razor-sharp arrow-ship construct
-    const bodyPts = [
-      new THREE.Vector3(20, 0, 2),
-      new THREE.Vector3(-12, 13, 1),
-      new THREE.Vector3(-6, 4, 1),
-      new THREE.Vector3(-15, 0, 1),
-      new THREE.Vector3(-6, -4, 1),
-      new THREE.Vector3(-12, -13, 1),
+    // 3 Nested Concentric Chevrons (matching reference construct silhouette)
+    const chevronDefs: Array<Array<[number, number, number]>> = [
+      [[24, 0, 2], [-15, 16, 1.5], [-9, 0, 1.5], [-15, -16, 1.5]],
+      [[16, 0, 2.3], [-11, 11, 1.8], [-6, 0, 1.8], [-11, -11, 1.8]],
+      [[9, 0, 2.6], [-7, 6.5, 2.1], [-3, 0, 2.1], [-7, -6.5, 2.1]],
     ];
-    const bodyGeo = new THREE.BufferGeometry().setFromPoints(bodyPts);
-    const bodyMat = new THREE.LineBasicMaterial({ color: 0x00ffff });
-    this.playerGroup.add(new THREE.LineLoop(bodyGeo, bodyMat));
+    for (const ptsDef of chevronDefs) {
+      const pts = ptsDef.map(([x, y, z]) => new THREE.Vector3(x, y, z));
+      const loop = new THREE.LineLoop(
+        new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({ color: 0x00f5ff })
+      );
+      this.shipChevrons.push(loop);
+      this.playerGroup.add(loop);
+    }
 
-    // Bright front nose-cone highlight
-    const nosePts = [
-      new THREE.Vector3(23, 0, 3),
-      new THREE.Vector3(6, 5, 2.5),
-      new THREE.Vector3(10, 0, 2.5),
-      new THREE.Vector3(6, -5, 2.5),
-    ];
-    this.noseCone = new THREE.LineLoop(
-      new THREE.BufferGeometry().setFromPoints(nosePts),
-      new THREE.LineBasicMaterial({ color: 0xffffff })
+    // Glowing Solid Additive Nose Tip
+    const tipGeo = new THREE.BufferGeometry();
+    tipGeo.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute([25, 0, 3, 11, 5, 2.8, 11, -5, 2.8], 3)
     );
-    this.playerGroup.add(this.noseCone);
+    this.noseTipMesh = new THREE.Mesh(
+      tipGeo,
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.92,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      })
+    );
+    this.playerGroup.add(this.noseTipMesh);
 
     // Thruster wake
     const thrustPts = [
-      new THREE.Vector3(-14, 3, 1),
-      new THREE.Vector3(-25, 0, 1),
-      new THREE.Vector3(-14, -3, 1),
+      new THREE.Vector3(-12, 4, 1.2),
+      new THREE.Vector3(-28, 0, 1.2),
+      new THREE.Vector3(-12, -4, 1.2),
     ];
     this.thrusterLine = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints(thrustPts),
-      new THREE.LineBasicMaterial({ color: 0x00a8ff, transparent: true, opacity: 0.85 })
+      new THREE.LineBasicMaterial({ color: 0x00f5ff, transparent: true, opacity: 0.85 })
     );
     this.playerGroup.add(this.thrusterLine);
 
-    // Diegetic Hull Arc (rear semi-circle)
-    this.hullArcLine = this.createArcLine(28, 0x00e676);
+    // Diegetic Rear Double Halo (outer bracket + inner hull integrity arc)
+    this.rearHaloLine = this.createArcLine(31, 0x00f5ff, 0.48, Math.PI * 1.15);
+    this.playerGroup.add(this.rearHaloLine);
+
+    this.hullArcLine = this.createArcLine(28, 0x39ff14, 0.92, Math.PI * 0.95);
     this.playerGroup.add(this.hullArcLine);
 
     // Diegetic Ward Arcs (Barrier silver-white outer + element-colored inner)
-    this.wardArcLine = this.createArcLine(35, 0xe6f0ff);
+    this.wardArcLine = this.createArcLine(36, 0xe6f0ff, 0.9, Math.PI * 1.05);
     this.wardArcLine.visible = false;
     this.playerGroup.add(this.wardArcLine);
 
-    this.wardInnerArcLine = this.createArcLine(31, 0x00f5ff);
+    this.wardInnerArcLine = this.createArcLine(33, 0x00f5ff, 0.9, Math.PI * 1.05);
     this.wardInnerArcLine.visible = false;
     this.playerGroup.add(this.wardInnerArcLine);
 
@@ -78,7 +91,7 @@ export class EntityRenderer {
     const chPts: THREE.Vector3[] = [];
     for (let i = 0; i <= 16; i++) {
       const a = -0.65 + (i / 16) * 1.3;
-      chPts.push(new THREE.Vector3(Math.cos(a) * 26, Math.sin(a) * 26, 2));
+      chPts.push(new THREE.Vector3(Math.cos(a) * 28, Math.sin(a) * 28, 2));
     }
     this.channelArcLine = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints(chPts),
@@ -106,13 +119,13 @@ export class EntityRenderer {
       new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75 })
     );
     this.chargeGroup.add(this.chargeCore, this.chargeRing);
-    this.chargeGroup.position.set(28, 0, 0);
+    this.chargeGroup.position.set(29, 0, 0);
     this.chargeGroup.visible = false;
     this.playerGroup.add(this.chargeGroup);
 
     this.scene.add(this.playerGroup);
 
-    // 3 Orbiting Elemental Pips
+    // 3 Rear-Arc Queued Elemental Pips
     for (let i = 0; i < 3; i++) {
       const g = new THREE.Group();
       g.visible = false;
@@ -163,24 +176,24 @@ export class EntityRenderer {
     this.scene.add(this.waypointGroup);
   }
 
-  private createArcLine(radius: number, colorHex: number): THREE.Line {
-    const segs = 24;
+  private createArcLine(radius: number, colorHex: number, opacity: number, span: number): THREE.Line {
+    const segs = 26;
     const pts: THREE.Vector3[] = [];
+    const start = Math.PI - span * 0.5;
     for (let i = 0; i <= segs; i++) {
-      const t = i / segs;
-      const a = Math.PI * 0.55 + t * Math.PI * 0.9;
+      const a = start + (i / segs) * span;
       pts.push(new THREE.Vector3(Math.cos(a) * radius, Math.sin(a) * radius, 1.5));
     }
     const geo = new THREE.BufferGeometry().setFromPoints(pts);
-    const mat = new THREE.LineBasicMaterial({ color: colorHex, transparent: true, opacity: 0.9 });
+    const mat = new THREE.LineBasicMaterial({ color: colorHex, transparent: true, opacity });
     return new THREE.Line(geo, mat);
   }
 
-  private updateArcRatio(line: THREE.Line, ratio: number, radius: number, colorHex: number): void {
+  private updateArcRatio(line: THREE.Line, ratio: number, radius: number, colorHex: number, maxSpan = Math.PI * 0.95): void {
     const clamped = Math.max(0.01, Math.min(1, ratio));
-    const segs = 24;
+    const segs = 26;
     const pos = line.geometry.attributes.position as THREE.BufferAttribute;
-    const span = Math.PI * 0.9 * clamped;
+    const span = maxSpan * clamped;
     const start = Math.PI - span * 0.5;
     for (let i = 0; i <= segs; i++) {
       const a = start + (i / segs) * span;
@@ -204,7 +217,7 @@ export class EntityRenderer {
 
     for (let i = 0; i <= sides; i++) {
       const a = (i / sides) * Math.PI * 2 + (el === 'THERMAL' ? Math.PI / 2 : 0);
-      ringPts.push(new THREE.Vector3(Math.cos(a) * 6.5, Math.sin(a) * 6.5, 2));
+      ringPts.push(new THREE.Vector3(Math.cos(a) * 6.8, Math.sin(a) * 6.8, 2));
     }
     group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ringPts), mat));
 
@@ -231,6 +244,20 @@ export class EntityRenderer {
     this.playerGroup.position.set(p.x, p.y, 0);
     this.playerGroup.rotation.z = p.aimAngle;
 
+    // Tint ship chevrons & rear halo toward active element / channel / charge
+    const activeColor = p.channel
+      ? p.channel.composition.primaryColorHex
+      : p.charge
+      ? p.charge.composition.primaryColorHex
+      : p.queue[0]
+      ? ELEMENT_META[p.queue[0]].colorHex
+      : 0x00f5ff;
+    for (const ch of this.shipChevrons) {
+      (ch.material as THREE.LineBasicMaterial).color.setHex(activeColor);
+    }
+    (this.rearHaloLine.material as THREE.LineBasicMaterial).color.setHex(activeColor);
+    (this.thrusterLine.material as THREE.LineBasicMaterial).color.setHex(activeColor);
+
     this.reticleGroup.position.set(aimWorld.x, aimWorld.y, 0);
     this.reticleGroup.rotation.z = timeSec * 1.5;
 
@@ -251,17 +278,17 @@ export class EntityRenderer {
 
     // Diegetic Hull Arc
     const hpRatio = p.hp / Math.max(1, p.maxHp);
-    const hullColor = hpRatio > 0.35 ? 0x00e676 : 0xff2a2a;
-    this.updateArcRatio(this.hullArcLine, hpRatio, 27, hullColor);
+    const hullColor = hpRatio > 0.35 ? 0x39ff14 : 0xff1e2d;
+    this.updateArcRatio(this.hullArcLine, hpRatio, 28, hullColor, Math.PI * 0.95);
 
     // Diegetic Ward Arcs
     if (p.wardRemaining > 0) {
       this.wardArcLine.visible = true;
       const wardRatio = p.wardRemaining / Math.max(0.1, p.wardMaxDuration);
-      this.updateArcRatio(this.wardArcLine, wardRatio, 35, 0xe6f0ff);
+      this.updateArcRatio(this.wardArcLine, wardRatio, 36, 0xe6f0ff, Math.PI * 1.05);
       if (p.wardElement) {
         this.wardInnerArcLine.visible = true;
-        this.updateArcRatio(this.wardInnerArcLine, wardRatio, 31, ELEMENT_META[p.wardElement].colorHex);
+        this.updateArcRatio(this.wardInnerArcLine, wardRatio, 33, ELEMENT_META[p.wardElement].colorHex, Math.PI * 1.05);
       } else {
         this.wardInnerArcLine.visible = false;
       }
@@ -291,7 +318,8 @@ export class EntityRenderer {
       this.chargeGroup.visible = false;
     }
 
-    // Orbiting elemental pips
+    // Rear-Arc Queued Elemental Pips
+    const count = p.queue.length;
     for (let i = 0; i < 3; i++) {
       const el = p.queue[i] ?? null;
       const pip = this.pipMeshes[i]!;
@@ -308,10 +336,11 @@ export class EntityRenderer {
       }
       if (el) {
         pip.visible = true;
-        const count = p.queue.length;
-        const orbitAngle = timeSec * 2.8 + (i / Math.max(1, count)) * Math.PI * 2;
-        pip.position.set(p.x + Math.cos(orbitAngle) * 32, p.y + Math.sin(orbitAngle) * 32, 3);
-        pip.rotation.z = -timeSec * 3;
+        const offset = (i - (count - 1) * 0.5) * 0.55;
+        const pipAngle = p.aimAngle + Math.PI + offset;
+        const pulseR = 42 + Math.sin(timeSec * 5 + i) * 1.5;
+        pip.position.set(p.x + Math.cos(pipAngle) * pulseR, p.y + Math.sin(pipAngle) * pulseR, 3);
+        pip.rotation.z = -timeSec * 2.5;
       } else {
         pip.visible = false;
       }
@@ -335,15 +364,14 @@ export class EntityRenderer {
         ? timeSec * 3.5 + e.id
         : e.angle;
 
-      // Status tint on primary wireframe
       const statusColor = e.hitFlash > 0
         ? 0xffffff
         : e.statuses.FROZEN
-        ? 0x00ffff
+        ? 0x00f5ff
         : e.statuses.IGNITED
         ? 0xff5522
         : e.statuses.PRIMED
-        ? 0x00a8ff
+        ? 0x1a6bff
         : e.statuses.CORRUPTED
         ? 0x39ff14
         : null;
@@ -354,7 +382,6 @@ export class EntityRenderer {
         mainLine.material.color.setHex(statusColor ?? baseColor);
       }
 
-      // Bastion front shield visibility
       if (e.archetype === 'BASTION') {
         const shieldChild = group.children[1];
         if (shieldChild) {
@@ -362,7 +389,6 @@ export class EntityRenderer {
         }
       }
 
-      // Boss rotating shield plates
       if (e.archetype === 'WARDEN') {
         for (let i = 0; i < e.bossShieldAngles.length; i++) {
           const plate = group.children[1 + i];
@@ -397,22 +423,21 @@ export class EntityRenderer {
       }
       group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: baseColor })));
     } else if (e.archetype === 'BASTION') {
-      baseColor = 0x00e676;
+      baseColor = 0xe6f0ff;
       const pts: THREE.Vector3[] = [];
       for (let i = 0; i <= 6; i++) {
         const a = (i / 6) * Math.PI * 2;
         pts.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, 2));
       }
       group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: baseColor })));
-      // Front directional shield arc
       const arcPts: THREE.Vector3[] = [];
       for (let i = 0; i <= 14; i++) {
         const a = -e.shieldArc + (i / 14) * e.shieldArc * 2;
         arcPts.push(new THREE.Vector3(Math.cos(a) * (r + 8), Math.sin(a) * (r + 8), 2.5));
       }
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(arcPts), new THREE.LineBasicMaterial({ color: 0x66ffaa })));
+      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(arcPts), new THREE.LineBasicMaterial({ color: 0xe6f0ff })));
     } else if (e.archetype === 'STALKER') {
-      baseColor = 0x00ffff;
+      baseColor = 0x00f5ff;
       const pts = [
         new THREE.Vector3(r * 1.2, 0, 2),
         new THREE.Vector3(0, r * 0.85, 2),
@@ -422,7 +447,7 @@ export class EntityRenderer {
       ];
       group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: baseColor })));
     } else if (e.archetype === 'WEAVER') {
-      baseColor = 0xbd00ff;
+      baseColor = 0xb429ff;
       const pts: THREE.Vector3[] = [];
       for (let i = 0; i <= 8; i++) {
         const a = (i / 8) * Math.PI * 2;
@@ -430,7 +455,7 @@ export class EntityRenderer {
       }
       group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: baseColor })));
     } else if (e.archetype === 'SPLITTER') {
-      baseColor = 0xff9e00;
+      baseColor = 0xe8741a;
       const outer = [
         new THREE.Vector3(-r, -r, 2), new THREE.Vector3(r, -r, 2),
         new THREE.Vector3(r, r, 2), new THREE.Vector3(-r, r, 2), new THREE.Vector3(-r, -r, 2),
@@ -441,9 +466,8 @@ export class EntityRenderer {
         new THREE.Vector3(0, innerR, 3), new THREE.Vector3(innerR, 0, 3),
         new THREE.Vector3(0, -innerR, 3), new THREE.Vector3(-innerR, 0, 3), new THREE.Vector3(0, innerR, 3),
       ];
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(inner), new THREE.LineBasicMaterial({ color: 0xbd00ff })));
+      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(inner), new THREE.LineBasicMaterial({ color: 0xb429ff })));
     } else {
-      // WARDEN Boss
       baseColor = 0xff2e97;
       const corePts: THREE.Vector3[] = [];
       for (let i = 0; i <= 12; i++) {
@@ -457,7 +481,7 @@ export class EntityRenderer {
           const a = -0.45 + (i / 8) * 0.9;
           platePts.push(new THREE.Vector3(Math.cos(a) * (r + 14), Math.sin(a) * (r + 14), 3));
         }
-        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(platePts), new THREE.LineBasicMaterial({ color: 0x00e676 })));
+        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(platePts), new THREE.LineBasicMaterial({ color: 0xe6f0ff })));
       }
     }
 

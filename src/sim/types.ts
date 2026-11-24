@@ -72,7 +72,7 @@ export interface ChannelState {
 }
 
 export interface ChargeState {
-  delivery: 'ROCK_THROW' | 'ICICLE_VOLLEY';
+  delivery: 'ROCK_THROW' | 'CRYSTAL_SHARDS';
   elements: QueueElement[];
   composition: ElementComposition;
   stackPower: number;
@@ -87,7 +87,7 @@ export type DeliveryType =
   | 'MINES'
   | 'STORM'
   | 'ROCK_THROW'
-  | 'ICICLE_VOLLEY'
+  | 'CRYSTAL_SHARDS'
   | 'BEAM'
   | 'LIGHTNING_BOLT'
   | 'SPRAY'
@@ -362,6 +362,7 @@ export type SimEvent =
   | { type: 'screen_shake'; intensity: number }
   | { type: 'sfx'; sound: SfxId; colorHex?: number }
   | { type: 'vfx_burst'; x: number; y: number; colorHex: number; count: number; radius: number }
+  | { type: 'vfx_shards'; x: number; y: number; colors: number[]; count: number; speedScale?: number }
   | { type: 'vfx_ring'; x: number; y: number; radius: number; colorHex: number; duration?: number }
   | { type: 'vfx_storm_strike'; x: number; y: number; colorHex: number; secondaryColorHex: number; radius: number }
   | { type: 'vfx_lightning'; points: Array<{ x: number; y: number }>; colors: number[] }

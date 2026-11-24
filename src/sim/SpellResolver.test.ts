@@ -104,21 +104,27 @@ describe('SpellResolver — 10-Spell Priority Table', () => {
     expect(spell?.stackPower).toBe(2);
   });
 
-  it('6. Icicle Volley when CRYSTAL without BARRIER/KINETIC', () => {
-    expect(resolveSpell(['CRYSTAL', 'VOID'], 'FORWARD')?.delivery).toBe('ICICLE_VOLLEY');
+  it('6. Crystal Shards when CRYSTAL without BARRIER/KINETIC', () => {
+    expect(resolveSpell(['CRYSTAL', 'VOID'], 'FORWARD')?.delivery).toBe('CRYSTAL_SHARDS');
+    expect(resolveSpell(['CRYSTAL', 'VOID', 'THERMAL'], 'FORWARD')?.delivery).toBe('CRYSTAL_SHARDS');
   });
 
-  it('7. Beam when (VOID | NANO) without higher priority', () => {
+  it('7. Beam when (VOID | NANO | TOXIN) without higher priority, regardless of lower-priority stacks', () => {
     expect(resolveSpell(['VOID', 'THERMAL'], 'FORWARD')?.delivery).toBe('BEAM');
+    expect(resolveSpell(['VOID', 'THERMAL', 'THERMAL'], 'FORWARD')?.delivery).toBe('BEAM');
     expect(resolveSpell(['NANO', 'PLASMA'], 'FORWARD')?.delivery).toBe('BEAM');
+    expect(resolveSpell(['VOID', 'TOXIN', 'THERMAL'], 'FORWARD')?.delivery).toBe('BEAM');
+    expect(resolveSpell(['NANO', 'TOXIN', 'THERMAL'], 'FORWARD')?.delivery).toBe('BEAM');
+    expect(resolveSpell(['TOXIN', 'THERMAL', 'THERMAL'], 'FORWARD')?.delivery).toBe('BEAM');
   });
 
   it('8. Lightning Bolt when VOLT without higher priority', () => {
     expect(resolveSpell(['VOLT', 'THERMAL'], 'FORWARD')?.delivery).toBe('LIGHTNING_BOLT');
+    expect(resolveSpell(['VOLT', 'THERMAL', 'THERMAL'], 'FORWARD')?.delivery).toBe('LIGHTNING_BOLT');
   });
 
-  it('9. Spray for THERMAL/CRYO/FLUX/PLASMA/TOXIN alone', () => {
-    for (const el of ['THERMAL', 'CRYO', 'FLUX', 'PLASMA', 'TOXIN'] as const) {
+  it('9. Spray for THERMAL/CRYO/FLUX/PLASMA alone', () => {
+    for (const el of ['THERMAL', 'CRYO', 'FLUX', 'PLASMA'] as const) {
       expect(resolveSpell([el], 'FORWARD')?.delivery).toBe('SPRAY');
     }
   });
@@ -179,7 +185,7 @@ describe('SpellResolver — Composition Ratios, Colors & Channeling', () => {
     expect(resolveSpell(['BARRIER'], 'FORWARD')?.isChannelable).toBe(false);
   });
 
-  it('marks FORWARD ROCK_THROW and ICICLE_VOLLEY as chargeable, but not NOVA', () => {
+  it('marks FORWARD ROCK_THROW and CRYSTAL_SHARDS as chargeable, but not NOVA', () => {
     expect(resolveSpell(['KINETIC'], 'FORWARD')?.isChargeable).toBe(true);
     expect(resolveSpell(['CRYSTAL'], 'FORWARD')?.isChargeable).toBe(true);
     expect(resolveSpell(['KINETIC'], 'NOVA')?.isChargeable).toBe(false);

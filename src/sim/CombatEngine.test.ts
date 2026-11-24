@@ -102,7 +102,7 @@ describe('CombatEngine — Rock & Icicle Charge-Up Proportionality', () => {
     expect(fullRange).toBeGreaterThan(shortRange);
   });
 
-  it('launches Icicle Volley faster and farther when charged longer', () => {
+  it('launches Crystal Shards faster and farther when charged longer', () => {
     const simShort = new GameSim();
     queueAndStep(simShort, ['FLUX', 'CRYO']);
     simShort.step(makeInput({ castAction: 'FORWARD', castHeld: true }));

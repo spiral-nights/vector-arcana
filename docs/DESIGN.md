@@ -88,10 +88,10 @@ On Forward Cast (`RMB` in Classic), the resolver inspects the queue from **Prior
 | **3** | **Mines** | `BARRIER` + (`VOID` or `NANO` or `TOXIN`) | 5 floating octagonal proximity pods in forward arc; detonate on contact. |
 | **4** | **Storm** | `BARRIER` + (`THERMAL` or `CRYO` or `VOLT` or `FLUX` or `PLASMA`) | Persistent circular orbital hazard (`radius = 185+`, `4.5s+`) at cursor. Never contains `KINETIC` (Wall). |
 | **5** | **Rock Throw** | `KINETIC` + Any (no `BARRIER`) | Spinning 3D amber wireframe cube; pierces weak swarmers, detonates on heavies/walls; scales with `KINETIC` stacks. |
-| **6** | **Icicle Volley** | `CRYSTAL` + Any (no `BARRIER`/`KINETIC`) | Cone burst of 5–7 piercing cyan crystal shards. |
-| **7** | **Beam** | (`VOID` or `NANO`) + Any (no `BARRIER`/`KINETIC`/`CRYSTAL`) | Continuous hitscan laser beam; clashes with enemy beams. |
-| **8** | **Lightning Bolt** | `VOLT` + Any (no higher priority) | Instant jagged electric arcs jumping up to 4 targets (8 if `PRIMED`). |
-| **9** | **Spray** | `THERMAL`, `CRYO`, `FLUX`, `PLASMA`, or `TOXIN` | Wide close-range cone jet for swarm control and priming. |
+| **6** | **Crystal Shards** | `CRYSTAL` + Any (no `BARRIER`/`KINETIC`) | Cone burst of 7–13 piercing cyan crystal shards (chargeable). |
+| **7** | **Beam** | (`VOID`, `NANO`, or `TOXIN`) + Any (no `BARRIER`/`KINETIC`/`CRYSTAL`) | Continuous braided laser beam; clashes with enemy beams. |
+| **8** | **Lightning Bolt** | `VOLT` + Any (without higher priority) | Instant jagged electric arcs jumping up to 4 targets (8 if `PRIMED`). |
+| **9** | **Spray** | `THERMAL`, `CRYO`, `FLUX`, or `PLASMA` | Wide close-range wave-pulse jet for swarm control and priming. |
 | **10** | **Phase Slash** | `Shift + LMB` / `Shift` Dash | 180-unit dash with i-frames + wide geometric cleave imbued with queued elements (+ elemental trail if `BARRIER` queued). |
 
 ### Secondary Cast Modes

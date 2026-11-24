@@ -3,7 +3,7 @@ import { WarpingGrid } from './render/WarpingGrid';
 import { EntityRenderer } from './render/EntityRenderer';
 import { SpellVFX } from './render/SpellVFX';
 import { GameSim } from './sim/GameSim';
-import { BaseElement, CastMode, ControlPreset, FIXED_DT } from './sim/types';
+import { BaseElement, CastMode, ControlPreset, ELEMENT_META, FIXED_DT } from './sim/types';
 import { HUD } from './ui/HUD';
 
 const KEY_TO_ELEMENT: Record<string, BaseElement> = {
@@ -222,6 +222,8 @@ function frame(now: number): void {
       hitStopTimer = Math.max(hitStopTimer, ev.duration);
     } else if (ev.type === 'vfx_burst') {
       spellVFX.spawnBurst(ev.x, ev.y, ev.colorHex, ev.count);
+    } else if (ev.type === 'vfx_shards') {
+      spellVFX.spawnShards(ev.x, ev.y, ev.colors, ev.count, ev.speedScale);
     } else if (ev.type === 'vfx_ring') {
       spellVFX.spawnRing(ev.x, ev.y, ev.radius, ev.colorHex, ev.duration);
     } else if (ev.type === 'vfx_storm_strike') {
@@ -237,6 +239,12 @@ function frame(now: number): void {
 
   warpingGrid.update(rawDt);
   const snapshot = sim.getSnapshot();
+  if (snapshot.player.moving || snapshot.player.dashTimer > 0) {
+    const thrustColor = snapshot.player.queue[0]
+      ? ELEMENT_META[snapshot.player.queue[0]].colorHex
+      : 0x00f5ff;
+    spellVFX.spawnThruster(snapshot.player.x, snapshot.player.y, snapshot.player.aimAngle, thrustColor);
+  }
   const timeSec = now / 1000;
   entityRenderer.update(snapshot, aimWorld, timeSec);
   spellVFX.update(snapshot, rawDt, timeSec);

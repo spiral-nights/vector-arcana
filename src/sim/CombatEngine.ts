@@ -113,7 +113,7 @@ export class CombatEngine {
       events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 100 + r * 140, radius: 110 + r * 40 });
       events.push({ type: 'screen_shake', intensity: 2 + (kineticCount + 1) * r * 1.5 });
       events.push({ type: 'sfx', sound: 'rock' });
-    } else if (ch.delivery === 'ICICLE_VOLLEY') {
+    } else if (ch.delivery === 'CRYSTAL_SHARDS') {
       const crystalCount = counts.CRYSTAL ?? 1;
       const count = 7 + crystalCount * 3;
       const speed = 260 + r * 720;
@@ -157,7 +157,7 @@ export class CombatEngine {
 
     if (delivery === 'BEAM') {
       const counts = spell.composition.counts;
-      const beamPower = (counts.VOID ?? 0) + (counts.NANO ?? 0);
+      const beamPower = (counts.VOID ?? 0) + (counts.NANO ?? 0) + (counts.TOXIN ?? 0);
       const length = 880 + beamPower * 90;
       const width = 18 + spell.composition.totalPower * 5;
       const b: BeamEntity = {
@@ -483,8 +483,8 @@ export class CombatEngine {
         break;
       }
 
-      case 'ICICLE_VOLLEY': {
-        // Nova Icicle Volley (Forward Icicle Volley uses startCharge / releaseCharge)
+      case 'CRYSTAL_SHARDS': {
+        // Nova Crystal Shards (Forward Crystal Shards uses startCharge / releaseCharge)
         const count = 6 + comp.totalPower * 5;
         const speed = 740;
         for (let i = 0; i < count; i++) {
@@ -726,6 +726,7 @@ export class CombatEngine {
 
     events.push({ type: 'grid_impulse', x: p.x, y: p.y, strength: 220 + kineticCount * 90, radius: blastRadius + 50 });
     events.push({ type: 'vfx_burst', x: p.x, y: p.y, colorHex: p.colorHex, count: 22 + kineticCount * 6, radius: blastRadius * 0.7 });
+    events.push({ type: 'vfx_shards', x: p.x, y: p.y, colors: p.colors, count: 16 + kineticCount * 6, speedScale: 1.25 });
     events.push({ type: 'vfx_ring', x: p.x, y: p.y, radius: blastRadius, colorHex: p.colorHex });
     events.push({ type: 'screen_shake', intensity: 5 + kineticCount * 2 });
 
@@ -827,6 +828,33 @@ export class CombatEngine {
                 colorHex: ch.composition.secondaryColorHex,
                 count: 6,
                 radius: 30,
+              });
+            }
+            const beamPuddle = ch.elements.includes('TOXIN')
+              ? 'TOXIN'
+              : ch.elements.includes('PLASMA')
+              ? 'PLASMA'
+              : ch.elements.includes('FLUX')
+              ? 'FLUX'
+              : null;
+            if (beamPuddle && Math.random() < 0.25 && this.pools.length < 24) {
+              const stack = ch.composition.counts[beamPuddle] ?? 1;
+              const dist = 140 + Math.random() * 320;
+              const pos = clampArena(
+                beam.x + Math.cos(beam.angle) * dist,
+                beam.y + Math.sin(beam.angle) * dist,
+                45
+              );
+              this.pools.push({
+                id: this.nextId++,
+                kind: beamPuddle,
+                x: pos.x,
+                y: pos.y,
+                radius: 50 + stack * 18,
+                life: 5,
+                maxLife: 5,
+                colorHex: ELEMENT_META[beamPuddle].colorHex,
+                tickTimer: 0.25,
               });
             }
           }

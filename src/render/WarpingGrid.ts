@@ -103,8 +103,8 @@ export class WarpingGrid {
   public update(dt: number): void {
     const stepDt = Math.min(dt, 0.033);
     const stiffness = 68;
-    const neighborStiffness = 14;
-    const damping = Math.exp(-6.5 * stepDt);
+    const neighborStiffness = 22;
+    const damping = Math.exp(-6.2 * stepDt);
 
     for (let r = 0; r < this.rows; r++) {
       const isBorderY = r === 0 || r === this.rows - 1;
@@ -160,10 +160,10 @@ export class WarpingGrid {
       this.linePositions[ptr + 1] = y;
       this.linePositions[ptr + 2] = -disp * 8;
 
-      // Dark indigo-cyan at rest -> bright electric cyan/magenta when warped
-      this.lineColors[ptr] = 0.08 + disp * 0.45;
-      this.lineColors[ptr + 1] = 0.16 + disp * 0.72;
-      this.lineColors[ptr + 2] = 0.42 + disp * 0.58;
+      // Deep indigo at rest -> bright electric cyan/violet when warped
+      this.lineColors[ptr] = 0.08 + disp * 0.52;
+      this.lineColors[ptr + 1] = 0.14 + disp * 0.78;
+      this.lineColors[ptr + 2] = 0.45 + disp * 0.55;
       ptr += 3;
     };
 
