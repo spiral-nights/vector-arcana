@@ -1,0 +1,187 @@
+import { SceneManager } from './render/SceneManager';
+import { WarpingGrid } from './render/WarpingGrid';
+import { EntityRenderer } from './render/EntityRenderer';
+import { GameSim } from './sim/GameSim';
+import { BaseElement, CastMode, ControlPreset, FIXED_DT } from './sim/types';
+import { HUD } from './ui/HUD';
+
+const KEY_TO_ELEMENT: Record<string, BaseElement> = {
+  KeyQ: 'FLUX',
+  KeyW: 'NANO',
+  KeyE: 'AEGIS',
+  KeyR: 'CRYO',
+  KeyA: 'VOLT',
+  KeyS: 'VOID',
+  KeyD: 'KINETIC',
+  KeyF: 'THERMAL',
+};
+
+const appEl = document.getElementById('app')!;
+const hudEl = document.getElementById('hud')!;
+
+const sceneManager = new SceneManager(appEl);
+const warpingGrid = new WarpingGrid(sceneManager.scene);
+const entityRenderer = new EntityRenderer(sceneManager.scene);
+const sim = new GameSim();
+
+let preset: ControlPreset = 'CLASSIC';
+let muted = false;
+let hitStopTimer = 0;
+
+const keysDown = new Set<string>();
+let lmbDown = false;
+let clientMouseX = window.innerWidth / 2;
+let clientMouseY = window.innerHeight / 2;
+let pendingQueue: BaseElement[] = [];
+let pendingCast: CastMode | null = null;
+let pendingDash = false;
+
+const hud = new HUD(hudEl, {
+  onToggleTilt: () => {
+    const next = !sceneManager.isTiltEnabled();
+    sceneManager.setTilt(next);
+    hud.setTilt(next);
+  },
+  onToggleControls: () => {
+    preset = preset === 'CLASSIC' ? 'ARROWS_LMB' : 'CLASSIC';
+    hud.setPreset(preset);
+  },
+  onToggleMute: () => {
+    muted = !muted;
+    hud.setMuted(muted);
+  },
+  onTogglePause: () => {
+    const snap = sim.getSnapshot();
+    if (snap.phase === 'PLAYING') sim.setPhase('PAUSED');
+    else if (snap.phase === 'PAUSED') sim.setPhase('PLAYING');
+  },
+  onStartGame: () => {
+    sim.startNewRun();
+  },
+  onPickAugment: () => {},
+});
+
+window.addEventListener('contextmenu', (e) => e.preventDefault());
+window.addEventListener('mousemove', (e) => {
+  clientMouseX = e.clientX;
+  clientMouseY = e.clientY;
+});
+
+window.addEventListener('mousedown', (e) => {
+  if (e.button === 1) {
+    e.preventDefault();
+    pendingCast = 'SELF';
+    return;
+  }
+  if (e.button === 0) {
+    lmbDown = true;
+    if (preset === 'CLASSIC') {
+      if (e.shiftKey) {
+        pendingDash = true;
+      }
+    } else {
+      pendingCast = 'FORWARD';
+    }
+  } else if (e.button === 2) {
+    if (preset === 'CLASSIC') {
+      pendingCast = e.shiftKey ? 'NOVA' : 'FORWARD';
+    } else {
+      pendingCast = 'NOVA';
+    }
+  }
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (e.button === 0) lmbDown = false;
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  keysDown.add(e.code);
+
+  const el = KEY_TO_ELEMENT[e.code];
+  if (el) {
+    pendingQueue.push(el);
+    return;
+  }
+  if (e.code === 'Space') {
+    e.preventDefault();
+    pendingCast = 'SELF';
+  } else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+    pendingDash = true;
+  } else if (e.code === 'Escape') {
+    const snap = sim.getSnapshot();
+    if (snap.phase === 'PLAYING') sim.setPhase('PAUSED');
+    else if (snap.phase === 'PAUSED') sim.setPhase('PLAYING');
+  }
+});
+
+window.addEventListener('keyup', (e) => {
+  keysDown.delete(e.code);
+});
+
+let lastTime = performance.now();
+let accumulator = 0;
+let hudTimer = 0;
+
+function frame(now: number): void {
+  const rawDt = Math.min(0.05, (now - lastTime) / 1000);
+  lastTime = now;
+
+  if (hitStopTimer > 0) {
+    hitStopTimer = Math.max(0, hitStopTimer - rawDt);
+    sceneManager.render(rawDt);
+    requestAnimationFrame(frame);
+    return;
+  }
+
+  const aimWorld = sceneManager.screenToWorld(clientMouseX, clientMouseY);
+  accumulator += rawDt;
+
+  while (accumulator >= FIXED_DT) {
+    const moveX = (keysDown.has('ArrowRight') ? 1 : 0) - (keysDown.has('ArrowLeft') ? 1 : 0);
+    const moveY = (keysDown.has('ArrowUp') ? 1 : 0) - (keysDown.has('ArrowDown') ? 1 : 0);
+
+    sim.step({
+      moveX,
+      moveY,
+      moveToCursor: preset === 'CLASSIC' && lmbDown && !keysDown.has('ShiftLeft') && !keysDown.has('ShiftRight'),
+      aimX: aimWorld.x,
+      aimY: aimWorld.y,
+      queuedElements: pendingQueue,
+      castAction: pendingCast,
+      dashPressed: pendingDash,
+    });
+    pendingQueue = [];
+    pendingCast = null;
+    pendingDash = false;
+    accumulator -= FIXED_DT;
+  }
+
+  for (const ev of sim.drainEvents()) {
+    if (ev.type === 'grid_impulse') {
+      warpingGrid.applyRadialImpulse(ev.x, ev.y, ev.strength, ev.radius);
+    } else if (ev.type === 'grid_well') {
+      warpingGrid.applyGravityWell(ev.x, ev.y, ev.strength, ev.radius);
+    } else if (ev.type === 'screen_shake') {
+      sceneManager.addScreenShake(ev.intensity);
+    } else if (ev.type === 'hit_stop') {
+      hitStopTimer = Math.max(hitStopTimer, ev.duration);
+    }
+  }
+
+  warpingGrid.update(rawDt);
+  const snapshot = sim.getSnapshot();
+  entityRenderer.update(snapshot, aimWorld, now / 1000);
+
+  hudTimer += rawDt;
+  if (hudTimer >= 0.05) {
+    hudTimer = 0;
+    hud.update(snapshot, []);
+  }
+
+  sceneManager.render(rawDt);
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
