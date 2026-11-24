@@ -38,18 +38,38 @@ export interface ElementMeta {
 }
 
 export const ELEMENT_META: Record<QueueElement, ElementMeta> = {
-  FLUX: { id: 'FLUX', name: 'Flux', color: '#00A8FF', colorHex: 0x00a8ff, hotkey: 'Q', isSub: false },
+  FLUX: { id: 'FLUX', name: 'Flux', color: '#1A6BFF', colorHex: 0x1a6bff, hotkey: 'Q', isSub: false },
   NANO: { id: 'NANO', name: 'Nano', color: '#39FF14', colorHex: 0x39ff14, hotkey: 'W', isSub: false },
-  AEGIS: { id: 'AEGIS', name: 'Aegis', color: '#00E676', colorHex: 0x00e676, hotkey: 'E', isSub: false },
-  CRYO: { id: 'CRYO', name: 'Cryo', color: '#00FFFF', colorHex: 0x00ffff, hotkey: 'R', isSub: false },
-  VOLT: { id: 'VOLT', name: 'Volt', color: '#FFEE00', colorHex: 0xffee00, hotkey: 'A', isSub: false },
-  VOID: { id: 'VOID', name: 'Void', color: '#BD00FF', colorHex: 0xbd00ff, hotkey: 'S', isSub: false },
-  KINETIC: { id: 'KINETIC', name: 'Kinetic', color: '#FF9E00', colorHex: 0xff9e00, hotkey: 'D', isSub: false },
-  THERMAL: { id: 'THERMAL', name: 'Thermal', color: '#FF2A2A', colorHex: 0xff2a2a, hotkey: 'F', isSub: false },
-  CRYSTAL: { id: 'CRYSTAL', name: 'Crystal', color: '#66FFFF', colorHex: 0x66ffff, hotkey: '', isSub: true },
-  PLASMA: { id: 'PLASMA', name: 'Plasma', color: '#FF8866', colorHex: 0xff8866, hotkey: '', isSub: true },
-  TOXIN: { id: 'TOXIN', name: 'Toxin', color: '#A8FF00', colorHex: 0xa8ff00, hotkey: '', isSub: true },
+  AEGIS: { id: 'AEGIS', name: 'Aegis', color: '#E6F0FF', colorHex: 0xe6f0ff, hotkey: 'E', isSub: false },
+  CRYO: { id: 'CRYO', name: 'Cryo', color: '#00F5FF', colorHex: 0x00f5ff, hotkey: 'R', isSub: false },
+  VOLT: { id: 'VOLT', name: 'Volt', color: '#FFF733', colorHex: 0xfff733, hotkey: 'A', isSub: false },
+  VOID: { id: 'VOID', name: 'Void', color: '#B429FF', colorHex: 0xb429ff, hotkey: 'S', isSub: false },
+  KINETIC: { id: 'KINETIC', name: 'Kinetic', color: '#E8741A', colorHex: 0xe8741a, hotkey: 'D', isSub: false },
+  THERMAL: { id: 'THERMAL', name: 'Thermal', color: '#FF1E2D', colorHex: 0xff1e2d, hotkey: 'F', isSub: false },
+  CRYSTAL: { id: 'CRYSTAL', name: 'Crystal', color: '#80FFFF', colorHex: 0x80ffff, hotkey: '', isSub: true },
+  PLASMA: { id: 'PLASMA', name: 'Plasma', color: '#FF5E99', colorHex: 0xff5e99, hotkey: '', isSub: true },
+  TOXIN: { id: 'TOXIN', name: 'Toxin', color: '#C6FF00', colorHex: 0xc6ff00, hotkey: '', isSub: true },
 };
+
+export interface ElementComposition {
+  counts: Partial<Record<QueueElement, number>>;
+  ratios: Partial<Record<QueueElement, number>>;
+  totalPower: number;
+  colors: number[];
+  weightedColors: number[];
+  primaryColorHex: number;
+  secondaryColorHex: number;
+}
+
+export interface ChannelState {
+  delivery: 'SPRAY' | 'BEAM' | 'LIGHTNING_BOLT';
+  elements: QueueElement[];
+  composition: ElementComposition;
+  remaining: number;
+  maxDuration: number;
+  tickTimer: number;
+  beamId: number | null;
+}
 
 export type DeliveryType =
   | 'SHIELD'
@@ -123,6 +143,7 @@ export interface PlayerState {
   ignitedTimer: number;
   toxinTimer: number;
   moving: boolean;
+  channel: ChannelState | null;
 }
 
 export interface EnemyEntity {
@@ -165,7 +186,9 @@ export interface ProjectileEntity {
   life: number;
   maxLife: number;
   colorHex: number;
+  colors: number[];
   elements: QueueElement[];
+  composition: ElementComposition;
   hitIds: number[];
   spin: number;
 }
@@ -183,7 +206,9 @@ export interface BeamEntity {
   life: number;
   maxLife: number;
   colorHex: number;
+  colors: number[];
   elements: QueueElement[];
+  composition: ElementComposition;
   clashing: boolean;
   clashDist: number;
   refracted?: boolean;
@@ -199,7 +224,9 @@ export interface WallPylonEntity {
   life: number;
   maxLife: number;
   colorHex: number;
+  colors: number[];
   elements: QueueElement[];
+  composition: ElementComposition;
 }
 
 export interface MineEntity {
@@ -213,7 +240,9 @@ export interface MineEntity {
   armTimer: number;
   life: number;
   colorHex: number;
+  colors: number[];
   elements: QueueElement[];
+  composition: ElementComposition;
 }
 
 export interface StormEntity {
@@ -225,7 +254,9 @@ export interface StormEntity {
   maxLife: number;
   tickTimer: number;
   colorHex: number;
+  colors: number[];
   elements: QueueElement[];
+  composition: ElementComposition;
 }
 
 export interface ShieldBarrierEntity {
@@ -241,6 +272,7 @@ export interface ShieldBarrierEntity {
   maxLife: number;
   isNova: boolean;
   colorHex: number;
+  colors: number[];
 }
 
 export interface PoolEntity {
@@ -265,6 +297,7 @@ export interface SlashArcEntity {
   life: number;
   maxLife: number;
   colorHex: number;
+  colors: number[];
 }
 
 export interface SimInput {
@@ -275,6 +308,7 @@ export interface SimInput {
   aimY: number;
   queuedElements: BaseElement[];
   castAction: CastMode | null;
+  castHeld: boolean;
   dashPressed: boolean;
 }
 
@@ -315,9 +349,11 @@ export type SimEvent =
   | { type: 'screen_shake'; intensity: number }
   | { type: 'sfx'; sound: SfxId; colorHex?: number }
   | { type: 'vfx_burst'; x: number; y: number; colorHex: number; count: number; radius: number }
-  | { type: 'vfx_lightning'; points: Array<{ x: number; y: number }>; colorHex: number }
+  | { type: 'vfx_ring'; x: number; y: number; radius: number; colorHex: number; duration?: number }
+  | { type: 'vfx_storm_strike'; x: number; y: number; colorHex: number; secondaryColorHex: number; radius: number }
+  | { type: 'vfx_lightning'; points: Array<{ x: number; y: number }>; colors: number[] }
   | { type: 'vfx_shatter'; x: number; y: number; colorHex: number }
-  | { type: 'vfx_spray'; x: number; y: number; angle: number; spread: number; range: number; colorHex: number; isNova: boolean }
+  | { type: 'vfx_spray'; x: number; y: number; angle: number; spread: number; range: number; colors: number[]; isNova: boolean }
   | { type: 'beam_clash'; x: number; y: number; colorHex: number }
   | { type: 'wave_start'; wave: number; isBoss: boolean }
   | { type: 'augment_offer'; choices: AugmentDef[] }

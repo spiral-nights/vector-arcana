@@ -32,6 +32,7 @@ let hitStopTimer = 0;
 
 const keysDown = new Set<string>();
 let lmbDown = false;
+let rmbDown = false;
 let clientMouseX = window.innerWidth / 2;
 let clientMouseY = window.innerHeight / 2;
 let pendingQueue: BaseElement[] = [];
@@ -85,6 +86,7 @@ window.addEventListener('mousedown', (e) => {
       pendingCast = 'FORWARD';
     }
   } else if (e.button === 2) {
+    rmbDown = true;
     if (preset === 'CLASSIC') {
       pendingCast = e.shiftKey ? 'NOVA' : 'FORWARD';
     } else {
@@ -95,6 +97,7 @@ window.addEventListener('mousedown', (e) => {
 
 window.addEventListener('mouseup', (e) => {
   if (e.button === 0) lmbDown = false;
+  if (e.button === 2) rmbDown = false;
 });
 
 window.addEventListener('keydown', (e) => {
@@ -141,17 +144,20 @@ function frame(now: number): void {
   accumulator += rawDt;
 
   while (accumulator >= FIXED_DT) {
+    const shiftHeld = keysDown.has('ShiftLeft') || keysDown.has('ShiftRight');
     const moveX = (keysDown.has('ArrowRight') ? 1 : 0) - (keysDown.has('ArrowLeft') ? 1 : 0);
     const moveY = (keysDown.has('ArrowUp') ? 1 : 0) - (keysDown.has('ArrowDown') ? 1 : 0);
+    const castHeld = preset === 'CLASSIC' ? rmbDown && !shiftHeld : lmbDown;
 
     sim.step({
       moveX,
       moveY,
-      moveToCursor: preset === 'CLASSIC' && lmbDown && !keysDown.has('ShiftLeft') && !keysDown.has('ShiftRight'),
+      moveToCursor: preset === 'CLASSIC' && lmbDown && !shiftHeld,
       aimX: aimWorld.x,
       aimY: aimWorld.y,
       queuedElements: pendingQueue,
       castAction: pendingCast,
+      castHeld,
       dashPressed: pendingDash,
     });
     pendingQueue = [];
@@ -171,10 +177,14 @@ function frame(now: number): void {
       hitStopTimer = Math.max(hitStopTimer, ev.duration);
     } else if (ev.type === 'vfx_burst') {
       spellVFX.spawnBurst(ev.x, ev.y, ev.colorHex, ev.count);
+    } else if (ev.type === 'vfx_ring') {
+      spellVFX.spawnRing(ev.x, ev.y, ev.radius, ev.colorHex, ev.duration);
+    } else if (ev.type === 'vfx_storm_strike') {
+      spellVFX.spawnStormStrike(ev.x, ev.y, ev.colorHex, ev.secondaryColorHex, ev.radius);
     } else if (ev.type === 'vfx_lightning') {
-      spellVFX.spawnLightning(ev.points, ev.colorHex);
+      spellVFX.spawnLightning(ev.points, ev.colors);
     } else if (ev.type === 'vfx_spray') {
-      spellVFX.spawnSpray(ev.x, ev.y, ev.angle, ev.spread, ev.range, ev.colorHex, ev.isNova);
+      spellVFX.spawnSpray(ev.x, ev.y, ev.angle, ev.spread, ev.range, ev.colors, ev.isNova);
     } else if (ev.type === 'vfx_shatter') {
       spellVFX.spawnBurst(ev.x, ev.y, ev.colorHex, 24, 1.4);
     }

@@ -6,6 +6,8 @@ export class EntityRenderer {
   private readonly playerGroup = new THREE.Group();
   private readonly hullArcLine: THREE.Line;
   private readonly wardArcLine: THREE.Line;
+  private readonly wardInnerArcLine: THREE.Line;
+  private readonly channelArcLine: THREE.Line;
   private readonly noseCone: THREE.LineLoop;
   private readonly thrusterLine: THREE.Line;
   private readonly reticleGroup = new THREE.Group();
@@ -59,10 +61,27 @@ export class EntityRenderer {
     this.hullArcLine = this.createArcLine(28, 0x00e676);
     this.playerGroup.add(this.hullArcLine);
 
-    // Diegetic Ward Arc (outer semi-circle)
-    this.wardArcLine = this.createArcLine(34, 0x00e676);
+    // Diegetic Ward Arcs (Aegis silver-white outer + element-colored inner)
+    this.wardArcLine = this.createArcLine(35, 0xe6f0ff);
     this.wardArcLine.visible = false;
     this.playerGroup.add(this.wardArcLine);
+
+    this.wardInnerArcLine = this.createArcLine(31, 0x00f5ff);
+    this.wardInnerArcLine.visible = false;
+    this.playerGroup.add(this.wardInnerArcLine);
+
+    // Forward Channel Charge Arc
+    const chPts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 16; i++) {
+      const a = -0.65 + (i / 16) * 1.3;
+      chPts.push(new THREE.Vector3(Math.cos(a) * 26, Math.sin(a) * 26, 2));
+    }
+    this.channelArcLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(chPts),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 })
+    );
+    this.channelArcLine.visible = false;
+    this.playerGroup.add(this.channelArcLine);
 
     this.scene.add(this.playerGroup);
 
@@ -171,13 +190,28 @@ export class EntityRenderer {
     const hullColor = hpRatio > 0.35 ? 0x00e676 : 0xff2a2a;
     this.updateArcRatio(this.hullArcLine, hpRatio, 27, hullColor);
 
-    // Diegetic Ward Arc
+    // Diegetic Ward Arcs
     if (p.wardRemaining > 0) {
       this.wardArcLine.visible = true;
-      const wardColor = p.wardElement ? ELEMENT_META[p.wardElement].colorHex : 0x00e676;
-      this.updateArcRatio(this.wardArcLine, p.wardRemaining / Math.max(0.1, p.wardMaxDuration), 33, wardColor);
+      const wardRatio = p.wardRemaining / Math.max(0.1, p.wardMaxDuration);
+      this.updateArcRatio(this.wardArcLine, wardRatio, 35, 0xe6f0ff);
+      if (p.wardElement) {
+        this.wardInnerArcLine.visible = true;
+        this.updateArcRatio(this.wardInnerArcLine, wardRatio, 31, ELEMENT_META[p.wardElement].colorHex);
+      } else {
+        this.wardInnerArcLine.visible = false;
+      }
     } else {
       this.wardArcLine.visible = false;
+      this.wardInnerArcLine.visible = false;
+    }
+
+    // Channel charge arc
+    if (p.channel) {
+      this.channelArcLine.visible = true;
+      (this.channelArcLine.material as THREE.LineBasicMaterial).color.setHex(p.channel.composition.primaryColorHex);
+    } else {
+      this.channelArcLine.visible = false;
     }
 
     // Orbiting elemental pips

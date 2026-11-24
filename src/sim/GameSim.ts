@@ -34,6 +34,7 @@ function createInitialPlayer(): PlayerState {
     ignitedTimer: 0,
     toxinTimer: 0,
     moving: false,
+    channel: null,
   };
 }
 
@@ -90,6 +91,7 @@ export class GameSim {
 
     // Phase Dash & Phase Slash
     if (input.dashPressed && p.dashCooldown <= 0 && p.dashTimer <= 0) {
+      this.combat.stopChannel(p);
       p.dashTimer = 0.16;
       p.dashCooldown = 0.75;
       p.invulnTimer = 0.22;
@@ -112,6 +114,7 @@ export class GameSim {
       if (input.castAction === 'SELF') {
         const selfCast = resolveSelfCast(p.queue);
         if (selfCast.effect !== 'NONE') {
+          this.combat.stopChannel(p);
           this.combat.castSelf(p, selfCast, this.events);
           p.queue = [];
           p.castCooldown = 0.16;
@@ -119,7 +122,12 @@ export class GameSim {
       } else if (input.castAction === 'FORWARD' || input.castAction === 'NOVA') {
         const spell = resolveSpell(p.queue, input.castAction);
         if (spell) {
-          this.combat.castSpell(p, spell, input.aimX, input.aimY, this.events);
+          this.combat.stopChannel(p);
+          if (spell.isChannelable && input.castHeld) {
+            this.combat.startChannel(p, spell, this.events);
+          } else {
+            this.combat.castSpell(p, spell, input.aimX, input.aimY, this.events);
+          }
           p.queue = [];
           p.castCooldown = 0.16;
         }
@@ -152,7 +160,7 @@ export class GameSim {
         }
       }
 
-      const maxSpeed = 245;
+      const maxSpeed = p.channel ? 245 * 0.68 : 245;
       const accel = 18;
       p.vx += (mx * maxSpeed - p.vx) * Math.min(1, accel * FIXED_DT);
       p.vy += (my * maxSpeed - p.vy) * Math.min(1, accel * FIXED_DT);
@@ -166,7 +174,7 @@ export class GameSim {
     p.x = Math.max(-ARENA_HALF_W + margin, Math.min(ARENA_HALF_W - margin, p.x));
     p.y = Math.max(-ARENA_HALF_H + margin, Math.min(ARENA_HALF_H - margin, p.y));
 
-    this.combat.step(FIXED_DT, p, this.events);
+    this.combat.step(FIXED_DT, p, input.castHeld, this.events);
   }
 
   public drainEvents(): SimEvent[] {

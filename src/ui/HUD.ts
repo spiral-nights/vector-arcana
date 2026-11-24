@@ -1,4 +1,4 @@
-import { resolveSpell } from '../sim/SpellResolver';
+import { formatSpellPreview } from '../sim/SpellResolver';
 import { BASE_ELEMENTS, ControlPreset, ELEMENT_META, QueueElement, SimSnapshot } from '../sim/types';
 
 export interface HUDCallbacks {
@@ -64,6 +64,9 @@ export class HUD {
   private readonly bossWrap: HTMLElement;
   private readonly bossFill: HTMLElement;
   private readonly queueEl: HTMLElement;
+  private readonly channelWrap: HTMLElement;
+  private readonly channelLabel: HTMLElement;
+  private readonly channelFill: HTMLElement;
   private readonly hintEl: HTMLElement;
   private readonly slotEls = new Map<QueueElement, HTMLElement>();
   private readonly tiltBtn: HTMLButtonElement;
@@ -119,6 +122,10 @@ export class HUD {
       </div>
 
       <div class="hud-bottom">
+        <div class="channel-wrap" id="hud-channel-wrap" style="display:none;width:240px;">
+          <div class="bar-header"><span id="hud-channel-label">CHANNELING</span></div>
+          <div class="bar-track"><div class="bar-fill" id="hud-channel-fill" style="width:100%;background:#00f5ff;"></div></div>
+        </div>
         <div class="queue-preview" id="hud-queue">QUEUE: EMPTY</div>
         <div class="hotbar" id="hud-hotbar"></div>
         <div class="controls-hint" id="hud-hint"></div>
@@ -162,6 +169,9 @@ export class HUD {
     this.bossWrap = this.root.querySelector('#boss-wrap')!;
     this.bossFill = this.root.querySelector('#boss-fill')!;
     this.queueEl = this.root.querySelector('#hud-queue')!;
+    this.channelWrap = this.root.querySelector('#hud-channel-wrap')!;
+    this.channelLabel = this.root.querySelector('#hud-channel-label')!;
+    this.channelFill = this.root.querySelector('#hud-channel-fill')!;
     this.hintEl = this.root.querySelector('#hud-hint')!;
     this.tiltBtn = this.root.querySelector('#btn-tilt')!;
     this.ctrlBtn = this.root.querySelector('#btn-ctrl')!;
@@ -243,20 +253,25 @@ export class HUD {
       this.bossWrap.classList.remove('visible');
     }
 
+    // Channel meter
+    const ch = snapshot.player.channel;
+    if (ch) {
+      this.channelWrap.style.display = 'flex';
+      this.channelWrap.style.flexDirection = 'column';
+      this.channelWrap.style.gap = '3px';
+      this.channelLabel.textContent = `CHANNELING ${ch.delivery.replace('_', ' ')}`;
+      this.channelFill.style.width = `${Math.max(0, (ch.remaining / ch.maxDuration) * 100)}%`;
+      this.channelFill.style.background = `#${ch.composition.primaryColorHex.toString(16).padStart(6, '0')}`;
+    } else {
+      this.channelWrap.style.display = 'none';
+    }
+
     // Queue preview
     const q = snapshot.player.queue;
     if (q.length === 0) {
       this.queueEl.textContent = 'QUEUE: EMPTY';
     } else {
-      const resolved = resolveSpell(q, 'FORWARD');
-      const spellLabel = resolved ? ` → <span style="color:#ffffff;font-weight:700">${resolved.delivery.replace('_', ' ')}</span>` : '';
-      this.queueEl.innerHTML =
-        q
-          .map((el) => {
-            const m = ELEMENT_META[el];
-            return `<span style="color:${m.color};font-weight:700">${m.name.toUpperCase()}</span>`;
-          })
-          .join(' <span style="opacity:0.4">+</span> ') + spellLabel;
+      this.queueEl.innerHTML = `<span style="color:#ffffff;font-weight:700">${formatSpellPreview(q, 'FORWARD')}</span>`;
     }
 
     for (const el of BASE_ELEMENTS) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { enqueueElement, resolveSelfCast, resolveSpell } from './SpellResolver';
-import { QueueElement } from './types';
+import { computeComposition, enqueueElement, formatSpellPreview, resolveSelfCast, resolveSpell } from './SpellResolver';
+import { ELEMENT_META, QueueElement } from './types';
 
 function buildQueue(els: Parameters<typeof enqueueElement>[1][]): QueueElement[] {
   let q: QueueElement[] = [];
@@ -138,5 +138,43 @@ describe('SpellResolver — Self Cast', () => {
     const ward = resolveSelfCast(['AEGIS', 'THERMAL']);
     expect(ward.effect).toBe('WARD');
     expect(ward.wardElement).toBe('THERMAL');
+  });
+});
+
+describe('SpellResolver — Composition Ratios, Colors & Channeling', () => {
+  it('computes accurate element counts and ratios for mixed queues', () => {
+    const fluxHeavy = computeComposition(['FLUX', 'FLUX', 'KINETIC']);
+    expect(fluxHeavy.counts.FLUX).toBe(2);
+    expect(fluxHeavy.counts.KINETIC).toBe(1);
+    expect(fluxHeavy.ratios.FLUX).toBeCloseTo(2 / 3);
+    expect(fluxHeavy.ratios.KINETIC).toBeCloseTo(1 / 3);
+
+    const kineticHeavy = computeComposition(['KINETIC', 'KINETIC', 'FLUX']);
+    expect(kineticHeavy.ratios.KINETIC).toBeCloseTo(2 / 3);
+    expect(kineticHeavy.ratios.FLUX).toBeCloseTo(1 / 3);
+  });
+
+  it('preserves both element colors for multi-element spells like AEGIS + CRYO', () => {
+    const comp = computeComposition(['AEGIS', 'CRYO']);
+    expect(comp.colors).toContain(ELEMENT_META.AEGIS.colorHex);
+    expect(comp.colors).toContain(ELEMENT_META.CRYO.colorHex);
+    expect(comp.primaryColorHex).toBe(ELEMENT_META.CRYO.colorHex);
+    expect(comp.secondaryColorHex).toBe(ELEMENT_META.AEGIS.colorHex);
+  });
+
+  it('marks FORWARD SPRAY, BEAM, and LIGHTNING_BOLT as channelable, but not NOVA or discrete spells', () => {
+    expect(resolveSpell(['THERMAL'], 'FORWARD')?.isChannelable).toBe(true);
+    expect(resolveSpell(['VOID'], 'FORWARD')?.isChannelable).toBe(true);
+    expect(resolveSpell(['VOLT'], 'FORWARD')?.isChannelable).toBe(true);
+
+    expect(resolveSpell(['THERMAL'], 'NOVA')?.isChannelable).toBe(false);
+    expect(resolveSpell(['KINETIC'], 'FORWARD')?.isChannelable).toBe(false);
+    expect(resolveSpell(['AEGIS', 'FLUX'], 'FORWARD')?.isChannelable).toBe(false);
+    expect(resolveSpell(['AEGIS'], 'FORWARD')?.isChannelable).toBe(false);
+  });
+
+  it('formats spell preview with counts and resolved delivery', () => {
+    expect(formatSpellPreview(['FLUX', 'FLUX', 'KINETIC'])).toBe('2× FLUX + KINETIC → ROCK THROW');
+    expect(formatSpellPreview(['AEGIS', 'CRYO'])).toBe('AEGIS + CRYO → STORM');
   });
 });

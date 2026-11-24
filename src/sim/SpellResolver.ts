@@ -3,6 +3,7 @@ import {
   CastMode,
   DeliveryType,
   ELEMENT_META,
+  ElementComposition,
   OverflowMode,
   QueueElement,
   SubElement,
@@ -107,6 +108,49 @@ export function enqueueElement(
   return { queue, action: 'added' };
 }
 
+export function computeComposition(elements: readonly QueueElement[]): ElementComposition {
+  const counts: Partial<Record<QueueElement, number>> = {};
+  const ratios: Partial<Record<QueueElement, number>> = {};
+  const totalPower = elements.length;
+  const weightedColors: number[] = [];
+  const colors: number[] = [];
+
+  for (const el of elements) {
+    counts[el] = (counts[el] ?? 0) + 1;
+    const hex = ELEMENT_META[el].colorHex;
+    weightedColors.push(hex);
+    if (!colors.includes(hex)) {
+      colors.push(hex);
+    }
+  }
+
+  if (totalPower > 0) {
+    for (const key of Object.keys(counts) as QueueElement[]) {
+      ratios[key] = (counts[key] ?? 0) / totalPower;
+    }
+  }
+
+  const nonAegis = elements.find((e) => e !== 'AEGIS');
+  const primaryColorHex = nonAegis
+    ? ELEMENT_META[nonAegis].colorHex
+    : elements[0]
+    ? ELEMENT_META[elements[0]].colorHex
+    : 0x00f5ff;
+
+  const secondaryColorHex =
+    colors.find((c) => c !== primaryColorHex) ?? primaryColorHex;
+
+  return {
+    counts,
+    ratios,
+    totalPower,
+    colors: colors.length > 0 ? colors : [0x00f5ff],
+    weightedColors: weightedColors.length > 0 ? weightedColors : [0x00f5ff],
+    primaryColorHex,
+    secondaryColorHex,
+  };
+}
+
 export type SelfEffectType = 'HEAL' | 'CLEANSE' | 'WARD' | 'NONE';
 
 export interface ResolvedSelfCast {
@@ -119,30 +163,27 @@ export interface ResolvedSelfCast {
 export interface ResolvedSpell {
   delivery: DeliveryType;
   isNova: boolean;
+  isChannelable: boolean;
   elements: QueueElement[];
+  composition: ElementComposition;
   primaryColorHex: number;
   stackPower: number;
   uniqueCount: number;
   hasAegisTrail: boolean;
 }
 
-function getPrimaryColorHex(elements: readonly QueueElement[]): number {
-  if (elements.length === 0) return 0x00ffff;
-  const nonAegis = elements.find((e) => e !== 'AEGIS') ?? elements[0]!;
-  return ELEMENT_META[nonAegis].colorHex;
-}
-
 export function resolveSelfCast(queue: readonly QueueElement[]): ResolvedSelfCast {
   if (queue.length === 0) {
-    return { effect: 'NONE', healPower: 0, wardElement: null, colorHex: 0x00ffff };
+    return { effect: 'NONE', healPower: 0, wardElement: null, colorHex: 0x00f5ff };
   }
+  const comp = computeComposition(queue);
   if (queue.includes('AEGIS')) {
     const payload = queue.find((e) => e !== 'AEGIS') ?? null;
     const colorHex = payload ? ELEMENT_META[payload].colorHex : ELEMENT_META.AEGIS.colorHex;
     return { effect: 'WARD', healPower: 0, wardElement: payload, colorHex };
   }
   if (queue.includes('NANO')) {
-    const nanoStacks = queue.filter((e) => e === 'NANO').length;
+    const nanoStacks = comp.counts.NANO ?? 1;
     return {
       effect: 'HEAL',
       healPower: nanoStacks * 22,
@@ -158,7 +199,7 @@ export function resolveSelfCast(queue: readonly QueueElement[]): ResolvedSelfCas
       colorHex: ELEMENT_META.FLUX.colorHex,
     };
   }
-  return { effect: 'NONE', healPower: 0, wardElement: null, colorHex: getPrimaryColorHex(queue) };
+  return { effect: 'NONE', healPower: 0, wardElement: null, colorHex: comp.primaryColorHex };
 }
 
 export function resolveSpell(
@@ -167,11 +208,14 @@ export function resolveSpell(
 ): ResolvedSpell | null {
   if (castMode === 'DASH') {
     if (queue.length === 0) return null;
+    const composition = computeComposition(queue);
     return {
       delivery: 'PHASE_SLASH',
       isNova: false,
+      isChannelable: false,
       elements: [...queue],
-      primaryColorHex: getPrimaryColorHex(queue),
+      composition,
+      primaryColorHex: composition.primaryColorHex,
       stackPower: queue.length,
       uniqueCount: new Set(queue).size,
       hasAegisTrail: queue.includes('AEGIS'),
@@ -186,51 +230,66 @@ export function resolveSpell(
   const has = (el: QueueElement): boolean => queue.includes(el);
   const hasAny = (...els: QueueElement[]): boolean => els.some((e) => queue.includes(e));
   const uniqueCount = new Set(queue).size;
+  const composition = computeComposition(queue);
 
   let delivery: DeliveryType | null = null;
   let stackPower = queue.length;
 
   // Strict Top-to-Bottom 10-Spell Priority Table
   if (queue.length === 1 && has('AEGIS')) {
-    // 1. Shield (Barrier)
     delivery = 'SHIELD';
   } else if (has('AEGIS') && hasAny('KINETIC', 'CRYSTAL')) {
-    // 2. Wall
     delivery = 'WALL';
   } else if (has('AEGIS') && hasAny('VOID', 'NANO', 'TOXIN')) {
-    // 3. Mines
     delivery = 'MINES';
   } else if (has('AEGIS') && hasAny('THERMAL', 'CRYO', 'FLUX', 'PLASMA')) {
-    // 4. Storm (never contains KINETIC or VOLT)
     delivery = 'STORM';
   } else if (has('KINETIC')) {
-    // 5. Rock Throw
     delivery = 'ROCK_THROW';
-    stackPower = queue.filter((e) => e === 'KINETIC').length;
+    stackPower = composition.counts.KINETIC ?? 1;
   } else if (has('CRYSTAL')) {
-    // 6. Icicle Volley
     delivery = 'ICICLE_VOLLEY';
   } else if (hasAny('VOID', 'NANO')) {
-    // 7. Beam
     delivery = 'BEAM';
   } else if (has('VOLT')) {
-    // 8. Lightning Bolt
     delivery = 'LIGHTNING_BOLT';
-    stackPower = queue.filter((e) => e === 'VOLT').length;
+    stackPower = composition.counts.VOLT ?? 1;
   } else if (hasAny('THERMAL', 'CRYO', 'FLUX', 'PLASMA', 'TOXIN')) {
-    // 9. Spray
     delivery = 'SPRAY';
   }
 
   if (!delivery) return null;
 
+  const isChannelable =
+    !isNova && (delivery === 'SPRAY' || delivery === 'BEAM' || delivery === 'LIGHTNING_BOLT');
+
   return {
     delivery,
     isNova,
+    isChannelable,
     elements: [...queue],
-    primaryColorHex: getPrimaryColorHex(queue),
+    composition,
+    primaryColorHex: composition.primaryColorHex,
     stackPower,
     uniqueCount,
     hasAegisTrail: has('AEGIS'),
   };
+}
+
+export function formatSpellPreview(
+  queue: readonly QueueElement[],
+  castMode: CastMode = 'FORWARD'
+): string {
+  if (queue.length === 0) return 'EMPTY';
+  const comp = computeComposition(queue);
+  const parts: string[] = [];
+  for (const el of Object.keys(comp.counts) as QueueElement[]) {
+    const count = comp.counts[el] ?? 0;
+    const name = ELEMENT_META[el].name.toUpperCase();
+    parts.push(count > 1 ? `${count}× ${name}` : name);
+  }
+  const resolved = resolveSpell(queue, castMode);
+  if (!resolved) return parts.join(' + ');
+  const label = resolved.delivery.replace('_', ' ');
+  return `${parts.join(' + ')} → ${label}`;
 }

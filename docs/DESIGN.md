@@ -50,14 +50,14 @@ For trackpad or keyboard-move players, an optional HUD toggle switches mouse but
 
 | ID | Name | Color | Vector Glyph |
 | --- | --- | --- | --- |
-| `FLUX` | Flux (Water) | `#00A8FF` | Concentric ripple rings |
+| `FLUX` | Flux (Water) | `#1A6BFF` | Concentric ripple rings |
 | `NANO` | Nano (Life) | `#39FF14` | Thick geometric plus-cross (`+`) |
-| `AEGIS` | Aegis (Shield) | `#00E676` | Octagonal barrier frame |
-| `CRYO` | Cryo (Cold) | `#00FFFF` | Six-pointed crystal hexagon |
-| `VOLT` | Volt (Lightning) | `#FFEE00` | Jagged chevron lightning bolt |
-| `VOID` | Void (Arcane/Death) | `#BD00FF` | Swirling spiral singularity |
-| `KINETIC` | Kinetic (Earth) | `#FF9E00` | 3D wireframe cube |
-| `THERMAL` | Thermal (Fire) | `#FF2A2A` | Sharp upward delta triangle (`▲`) |
+| `AEGIS` | Aegis (Shield) | `#E6F0FF` | Octagonal barrier frame |
+| `CRYO` | Cryo (Cold) | `#00F5FF` | Six-pointed crystal hexagon |
+| `VOLT` | Volt (Lightning) | `#FFF733` | Jagged chevron lightning bolt |
+| `VOID` | Void (Arcane/Death) | `#B429FF` | Swirling spiral singularity |
+| `KINETIC` | Kinetic (Earth) | `#E8741A` | 3D wireframe cube |
+| `THERMAL` | Thermal (Fire) | `#FF1E2D` | Sharp upward delta triangle (`▲`) |
 
 ### 3.2 Queue Cancellation Rules (1-for-1 Removal)
 When a base element is pressed, check the current queue (max 3 slots):
