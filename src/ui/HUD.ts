@@ -226,7 +226,7 @@ export class HUD {
   public setPreset(preset: ControlPreset): void {
     if (preset === 'CLASSIC') {
       this.ctrlBtn.textContent = 'CLASSIC';
-      this.hintEl.textContent = 'LMB/Arrows: Move · RMB: Forward Cast · Shift+RMB: Nova · MMB/Space: Self · Shift+LMB: Phase Slash';
+      this.hintEl.textContent = 'LMB/Arrows: Move · RMB: Cast · C / Shift+Space / Shift+RMB: Area · MMB/Space: Self · Shift+LMB: Phase Slash';
     } else {
       this.ctrlBtn.textContent = 'ARROWS + LMB';
       this.hintEl.textContent = 'Arrows: Move · LMB: Forward Cast · RMB: Nova · MMB/Space: Self · Shift: Phase Slash';

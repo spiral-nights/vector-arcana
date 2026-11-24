@@ -29,7 +29,7 @@ No `1–8` number keys are used in combat; all 8 elements sit under the left han
 | Hold `LMB` or `Arrow Keys` | Move (toward mouse cursor or directional) |
 | Mouse Cursor | Aim direction |
 | `RMB` | **Forward Cast** |
-| `Shift + RMB` | **360° Nova Cast** |
+| `C`, `Shift + Space`, or `Shift + RMB` | **360° Nova Cast** |
 | `MMB` or `Spacebar` | **Self Cast** |
 | `Shift + LMB` (or `Shift` tap) | **Phase Dash / Blade Slash** |
 | `Esc` | Pause / Resume |
@@ -65,7 +65,6 @@ When a base element is pressed, check the current queue (max 3 slots):
    - `THERMAL` ↔ `CRYO`
    - `FLUX` ↔ `VOLT`
    - `KINETIC` ↔ `VOLT`
-   - `AEGIS` ↔ `VOLT` *(Aegis and Volt cannot coexist; adding one cancels the other)*
    - `VOID` ↔ `NANO`
 2. **Self-Limit:** Maximum **1** `AEGIS` allowed in the queue.
 3. **Overflow:** Configurable (`FIFO` default — drops oldest element when 4th non-cancelling element is queued; or `IGNORE`).
@@ -87,7 +86,7 @@ On Forward Cast (`RMB` in Classic), the resolver inspects the queue from **Prior
 | **1** | **Shield (Barrier)** | `[AEGIS]` alone | Curved 3D wireframe octagonal barrier; blocks projectiles and reflects enemy beams. |
 | **2** | **Wall** | `AEGIS` + (`KINETIC` or `CRYSTAL`) | 5 destructible geometric pylons perpendicular to aim, inheriting secondary elements. |
 | **3** | **Mines** | `AEGIS` + (`VOID` or `NANO` or `TOXIN`) | 5 floating octagonal proximity pods in forward arc; detonate on contact. |
-| **4** | **Storm** | `AEGIS` + (`THERMAL` or `CRYO` or `FLUX` or `PLASMA`) | Persistent circular orbital hazard (`radius = 140`, `4s`) at cursor. Never contains `KINETIC` (Wall) or `VOLT` (cancels with `AEGIS`). |
+| **4** | **Storm** | `AEGIS` + (`THERMAL` or `CRYO` or `VOLT` or `FLUX` or `PLASMA`) | Persistent circular orbital hazard (`radius = 185+`, `4.5s+`) at cursor. Never contains `KINETIC` (Wall). |
 | **5** | **Rock Throw** | `KINETIC` + Any (no `AEGIS`) | Spinning 3D amber wireframe cube; pierces weak swarmers, detonates on heavies/walls; scales with `KINETIC` stacks. |
 | **6** | **Icicle Volley** | `CRYSTAL` + Any (no `AEGIS`/`KINETIC`) | Cone burst of 5–7 piercing cyan crystal shards. |
 | **7** | **Beam** | (`VOID` or `NANO`) + Any (no `AEGIS`/`KINETIC`/`CRYSTAL`) | Continuous hitscan laser beam; clashes with enemy beams. |

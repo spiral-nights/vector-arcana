@@ -125,3 +125,22 @@ describe('CombatEngine — Rock & Icicle Charge-Up Proportionality', () => {
     expect(fullRange).toBeGreaterThan(shortRange);
   });
 });
+
+describe('CombatEngine — Mixed Volt + Fire + Aegis Storm', () => {
+  it('emits both storm strikes and lightning bolts for VOLT + THERMAL + AEGIS', () => {
+    const sim = new GameSim();
+    queueAndStep(sim, ['VOLT', 'THERMAL', 'AEGIS']);
+    sim.step(makeInput({ castAction: 'FORWARD' }));
+    let sawStrike = false;
+    let sawLightning = false;
+    for (let i = 0; i < 30; i++) {
+      sim.step(makeInput());
+      for (const ev of sim.drainEvents()) {
+        if (ev.type === 'vfx_storm_strike') sawStrike = true;
+        if (ev.type === 'vfx_lightning') sawLightning = true;
+      }
+    }
+    expect(sawStrike).toBe(true);
+    expect(sawLightning).toBe(true);
+  });
+});

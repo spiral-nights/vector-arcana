@@ -563,8 +563,9 @@ export class SpellVFX {
       if (!g) {
         g = new THREE.Group();
         const aegisColor = s.colors.includes(0xe6f0ff) ? 0xe6f0ff : s.colorHex;
-        const payloadColor = s.colorHex;
-        const secondaryPayload = s.colors.find((c) => c !== aegisColor && c !== payloadColor) ?? payloadColor;
+        const payloadColors = s.colors.filter((c) => c !== 0xe6f0ff);
+        const payloadColor = payloadColors[0] ?? s.colorHex;
+        const secondaryPayload = payloadColors[1] ?? payloadColor;
 
         const outer: THREE.Vector3[] = [];
         for (let i = 0; i <= 36; i++) {

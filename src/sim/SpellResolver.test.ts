@@ -11,12 +11,11 @@ function buildQueue(els: Parameters<typeof enqueueElement>[1][]): QueueElement[]
 }
 
 describe('SpellResolver — Cancellations', () => {
-  it('cancels all 5 opposite pairs 1-for-1 in both directions', () => {
+  it('cancels all 4 opposite pairs 1-for-1 in both directions (and does not cancel AEGIS + VOLT)', () => {
     const pairs: Array<[Parameters<typeof enqueueElement>[1], Parameters<typeof enqueueElement>[1]]> = [
       ['THERMAL', 'CRYO'],
       ['FLUX', 'VOLT'],
       ['KINETIC', 'VOLT'],
-      ['AEGIS', 'VOLT'],
       ['VOID', 'NANO'],
     ];
 
@@ -29,6 +28,8 @@ describe('SpellResolver — Cancellations', () => {
       expect(r2.action).toBe('cancelled');
       expect(r2.queue).toEqual([]);
     }
+
+    expect(buildQueue(['AEGIS', 'VOLT'])).toEqual(['AEGIS', 'VOLT']);
   });
 
   it('enforces max 1 AEGIS in queue', () => {
@@ -83,13 +84,18 @@ describe('SpellResolver — 10-Spell Priority Table', () => {
     expect(resolveSpell(['AEGIS', 'TOXIN'], 'FORWARD')?.delivery).toBe('MINES');
   });
 
-  it('4. Storm when AEGIS + (THERMAL | CRYO | FLUX | PLASMA), never containing KINETIC or VOLT', () => {
+  it('4. Storm when AEGIS + (THERMAL | CRYO | VOLT | FLUX | PLASMA), never containing KINETIC', () => {
     expect(resolveSpell(['AEGIS', 'THERMAL'], 'FORWARD')?.delivery).toBe('STORM');
     expect(resolveSpell(['AEGIS', 'CRYO'], 'FORWARD')?.delivery).toBe('STORM');
+    expect(resolveSpell(['AEGIS', 'VOLT'], 'FORWARD')?.delivery).toBe('STORM');
     expect(resolveSpell(['AEGIS', 'FLUX'], 'FORWARD')?.delivery).toBe('STORM');
     expect(resolveSpell(['AEGIS', 'PLASMA'], 'FORWARD')?.delivery).toBe('STORM');
-    // Adding VOLT to AEGIS cancels out so Storm cannot contain VOLT
-    expect(buildQueue(['AEGIS', 'VOLT'])).toEqual([]);
+
+    const mixedStorm = resolveSpell(['VOLT', 'THERMAL', 'AEGIS'], 'FORWARD');
+    expect(mixedStorm?.delivery).toBe('STORM');
+    expect(mixedStorm?.composition.colors).toContain(ELEMENT_META.AEGIS.colorHex);
+    expect(mixedStorm?.composition.colors).toContain(ELEMENT_META.VOLT.colorHex);
+    expect(mixedStorm?.composition.colors).toContain(ELEMENT_META.THERMAL.colorHex);
   });
 
   it('5. Rock Throw when KINETIC without AEGIS', () => {

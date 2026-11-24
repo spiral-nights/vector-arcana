@@ -15,9 +15,9 @@ const CANCELLATION_MAP: Record<BaseElement, readonly BaseElement[]> = {
   THERMAL: ['CRYO'],
   CRYO: ['THERMAL'],
   FLUX: ['VOLT'],
-  VOLT: ['FLUX', 'KINETIC', 'AEGIS'],
+  VOLT: ['FLUX', 'KINETIC'],
   KINETIC: ['VOLT'],
-  AEGIS: ['VOLT'],
+  AEGIS: [],
   VOID: ['NANO'],
   NANO: ['VOID'],
 };
@@ -244,7 +244,7 @@ export function resolveSpell(
     delivery = 'WALL';
   } else if (has('AEGIS') && hasAny('VOID', 'NANO', 'TOXIN')) {
     delivery = 'MINES';
-  } else if (has('AEGIS') && hasAny('THERMAL', 'CRYO', 'FLUX', 'PLASMA')) {
+  } else if (has('AEGIS') && hasAny('THERMAL', 'CRYO', 'VOLT', 'FLUX', 'PLASMA')) {
     delivery = 'STORM';
   } else if (has('KINETIC')) {
     delivery = 'ROCK_THROW';

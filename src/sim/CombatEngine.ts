@@ -919,12 +919,17 @@ export class CombatEngine {
         const sx = s.x + Math.cos(a) * d;
         const sy = s.y + Math.sin(a) * d;
 
+        const payloadColors = s.colors.filter((c) => c !== ELEMENT_META.AEGIS.colorHex);
+        const palette = payloadColors.length > 0 ? payloadColors : [s.colorHex];
+        const strikeColor = palette[Math.floor(Math.random() * palette.length)]!;
+        const altColor = palette.find((c) => c !== strikeColor) ?? strikeColor;
+
         events.push({
           type: 'vfx_storm_strike',
           x: sx,
           y: sy,
-          colorHex: s.colorHex,
-          secondaryColorHex: s.composition.secondaryColorHex,
+          colorHex: strikeColor,
+          secondaryColorHex: altColor,
           radius: 42 + nonAegisPower * 16,
         });
         events.push({
@@ -932,8 +937,20 @@ export class CombatEngine {
           x: sx,
           y: sy,
           radius: 46 + nonAegisPower * 18,
-          colorHex: s.colorHex,
+          colorHex: strikeColor,
         });
+        if (s.elements.includes('VOLT')) {
+          const voltColor = ELEMENT_META.VOLT.colorHex;
+          const boltColors = [voltColor, ...palette.filter((c) => c !== voltColor)];
+          events.push({
+            type: 'vfx_lightning',
+            points: [
+              { x: s.x + (Math.random() - 0.5) * s.radius * 0.9, y: s.y + s.radius * 0.95 },
+              { x: sx, y: sy },
+            ],
+            colors: boltColors,
+          });
+        }
         events.push({ type: 'grid_impulse', x: sx, y: sy, strength: 155 + nonAegisPower * 45, radius: 120 });
 
         const puddleKind = s.elements.includes('PLASMA')

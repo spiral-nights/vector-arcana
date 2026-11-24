@@ -64,7 +64,16 @@ const hud = new HUD(hudEl, {
   onPickAugment: () => {},
 });
 
-window.addEventListener('contextmenu', (e) => e.preventDefault());
+const stopContextMenu = (e: Event): void => {
+  e.preventDefault();
+  e.stopPropagation();
+};
+window.addEventListener('contextmenu', stopContextMenu, { capture: true });
+document.addEventListener('contextmenu', stopContextMenu, { capture: true });
+sceneManager.renderer.domElement.addEventListener('contextmenu', stopContextMenu, { capture: true });
+window.addEventListener('auxclick', (e) => {
+  if (e.button === 1 || e.button === 2) e.preventDefault();
+}, { capture: true });
 window.addEventListener('mousemove', (e) => {
   clientMouseX = e.clientX;
   clientMouseY = e.clientY;
@@ -86,6 +95,7 @@ window.addEventListener('mousedown', (e) => {
       pendingCast = 'FORWARD';
     }
   } else if (e.button === 2) {
+    e.preventDefault();
     rmbDown = true;
     if (preset === 'CLASSIC') {
       pendingCast = e.shiftKey ? 'NOVA' : 'FORWARD';
@@ -97,7 +107,10 @@ window.addEventListener('mousedown', (e) => {
 
 window.addEventListener('mouseup', (e) => {
   if (e.button === 0) lmbDown = false;
-  if (e.button === 2) rmbDown = false;
+  if (e.button === 2) {
+    e.preventDefault();
+    rmbDown = false;
+  }
 });
 
 window.addEventListener('keydown', (e) => {
@@ -111,7 +124,9 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.code === 'Space') {
     e.preventDefault();
-    pendingCast = 'SELF';
+    pendingCast = e.shiftKey ? 'NOVA' : 'SELF';
+  } else if (e.code === 'KeyC') {
+    pendingCast = 'NOVA';
   } else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
     if (preset === 'ARROWS_LMB') {
       pendingDash = true;
