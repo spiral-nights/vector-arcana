@@ -17,7 +17,7 @@ const CANCELLATION_MAP: Record<BaseElement, readonly BaseElement[]> = {
   FLUX: ['VOLT'],
   VOLT: ['FLUX', 'KINETIC'],
   KINETIC: ['VOLT'],
-  AEGIS: [],
+  BARRIER: [],
   VOID: ['NANO'],
   NANO: ['VOID'],
 };
@@ -38,7 +38,7 @@ export type EnqueueAction =
   | 'added'
   | 'cancelled'
   | 'fused'
-  | 'ignored_aegis_cap'
+  | 'ignored_barrier_cap'
   | 'overflow_fifo'
   | 'overflow_ignored';
 
@@ -70,11 +70,11 @@ export function enqueueElement(
     }
   }
 
-  // 2. Self-limit: max 1 AEGIS in queue
-  if (next === 'AEGIS' && queue.includes('AEGIS')) {
+  // 2. Self-limit: max 1 BARRIER in queue
+  if (next === 'BARRIER' && queue.includes('BARRIER')) {
     return {
       queue,
-      action: 'ignored_aegis_cap',
+      action: 'ignored_barrier_cap',
     };
   }
 
@@ -130,9 +130,9 @@ export function computeComposition(elements: readonly QueueElement[]): ElementCo
     }
   }
 
-  const nonAegis = elements.find((e) => e !== 'AEGIS');
-  const primaryColorHex = nonAegis
-    ? ELEMENT_META[nonAegis].colorHex
+  const nonBarrier = elements.find((e) => e !== 'BARRIER');
+  const primaryColorHex = nonBarrier
+    ? ELEMENT_META[nonBarrier].colorHex
     : elements[0]
     ? ELEMENT_META[elements[0]].colorHex
     : 0x00f5ff;
@@ -170,7 +170,7 @@ export interface ResolvedSpell {
   primaryColorHex: number;
   stackPower: number;
   uniqueCount: number;
-  hasAegisTrail: boolean;
+  hasBarrierTrail: boolean;
 }
 
 export function resolveSelfCast(queue: readonly QueueElement[]): ResolvedSelfCast {
@@ -178,9 +178,9 @@ export function resolveSelfCast(queue: readonly QueueElement[]): ResolvedSelfCas
     return { effect: 'NONE', healPower: 0, wardElement: null, colorHex: 0x00f5ff };
   }
   const comp = computeComposition(queue);
-  if (queue.includes('AEGIS')) {
-    const payload = queue.find((e) => e !== 'AEGIS') ?? null;
-    const colorHex = payload ? ELEMENT_META[payload].colorHex : ELEMENT_META.AEGIS.colorHex;
+  if (queue.includes('BARRIER')) {
+    const payload = queue.find((e) => e !== 'BARRIER') ?? null;
+    const colorHex = payload ? ELEMENT_META[payload].colorHex : ELEMENT_META.BARRIER.colorHex;
     return { effect: 'WARD', healPower: 0, wardElement: payload, colorHex };
   }
   if (queue.includes('NANO')) {
@@ -220,7 +220,7 @@ export function resolveSpell(
       primaryColorHex: composition.primaryColorHex,
       stackPower: queue.length,
       uniqueCount: new Set(queue).size,
-      hasAegisTrail: queue.includes('AEGIS'),
+      hasBarrierTrail: queue.includes('BARRIER'),
     };
   }
 
@@ -238,13 +238,13 @@ export function resolveSpell(
   let stackPower = queue.length;
 
   // Strict Top-to-Bottom 10-Spell Priority Table
-  if (queue.length === 1 && has('AEGIS')) {
+  if (queue.length === 1 && has('BARRIER')) {
     delivery = 'SHIELD';
-  } else if (has('AEGIS') && hasAny('KINETIC', 'CRYSTAL')) {
+  } else if (has('BARRIER') && hasAny('KINETIC', 'CRYSTAL')) {
     delivery = 'WALL';
-  } else if (has('AEGIS') && hasAny('VOID', 'NANO', 'TOXIN')) {
+  } else if (has('BARRIER') && hasAny('VOID', 'NANO', 'TOXIN')) {
     delivery = 'MINES';
-  } else if (has('AEGIS') && hasAny('THERMAL', 'CRYO', 'VOLT', 'FLUX', 'PLASMA')) {
+  } else if (has('BARRIER') && hasAny('THERMAL', 'CRYO', 'VOLT', 'FLUX', 'PLASMA')) {
     delivery = 'STORM';
   } else if (has('KINETIC')) {
     delivery = 'ROCK_THROW';
@@ -277,7 +277,7 @@ export function resolveSpell(
     primaryColorHex: composition.primaryColorHex,
     stackPower,
     uniqueCount,
-    hasAegisTrail: has('AEGIS'),
+    hasBarrierTrail: has('BARRIER'),
   };
 }
 

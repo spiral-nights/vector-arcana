@@ -9,7 +9,7 @@ import { HUD } from './ui/HUD';
 const KEY_TO_ELEMENT: Record<string, BaseElement> = {
   KeyQ: 'FLUX',
   KeyW: 'NANO',
-  KeyE: 'AEGIS',
+  KeyE: 'BARRIER',
   KeyR: 'CRYO',
   KeyA: 'VOLT',
   KeyS: 'VOID',
@@ -38,6 +38,20 @@ let clientMouseY = window.innerHeight / 2;
 let pendingQueue: BaseElement[] = [];
 let pendingCast: CastMode | null = null;
 let pendingDash = false;
+let pendingMoveClick: { x: number; y: number } | null = null;
+
+function clearHeldInputs(): void {
+  keysDown.clear();
+  lmbDown = false;
+  rmbDown = false;
+}
+
+function syncShiftFromMouse(e: MouseEvent): void {
+  if (!e.shiftKey) {
+    keysDown.delete('ShiftLeft');
+    keysDown.delete('ShiftRight');
+  }
+}
 
 const hud = new HUD(hudEl, {
   onToggleTilt: () => {
@@ -67,19 +81,27 @@ const hud = new HUD(hudEl, {
 const stopContextMenu = (e: Event): void => {
   e.preventDefault();
   e.stopPropagation();
+  clearHeldInputs();
 };
 window.addEventListener('contextmenu', stopContextMenu, { capture: true });
 document.addEventListener('contextmenu', stopContextMenu, { capture: true });
 sceneManager.renderer.domElement.addEventListener('contextmenu', stopContextMenu, { capture: true });
+window.addEventListener('blur', clearHeldInputs);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) clearHeldInputs();
+});
 window.addEventListener('auxclick', (e) => {
   if (e.button === 1 || e.button === 2) e.preventDefault();
 }, { capture: true });
+
 window.addEventListener('mousemove', (e) => {
+  syncShiftFromMouse(e);
   clientMouseX = e.clientX;
   clientMouseY = e.clientY;
 });
 
 window.addEventListener('mousedown', (e) => {
+  syncShiftFromMouse(e);
   if (e.button === 1) {
     e.preventDefault();
     pendingCast = 'SELF';
@@ -90,6 +112,8 @@ window.addEventListener('mousedown', (e) => {
     if (preset === 'CLASSIC') {
       if (e.shiftKey) {
         pendingDash = true;
+      } else {
+        pendingMoveClick = sceneManager.screenToWorld(e.clientX, e.clientY);
       }
     } else {
       pendingCast = 'FORWARD';
@@ -106,6 +130,7 @@ window.addEventListener('mousedown', (e) => {
 });
 
 window.addEventListener('mouseup', (e) => {
+  syncShiftFromMouse(e);
   if (e.button === 0) lmbDown = false;
   if (e.button === 2) {
     e.preventDefault();
@@ -124,9 +149,9 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.code === 'Space') {
     e.preventDefault();
-    pendingCast = e.shiftKey ? 'NOVA' : 'SELF';
-  } else if (e.code === 'KeyC') {
     pendingCast = 'NOVA';
+  } else if (e.code === 'KeyC') {
+    pendingCast = 'SELF';
   } else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
     if (preset === 'ARROWS_LMB') {
       pendingDash = true;
@@ -165,11 +190,13 @@ function frame(now: number): void {
     const moveX = (keysDown.has('ArrowRight') ? 1 : 0) - (keysDown.has('ArrowLeft') ? 1 : 0);
     const moveY = (keysDown.has('ArrowUp') ? 1 : 0) - (keysDown.has('ArrowDown') ? 1 : 0);
     const castHeld = preset === 'CLASSIC' ? rmbDown && !shiftHeld : lmbDown;
+    const moveToCursor = preset === 'CLASSIC' && lmbDown && !shiftHeld;
 
     sim.step({
       moveX,
       moveY,
-      moveToCursor: preset === 'CLASSIC' && lmbDown && !shiftHeld,
+      moveToCursor,
+      moveClickTarget: moveToCursor ? aimWorld : pendingMoveClick,
       aimX: aimWorld.x,
       aimY: aimWorld.y,
       queuedElements: pendingQueue,
@@ -180,6 +207,7 @@ function frame(now: number): void {
     pendingQueue = [];
     pendingCast = null;
     pendingDash = false;
+    pendingMoveClick = null;
     accumulator -= FIXED_DT;
   }
 

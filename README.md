@@ -13,12 +13,12 @@ A single-player, top-down 2.5D arcade horde roguelite combining real-time combin
 
 | Action | Classic (Default) | Arrows + LMB Preset |
 | --- | --- | --- |
-| **Queue Elements** | `Q W E R` (Flux, Nano, Aegis, Cryo) / `A S D F` (Volt, Void, Kinetic, Thermal) | `Q W E R` / `A S D F` |
-| **Move** | Hold `LMB` (toward cursor) or `Arrow Keys` | `Arrow Keys` |
+| **Queue Elements** | `Q W E R` (Flux, Nano, Barrier, Cryo) / `A S D F` (Volt, Void, Kinetic, Thermal) | `Q W E R` / `A S D F` |
+| **Move** | Click or Hold `LMB` (toward cursor) or `Arrow Keys` | `Arrow Keys` |
 | **Aim** | Mouse Cursor | Mouse Cursor |
 | **Forward Cast** | `RMB` | `LMB` |
-| **360° Nova Cast** | `C`, `Shift + Space`, or `Shift + RMB` | `RMB` |
-| **Self Cast** | `MMB` or `Spacebar` | `MMB` or `Spacebar` |
+| **360° Nova Cast** | `Spacebar` (or `Shift + RMB`) | `RMB` or `Spacebar` |
+| **Self Cast** | `MMB` or `C` | `MMB` or `C` |
 | **Phase Dash / Blade Slash** | `Shift + LMB` (or `Shift`) | `Shift` |
 
 ## Architecture

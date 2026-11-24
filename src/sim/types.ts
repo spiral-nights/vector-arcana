@@ -6,7 +6,7 @@ export const ARENA_HALF_H = 380;
 export type BaseElement =
   | 'FLUX'
   | 'NANO'
-  | 'AEGIS'
+  | 'BARRIER'
   | 'CRYO'
   | 'VOLT'
   | 'VOID'
@@ -20,7 +20,7 @@ export type QueueElement = BaseElement | SubElement;
 export const BASE_ELEMENTS: readonly BaseElement[] = [
   'FLUX',
   'NANO',
-  'AEGIS',
+  'BARRIER',
   'CRYO',
   'VOLT',
   'VOID',
@@ -40,7 +40,7 @@ export interface ElementMeta {
 export const ELEMENT_META: Record<QueueElement, ElementMeta> = {
   FLUX: { id: 'FLUX', name: 'Flux', color: '#1A6BFF', colorHex: 0x1a6bff, hotkey: 'Q', isSub: false },
   NANO: { id: 'NANO', name: 'Nano', color: '#39FF14', colorHex: 0x39ff14, hotkey: 'W', isSub: false },
-  AEGIS: { id: 'AEGIS', name: 'Aegis', color: '#E6F0FF', colorHex: 0xe6f0ff, hotkey: 'E', isSub: false },
+  BARRIER: { id: 'BARRIER', name: 'Barrier', color: '#E6F0FF', colorHex: 0xe6f0ff, hotkey: 'E', isSub: false },
   CRYO: { id: 'CRYO', name: 'Cryo', color: '#00F5FF', colorHex: 0x00f5ff, hotkey: 'R', isSub: false },
   VOLT: { id: 'VOLT', name: 'Volt', color: '#FFF733', colorHex: 0xfff733, hotkey: 'A', isSub: false },
   VOID: { id: 'VOID', name: 'Void', color: '#B429FF', colorHex: 0xb429ff, hotkey: 'S', isSub: false },
@@ -153,6 +153,7 @@ export interface PlayerState {
   ignitedTimer: number;
   toxinTimer: number;
   moving: boolean;
+  moveTarget: { x: number; y: number } | null;
   channel: ChannelState | null;
   charge: ChargeState | null;
 }
@@ -315,6 +316,7 @@ export interface SimInput {
   moveX: number;
   moveY: number;
   moveToCursor: boolean;
+  moveClickTarget: { x: number; y: number } | null;
   aimX: number;
   aimY: number;
   queuedElements: BaseElement[];

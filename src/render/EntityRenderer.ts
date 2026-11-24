@@ -14,6 +14,7 @@ export class EntityRenderer {
   private readonly noseCone: THREE.LineLoop;
   private readonly thrusterLine: THREE.Line;
   private readonly reticleGroup = new THREE.Group();
+  private readonly waypointGroup = new THREE.Group();
   private readonly pipMeshes: THREE.Group[] = [];
   private readonly pipSlots: Array<QueueElement | null> = [null, null, null];
 
@@ -64,7 +65,7 @@ export class EntityRenderer {
     this.hullArcLine = this.createArcLine(28, 0x00e676);
     this.playerGroup.add(this.hullArcLine);
 
-    // Diegetic Ward Arcs (Aegis silver-white outer + element-colored inner)
+    // Diegetic Ward Arcs (Barrier silver-white outer + element-colored inner)
     this.wardArcLine = this.createArcLine(35, 0xe6f0ff);
     this.wardArcLine.visible = false;
     this.playerGroup.add(this.wardArcLine);
@@ -133,6 +134,33 @@ export class EntityRenderer {
     const retGeo = new THREE.BufferGeometry().setFromPoints(retPts);
     this.reticleGroup.add(new THREE.LineSegments(retGeo, new THREE.LineBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.85 })));
     this.scene.add(this.reticleGroup);
+
+    // Click-to-move waypoint marker
+    const wpDiamond = [
+      new THREE.Vector3(0, 9, 1.5),
+      new THREE.Vector3(9, 0, 1.5),
+      new THREE.Vector3(0, -9, 1.5),
+      new THREE.Vector3(-9, 0, 1.5),
+    ];
+    this.waypointGroup.add(
+      new THREE.LineLoop(
+        new THREE.BufferGeometry().setFromPoints(wpDiamond),
+        new THREE.LineBasicMaterial({ color: 0x00f5ff, transparent: true, opacity: 0.85 })
+      )
+    );
+    const wpRing: THREE.Vector3[] = [];
+    for (let i = 0; i <= 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      wpRing.push(new THREE.Vector3(Math.cos(a) * 14, Math.sin(a) * 14, 1.2));
+    }
+    this.waypointGroup.add(
+      new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(wpRing),
+        new THREE.LineBasicMaterial({ color: 0x1a6bff, transparent: true, opacity: 0.55 })
+      )
+    );
+    this.waypointGroup.visible = false;
+    this.scene.add(this.waypointGroup);
   }
 
   private createArcLine(radius: number, colorHex: number): THREE.Line {
@@ -172,7 +200,7 @@ export class EntityRenderer {
       el === 'THERMAL' ? 3 :
       el === 'KINETIC' ? 4 :
       el === 'CRYO' || el === 'CRYSTAL' ? 6 :
-      el === 'AEGIS' ? 8 : 12;
+      el === 'BARRIER' ? 8 : 12;
 
     for (let i = 0; i <= sides; i++) {
       const a = (i / sides) * Math.PI * 2 + (el === 'THERMAL' ? Math.PI / 2 : 0);
@@ -205,6 +233,16 @@ export class EntityRenderer {
 
     this.reticleGroup.position.set(aimWorld.x, aimWorld.y, 0);
     this.reticleGroup.rotation.z = timeSec * 1.5;
+
+    if (p.moveTarget) {
+      this.waypointGroup.visible = true;
+      this.waypointGroup.position.set(p.moveTarget.x, p.moveTarget.y, 0);
+      this.waypointGroup.rotation.z = -timeSec * 2.5;
+      const pulse = 0.85 + Math.sin(timeSec * 8) * 0.2;
+      this.waypointGroup.scale.set(pulse, pulse, 1);
+    } else {
+      this.waypointGroup.visible = false;
+    }
 
     // Thruster flicker
     this.thrusterLine.visible = p.moving || p.dashTimer > 0;

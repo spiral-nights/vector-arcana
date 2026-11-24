@@ -23,7 +23,7 @@
 ---
 
 ## Milestone 2: 8-Element Queue & 10-Spell Deterministic Engine
-- `SpellResolver.ts`: Pure queue engine implementing all 5 opposite-element cancellations (`THERMAL ↔ CRYO`, `FLUX ↔ VOLT`, `KINETIC ↔ VOLT`, `AEGIS ↔ VOLT`, `VOID ↔ NANO`), max-1 `AEGIS` cap, FIFO/IGNORE overflow, 3 sub-element fusions (`CRYSTAL`, `PLASMA`, `TOXIN`), and the strict 10-spell priority table.
+- `SpellResolver.ts`: Pure queue engine implementing all 5 opposite-element cancellations (`THERMAL ↔ CRYO`, `FLUX ↔ VOLT`, `KINETIC ↔ VOLT`, `BARRIER ↔ VOLT`, `VOID ↔ NANO`), max-1 `BARRIER` cap, FIFO/IGNORE overflow, 3 sub-element fusions (`CRYSTAL`, `PLASMA`, `TOXIN`), and the strict 10-spell priority table.
 - `SpellResolver.test.ts`: Full Vitest coverage of cancellations, fusions, priority edge cases, Nova casts, and Self casts.
 - `CombatEngine.ts`: Full 2D arena execution for all 10 delivery types (`Shield`, `Wall`, `Mines`, `Storm`, `Rock Throw`, `Icicle Volley`, `Beam`, `Lightning Bolt`, `Spray`, `Phase Slash`), Nova (`Shift + RMB`), and Self (`MMB`/`Space`).
 - `EntityRenderer.ts` & `SpellVFX.ts`: 3 orbiting elemental glyph pips around the ship + procedural 3D wireframe VFX for all 10 spells and grid puddles.
@@ -38,7 +38,7 @@
   - `CHILLED` / `FROZEN` (`CRYO`): 50% slow / 2.5s freeze; `KINETIC` or `VOID` triggers `SHATTER` (bonus burst + 6 radial piercing shards).
   - `IGNITED` (`THERMAL`): burn DoT, 50% armor shred, thaws `FROZEN`/`CHILLED`.
   - `CORRUPTED` (`NANO`/`TOXIN`): shield drain, anti-regen, stacking corrosive DoT.
-- `EnemyAI.ts`: All 6 geometric enemy constructs (`Vector Swarmer`, `Aegis Bastion`, `Cryo Stalker`, `Beam Weaver` with Beam Clash, `Singularity Splitter` with Frozen Shatter prevention, and `Sector Warden` boss every 5 waves).
+- `EnemyAI.ts`: All 6 geometric enemy constructs (`Vector Swarmer`, `Barrier Bastion`, `Cryo Stalker`, `Beam Weaver` with Beam Clash, `Singularity Splitter` with Frozen Shatter prevention, and `Sector Warden` boss every 5 waves).
 - `WaveDirector.ts`: Escalating waves, score & combo multiplier (`x1`, `x2`, `x4`...), boss waves every 5 waves.
 - `CombatEngine.test.ts`: Unit tests for combos, Bastion shield blocking/shatter, Splitter shatter, Beam Clash, and Wave 5 boss spawning.
 

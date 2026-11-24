@@ -7,6 +7,7 @@ function makeInput(overrides: Partial<SimInput> = {}): SimInput {
     moveX: 0,
     moveY: 0,
     moveToCursor: false,
+    moveClickTarget: null,
     aimX: 200,
     aimY: 0,
     queuedElements: [],
@@ -25,32 +26,32 @@ function queueAndStep(sim: GameSim, elements: BaseElement[]): void {
 describe('CombatEngine — Mines Scaling & Multi-Color', () => {
   it('spawns more mines with 3 elements than 2 elements for both Forward and Nova casts', () => {
     const sim2 = new GameSim();
-    queueAndStep(sim2, ['AEGIS', 'VOID']);
+    queueAndStep(sim2, ['BARRIER', 'VOID']);
     sim2.step(makeInput({ castAction: 'FORWARD' }));
     expect(sim2.getSnapshot().mines.length).toBe(5);
 
     const sim3 = new GameSim();
-    queueAndStep(sim3, ['AEGIS', 'VOID', 'THERMAL']);
+    queueAndStep(sim3, ['BARRIER', 'VOID', 'THERMAL']);
     sim3.step(makeInput({ castAction: 'FORWARD' }));
     expect(sim3.getSnapshot().mines.length).toBe(9);
 
     const nova2 = new GameSim();
-    queueAndStep(nova2, ['AEGIS', 'VOID']);
+    queueAndStep(nova2, ['BARRIER', 'VOID']);
     nova2.step(makeInput({ castAction: 'NOVA' }));
     expect(nova2.getSnapshot().mines.length).toBe(6);
 
     const nova3 = new GameSim();
-    queueAndStep(nova3, ['AEGIS', 'VOID', 'THERMAL']);
+    queueAndStep(nova3, ['BARRIER', 'VOID', 'THERMAL']);
     nova3.step(makeInput({ castAction: 'NOVA' }));
     expect(nova3.getSnapshot().mines.length).toBe(11);
   });
 
   it('stores all mixed element colors on deployed mines', () => {
     const sim = new GameSim();
-    queueAndStep(sim, ['AEGIS', 'VOID', 'THERMAL']);
+    queueAndStep(sim, ['BARRIER', 'VOID', 'THERMAL']);
     sim.step(makeInput({ castAction: 'FORWARD' }));
     const mine = sim.getSnapshot().mines[0]!;
-    expect(mine.colors).toContain(ELEMENT_META.AEGIS.colorHex);
+    expect(mine.colors).toContain(ELEMENT_META.BARRIER.colorHex);
     expect(mine.colors).toContain(ELEMENT_META.VOID.colorHex);
     expect(mine.colors).toContain(ELEMENT_META.THERMAL.colorHex);
   });
@@ -126,10 +127,10 @@ describe('CombatEngine — Rock & Icicle Charge-Up Proportionality', () => {
   });
 });
 
-describe('CombatEngine — Mixed Volt + Fire + Aegis Storm', () => {
-  it('emits both storm strikes and lightning bolts for VOLT + THERMAL + AEGIS', () => {
+describe('CombatEngine — Mixed Volt + Fire + Barrier Storm', () => {
+  it('emits both storm strikes and lightning bolts for VOLT + THERMAL + BARRIER', () => {
     const sim = new GameSim();
-    queueAndStep(sim, ['VOLT', 'THERMAL', 'AEGIS']);
+    queueAndStep(sim, ['VOLT', 'THERMAL', 'BARRIER']);
     sim.step(makeInput({ castAction: 'FORWARD' }));
     let sawStrike = false;
     let sawLightning = false;
@@ -142,5 +143,39 @@ describe('CombatEngine — Mixed Volt + Fire + Aegis Storm', () => {
     }
     expect(sawStrike).toBe(true);
     expect(sawLightning).toBe(true);
+  });
+});
+
+describe('GameSim — Click-to-Move & Post-Nova Movement', () => {
+  it('continues moving toward a clicked waypoint after button release and stops on arrival', () => {
+    const sim = new GameSim();
+    sim.step(makeInput({ moveClickTarget: { x: 200, y: 0 } }));
+    expect(sim.getSnapshot().player.moveTarget).toEqual({ x: 200, y: 0 });
+
+    for (let i = 0; i < 30; i++) {
+      sim.step(makeInput({ moveClickTarget: null }));
+    }
+    const midX = sim.getSnapshot().player.x;
+    expect(midX).toBeGreaterThan(80);
+    expect(sim.getSnapshot().player.moveTarget).toEqual({ x: 200, y: 0 });
+
+    for (let i = 0; i < 60; i++) {
+      sim.step(makeInput({ moveClickTarget: null }));
+    }
+    expect(sim.getSnapshot().player.x).toBeGreaterThan(180);
+    expect(sim.getSnapshot().player.moveTarget).toBeNull();
+  });
+
+  it('allows movement to continue uninterrupted after an Area Nova cast', () => {
+    const sim = new GameSim();
+    sim.step(makeInput({ moveClickTarget: { x: 250, y: 0 } }));
+    queueAndStep(sim, ['THERMAL', 'THERMAL']);
+    sim.step(makeInput({ castAction: 'NOVA' }));
+    const xAfterNova = sim.getSnapshot().player.x;
+
+    for (let i = 0; i < 20; i++) {
+      sim.step(makeInput());
+    }
+    expect(sim.getSnapshot().player.x).toBeGreaterThan(xAfterNova + 40);
   });
 });

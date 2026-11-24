@@ -34,6 +34,7 @@ function createInitialPlayer(): PlayerState {
     ignitedTimer: 0,
     toxinTimer: 0,
     moving: false,
+    moveTarget: null,
     channel: null,
     charge: null,
   };
@@ -94,6 +95,7 @@ export class GameSim {
     if (input.dashPressed && p.dashCooldown <= 0 && p.dashTimer <= 0) {
       this.combat.stopChannel(p);
       this.combat.cancelCharge(p);
+      p.moveTarget = null;
       p.dashTimer = 0.16;
       p.dashCooldown = 0.75;
       p.invulnTimer = 0.22;
@@ -143,6 +145,14 @@ export class GameSim {
       }
     }
 
+    if (input.moveClickTarget) {
+      const margin = 18;
+      p.moveTarget = {
+        x: Math.max(-ARENA_HALF_W + margin, Math.min(ARENA_HALF_W - margin, input.moveClickTarget.x)),
+        y: Math.max(-ARENA_HALF_H + margin, Math.min(ARENA_HALF_H - margin, input.moveClickTarget.y)),
+      };
+    }
+
     if (p.dashTimer > 0) {
       p.dashTimer = Math.max(0, p.dashTimer - FIXED_DT);
       const dashSpeed = 180 / 0.16;
@@ -155,17 +165,28 @@ export class GameSim {
     } else {
       let mx = input.moveX;
       let my = input.moveY;
-      if (input.moveToCursor && mx === 0 && my === 0) {
+      if (mx !== 0 || my !== 0) {
+        p.moveTarget = null;
+        const len = Math.hypot(mx, my);
+        if (len > 1) {
+          mx /= len;
+          my /= len;
+        }
+      } else if (input.moveToCursor) {
         const dist = Math.hypot(dxAim, dyAim);
         if (dist > 14) {
           mx = dxAim / dist;
           my = dyAim / dist;
         }
-      } else {
-        const len = Math.hypot(mx, my);
-        if (len > 1) {
-          mx /= len;
-          my /= len;
+      } else if (p.moveTarget) {
+        const tx = p.moveTarget.x - p.x;
+        const ty = p.moveTarget.y - p.y;
+        const dist = Math.hypot(tx, ty);
+        if (dist <= 14) {
+          p.moveTarget = null;
+        } else {
+          mx = tx / dist;
+          my = ty / dist;
         }
       }
 

@@ -20,17 +20,17 @@ No `1–8` number keys are used in combat; all 8 elements sit under the left han
 | --- | --- |
 | `Q` | Queue **Flux** (`#00A8FF`) |
 | `W` | Queue **Nano** (`#39FF14`) |
-| `E` | Queue **Aegis** (`#00E676`) |
+| `E` | Queue **Barrier** (`#00E676`) |
 | `R` | Queue **Cryo** (`#00FFFF`) |
 | `A` | Queue **Volt** (`#FFEE00`) |
 | `S` | Queue **Void** (`#BD00FF`) |
 | `D` | Queue **Kinetic** (`#FF9E00`) |
 | `F` | Queue **Thermal** (`#FF2A2A`) |
-| Hold `LMB` or `Arrow Keys` | Move (toward mouse cursor or directional) |
+| Click or Hold `LMB` or `Arrow Keys` | Move (click-to-move waypoint or directional) |
 | Mouse Cursor | Aim direction |
 | `RMB` | **Forward Cast** |
-| `C`, `Shift + Space`, or `Shift + RMB` | **360° Nova Cast** |
-| `MMB` or `Spacebar` | **Self Cast** |
+| `Spacebar` (or `Shift + RMB`) | **360° Nova Cast** |
+| `MMB` or `C` | **Self Cast** |
 | `Shift + LMB` (or `Shift` tap) | **Phase Dash / Blade Slash** |
 | `Esc` | Pause / Resume |
 
@@ -38,8 +38,8 @@ No `1–8` number keys are used in combat; all 8 elements sit under the left han
 For trackpad or keyboard-move players, an optional HUD toggle switches mouse buttons while preserving `Q W E R` / `A S D F`:
 - `Arrow Keys`: Move
 - `LMB`: Forward Cast
-- `RMB`: 360° Nova Cast
-- `MMB` or `Spacebar`: Self Cast
+- `RMB` or `Spacebar`: 360° Nova Cast
+- `MMB` or `C`: Self Cast
 - `Shift`: Phase Dash / Blade Slash
 
 ---
@@ -52,7 +52,7 @@ For trackpad or keyboard-move players, an optional HUD toggle switches mouse but
 | --- | --- | --- | --- |
 | `FLUX` | Flux (Water) | `#1A6BFF` | Concentric ripple rings |
 | `NANO` | Nano (Life) | `#39FF14` | Thick geometric plus-cross (`+`) |
-| `AEGIS` | Aegis (Shield) | `#E6F0FF` | Octagonal barrier frame |
+| `BARRIER` | Barrier (Shield) | `#E6F0FF` | Octagonal barrier frame |
 | `CRYO` | Cryo (Cold) | `#00F5FF` | Six-pointed crystal hexagon |
 | `VOLT` | Volt (Lightning) | `#FFF733` | Jagged chevron lightning bolt |
 | `VOID` | Void (Arcane/Death) | `#B429FF` | Swirling spiral singularity |
@@ -66,7 +66,7 @@ When a base element is pressed, check the current queue (max 3 slots):
    - `FLUX` ↔ `VOLT`
    - `KINETIC` ↔ `VOLT`
    - `VOID` ↔ `NANO`
-2. **Self-Limit:** Maximum **1** `AEGIS` allowed in the queue.
+2. **Self-Limit:** Maximum **1** `BARRIER` allowed in the queue.
 3. **Overflow:** Configurable (`FIFO` default — drops oldest element when 4th non-cancelling element is queued; or `IGNORE`).
 
 ### 3.3 Sub-Element Fusion (Automatic in Queue)
@@ -83,23 +83,23 @@ On Forward Cast (`RMB` in Classic), the resolver inspects the queue from **Prior
 
 | Priority | Delivery Type | Required Queue Condition | Behavior |
 | --- | --- | --- | --- |
-| **1** | **Shield (Barrier)** | `[AEGIS]` alone | Curved 3D wireframe octagonal barrier; blocks projectiles and reflects enemy beams. |
-| **2** | **Wall** | `AEGIS` + (`KINETIC` or `CRYSTAL`) | 5 destructible geometric pylons perpendicular to aim, inheriting secondary elements. |
-| **3** | **Mines** | `AEGIS` + (`VOID` or `NANO` or `TOXIN`) | 5 floating octagonal proximity pods in forward arc; detonate on contact. |
-| **4** | **Storm** | `AEGIS` + (`THERMAL` or `CRYO` or `VOLT` or `FLUX` or `PLASMA`) | Persistent circular orbital hazard (`radius = 185+`, `4.5s+`) at cursor. Never contains `KINETIC` (Wall). |
-| **5** | **Rock Throw** | `KINETIC` + Any (no `AEGIS`) | Spinning 3D amber wireframe cube; pierces weak swarmers, detonates on heavies/walls; scales with `KINETIC` stacks. |
-| **6** | **Icicle Volley** | `CRYSTAL` + Any (no `AEGIS`/`KINETIC`) | Cone burst of 5–7 piercing cyan crystal shards. |
-| **7** | **Beam** | (`VOID` or `NANO`) + Any (no `AEGIS`/`KINETIC`/`CRYSTAL`) | Continuous hitscan laser beam; clashes with enemy beams. |
+| **1** | **Shield (Barrier)** | `[BARRIER]` alone | Curved 3D wireframe octagonal barrier; blocks projectiles and reflects enemy beams. |
+| **2** | **Wall** | `BARRIER` + (`KINETIC` or `CRYSTAL`) | 5 destructible geometric pylons perpendicular to aim, inheriting secondary elements. |
+| **3** | **Mines** | `BARRIER` + (`VOID` or `NANO` or `TOXIN`) | 5 floating octagonal proximity pods in forward arc; detonate on contact. |
+| **4** | **Storm** | `BARRIER` + (`THERMAL` or `CRYO` or `VOLT` or `FLUX` or `PLASMA`) | Persistent circular orbital hazard (`radius = 185+`, `4.5s+`) at cursor. Never contains `KINETIC` (Wall). |
+| **5** | **Rock Throw** | `KINETIC` + Any (no `BARRIER`) | Spinning 3D amber wireframe cube; pierces weak swarmers, detonates on heavies/walls; scales with `KINETIC` stacks. |
+| **6** | **Icicle Volley** | `CRYSTAL` + Any (no `BARRIER`/`KINETIC`) | Cone burst of 5–7 piercing cyan crystal shards. |
+| **7** | **Beam** | (`VOID` or `NANO`) + Any (no `BARRIER`/`KINETIC`/`CRYSTAL`) | Continuous hitscan laser beam; clashes with enemy beams. |
 | **8** | **Lightning Bolt** | `VOLT` + Any (no higher priority) | Instant jagged electric arcs jumping up to 4 targets (8 if `PRIMED`). |
 | **9** | **Spray** | `THERMAL`, `CRYO`, `FLUX`, `PLASMA`, or `TOXIN` | Wide close-range cone jet for swarm control and priming. |
-| **10** | **Phase Slash** | `Shift + LMB` / `Shift` Dash | 180-unit dash with i-frames + wide geometric cleave imbued with queued elements (+ elemental trail if `AEGIS` queued). |
+| **10** | **Phase Slash** | `Shift + LMB` / `Shift` Dash | 180-unit dash with i-frames + wide geometric cleave imbued with queued elements (+ elemental trail if `BARRIER` queued). |
 
 ### Secondary Cast Modes
 - **Self Cast (`MMB` / `Space`):**
   - `[NANO]`: Restores hull HP.
   - `[FLUX]`: Extinguishes `IGNITED` and clears `TOXIN`.
-  - `[AEGIS + Element]`: 6s Personal Hexagonal Ward granting 75% damage reduction against that element and damaging enemies on contact.
-  - `[AEGIS]` alone: Brief general ward.
+  - `[BARRIER + Element]`: 6s Personal Hexagonal Ward granting 75% damage reduction against that element and damaging enemies on contact.
+  - `[BARRIER]` alone: Brief general ward.
 - **Nova Cast (`Shift + RMB`):** Converts spells into a 360° circular ring/burst centered on the player.
 
 ---
@@ -121,7 +121,7 @@ On Forward Cast (`RMB` in Classic), the resolver inspects the queue from **Prior
 ## 6. Enemy Archetypes & Wave Director
 
 1. **Vector Swarmer (Pink Pinwheel):** Fast, low HP, flocks in clusters of 15–30.
-2. **Aegis Bastion (Emerald Hexagon):** Heavy front-facing directional shield blocking beams/sprays; shattered by `KINETIC` boulders or flanked.
+2. **Barrier Bastion (Emerald Hexagon):** Heavy front-facing directional shield blocking beams/sprays; shattered by `KINETIC` boulders or flanked.
 3. **Cryo Stalker (Cyan Diamond):** Telegraphs short-range teleports and fires slowing frost needles.
 4. **Beam Weaver (Violet Octagon):** Charges and fires a continuous laser beam; opposing player `VOID`/`NANO` beams trigger a **Beam Clash** tug-of-war that detonates the Weaver when overpowered.
 5. **Singularity Splitter (Amber/Violet Nested Cube):** Splits into 3 Swarmers on death unless killed while **`FROZEN`** (Shattered).
@@ -134,7 +134,7 @@ On Forward Cast (`RMB` in Classic), the resolver inspects the queue from **Prior
 Between waves, 3 randomized cards are offered from:
 1. **Superconductor (`VOLT`):** Volt arcs jump to +3 additional targets and arc off deployed Mines.
 2. **Permafrost Detonation (`CRYO + KINETIC`):** Shattering a Frozen enemy deals 75% of its max HP as AoE shard damage.
-3. **Prism Refraction (`AEGIS`):** Firing any Beam through your own Aegis Shield splits it into 3 diverging beams.
-4. **Tectonic Mines (`WALL`):** When an Aegis Wall pylon expires or is destroyed, it converts into a proximity Mine.
+3. **Prism Refraction (`BARRIER`):** Firing any Beam through your own Barrier Shield splits it into 3 diverging beams.
+4. **Tectonic Mines (`WALL`):** When an Barrier Wall pylon expires or is destroyed, it converts into a proximity Mine.
 5. **Overclocked Queue (`CORE`):** Casting a 3-element spell with 3 unique elements grants +25% move speed and +20% cast rate for 3s.
 6. **Singularity Pull (`VOID`):** Void detonations and beams pull nearby enemies inward toward the impact point.

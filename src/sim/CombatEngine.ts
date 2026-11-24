@@ -327,7 +327,7 @@ export class CombatEngine {
     const comp = spell.composition;
     const counts = comp.counts;
     const color = spell.primaryColorHex;
-    const nonAegisPower = Math.max(1, comp.totalPower - (counts.AEGIS ?? 0));
+    const nonBarrierPower = Math.max(1, comp.totalPower - (counts.BARRIER ?? 0));
 
     switch (spell.delivery) {
       case 'SHIELD': {
@@ -355,8 +355,8 @@ export class CombatEngine {
         const kineticCount = counts.KINETIC ?? 1;
         const hp = 100 + kineticCount * 50;
         if (spell.isNova) {
-          const count = nonAegisPower >= 2 ? 10 : 6;
-          const ringR = nonAegisPower >= 2 ? 155 : 110;
+          const count = nonBarrierPower >= 2 ? 10 : 6;
+          const ringR = nonBarrierPower >= 2 ? 155 : 110;
           for (let i = 0; i < count; i++) {
             const a = (i / count) * Math.PI * 2;
             const pos = clampArena(player.x + Math.cos(a) * ringR, player.y + Math.sin(a) * ringR);
@@ -376,7 +376,7 @@ export class CombatEngine {
             });
           }
         } else {
-          const halfSpan = nonAegisPower >= 2 ? 3 : 2;
+          const halfSpan = nonBarrierPower >= 2 ? 3 : 2;
           const cx = player.x + Math.cos(angle) * 130;
           const cy = player.y + Math.sin(angle) * 130;
           const perpX = -Math.sin(angle);
@@ -406,14 +406,14 @@ export class CombatEngine {
 
       case 'MINES': {
         if (spell.isNova) {
-          const count = nonAegisPower >= 2 ? 11 : 6;
-          const ringR = nonAegisPower >= 2 ? 165 : 115;
+          const count = nonBarrierPower >= 2 ? 11 : 6;
+          const ringR = nonBarrierPower >= 2 ? 165 : 115;
           for (let i = 0; i < count; i++) {
             const a = (i / count) * Math.PI * 2;
             const pos = clampArena(player.x + Math.cos(a) * ringR, player.y + Math.sin(a) * ringR);
             this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
           }
-        } else if (nonAegisPower >= 2) {
+        } else if (nonBarrierPower >= 2) {
           // 3-element Forward Mines: 9 mines in staggered double arc
           for (let i = 0; i < 5; i++) {
             const a = angle + (i - 2) * 0.3;
@@ -439,9 +439,9 @@ export class CombatEngine {
 
       case 'STORM': {
         const radius = spell.isNova
-          ? 195 + (nonAegisPower - 1) * 80
-          : 185 + nonAegisPower * 35;
-        const life = 4.5 + nonAegisPower * 0.75;
+          ? 195 + (nonBarrierPower - 1) * 80
+          : 185 + nonBarrierPower * 35;
+        const life = 4.5 + nonBarrierPower * 0.75;
         const target = spell.isNova
           ? { x: player.x, y: player.y }
           : clampArena(aimX, aimY, 90);
@@ -648,7 +648,7 @@ export class CombatEngine {
           radius: radius * 0.65,
           colorHex: comp.secondaryColorHex,
         });
-        if (spell.hasAegisTrail) {
+        if (spell.hasBarrierTrail) {
           for (let i = 1; i <= 4; i++) {
             const pos = clampArena(player.x + Math.cos(angle) * i * 42, player.y + Math.sin(angle) * i * 42);
             this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
@@ -911,15 +911,15 @@ export class CombatEngine {
       s.tickTimer -= dt;
       if (s.tickTimer <= 0) {
         const counts = s.composition.counts;
-        const nonAegisPower = Math.max(1, s.composition.totalPower - (counts.AEGIS ?? 0));
-        s.tickTimer = nonAegisPower >= 2 ? 0.18 : 0.32;
+        const nonBarrierPower = Math.max(1, s.composition.totalPower - (counts.BARRIER ?? 0));
+        s.tickTimer = nonBarrierPower >= 2 ? 0.18 : 0.32;
 
         const a = Math.random() * Math.PI * 2;
         const d = Math.random() * s.radius * 0.78;
         const sx = s.x + Math.cos(a) * d;
         const sy = s.y + Math.sin(a) * d;
 
-        const payloadColors = s.colors.filter((c) => c !== ELEMENT_META.AEGIS.colorHex);
+        const payloadColors = s.colors.filter((c) => c !== ELEMENT_META.BARRIER.colorHex);
         const palette = payloadColors.length > 0 ? payloadColors : [s.colorHex];
         const strikeColor = palette[Math.floor(Math.random() * palette.length)]!;
         const altColor = palette.find((c) => c !== strikeColor) ?? strikeColor;
@@ -930,13 +930,13 @@ export class CombatEngine {
           y: sy,
           colorHex: strikeColor,
           secondaryColorHex: altColor,
-          radius: 42 + nonAegisPower * 16,
+          radius: 42 + nonBarrierPower * 16,
         });
         events.push({
           type: 'vfx_ring',
           x: sx,
           y: sy,
-          radius: 46 + nonAegisPower * 18,
+          radius: 46 + nonBarrierPower * 18,
           colorHex: strikeColor,
         });
         if (s.elements.includes('VOLT')) {
@@ -951,7 +951,7 @@ export class CombatEngine {
             colors: boltColors,
           });
         }
-        events.push({ type: 'grid_impulse', x: sx, y: sy, strength: 155 + nonAegisPower * 45, radius: 120 });
+        events.push({ type: 'grid_impulse', x: sx, y: sy, strength: 155 + nonBarrierPower * 45, radius: 120 });
 
         const puddleKind = s.elements.includes('PLASMA')
           ? 'PLASMA'

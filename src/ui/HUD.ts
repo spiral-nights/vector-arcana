@@ -20,7 +20,7 @@ function getElementSvg(id: QueueElement, color: string): string {
       return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="square">
         <line x1="12" y1="4" x2="12" y2="20"/><line x1="4" y1="12" x2="20" y2="12"/>
       </svg>`;
-    case 'AEGIS':
+    case 'BARRIER':
       return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2">
         <polygon points="8,3 16,3 21,8 21,16 16,21 8,21 3,16 3,8"/>
       </svg>`;
@@ -226,10 +226,10 @@ export class HUD {
   public setPreset(preset: ControlPreset): void {
     if (preset === 'CLASSIC') {
       this.ctrlBtn.textContent = 'CLASSIC';
-      this.hintEl.textContent = 'LMB/Arrows: Move · RMB: Cast · C / Shift+Space / Shift+RMB: Area · MMB/Space: Self · Shift+LMB: Phase Slash';
+      this.hintEl.textContent = 'LMB: Click/Hold Move · RMB: Cast · Space: Area Nova · MMB/C: Self · Shift+LMB: Phase Slash';
     } else {
       this.ctrlBtn.textContent = 'ARROWS + LMB';
-      this.hintEl.textContent = 'Arrows: Move · LMB: Forward Cast · RMB: Nova · MMB/Space: Self · Shift: Phase Slash';
+      this.hintEl.textContent = 'Arrows: Move · LMB: Cast · RMB/Space: Area Nova · MMB/C: Self · Shift: Phase Slash';
     }
   }
 

@@ -462,7 +462,7 @@ export class SpellVFX {
       const w = items[idx]!;
       alive.add(w.id);
       let g = this.wallMeshes.get(w.id);
-      const aegisColor = w.colors.includes(0xe6f0ff) ? 0xe6f0ff : w.colorHex;
+      const barrierColor = w.colors.includes(0xe6f0ff) ? 0xe6f0ff : w.colorHex;
       const payloadColors = w.colors.filter((c) => c !== 0xe6f0ff);
       const p1 = payloadColors[0] ?? w.colorHex;
       const p2 = payloadColors[1] ?? p1;
@@ -473,7 +473,7 @@ export class SpellVFX {
           const a = (i / 6) * Math.PI * 2;
           pts.push(new THREE.Vector3(Math.cos(a) * w.radius, Math.sin(a) * w.radius, 2));
         }
-        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: aegisColor })));
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: barrierColor })));
 
         const inner: THREE.Vector3[] = [];
         for (let i = 0; i <= 4; i++) {
@@ -511,7 +511,7 @@ export class SpellVFX {
       let g = this.mineMeshes.get(m.id);
       if (!g) {
         g = new THREE.Group();
-        const aegisColor = m.colors.includes(0xe6f0ff) ? 0xe6f0ff : m.colorHex;
+        const barrierColor = m.colors.includes(0xe6f0ff) ? 0xe6f0ff : m.colorHex;
         const payloadColors = m.colors.filter((c) => c !== 0xe6f0ff);
         const p1 = payloadColors[0] ?? m.colorHex;
         const p2 = payloadColors[1] ?? p1;
@@ -521,7 +521,7 @@ export class SpellVFX {
           const a = (i / 8) * Math.PI * 2;
           pts.push(new THREE.Vector3(Math.cos(a) * m.radius, Math.sin(a) * m.radius, 2));
         }
-        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: aegisColor })));
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: barrierColor })));
 
         const inner: THREE.Vector3[] = [];
         for (let i = 0; i <= 4; i++) {
@@ -562,7 +562,7 @@ export class SpellVFX {
       let g = this.stormMeshes.get(s.id);
       if (!g) {
         g = new THREE.Group();
-        const aegisColor = s.colors.includes(0xe6f0ff) ? 0xe6f0ff : s.colorHex;
+        const barrierColor = s.colors.includes(0xe6f0ff) ? 0xe6f0ff : s.colorHex;
         const payloadColors = s.colors.filter((c) => c !== 0xe6f0ff);
         const payloadColor = payloadColors[0] ?? s.colorHex;
         const secondaryPayload = payloadColors[1] ?? payloadColor;
@@ -572,7 +572,7 @@ export class SpellVFX {
           const a = (i / 36) * Math.PI * 2;
           outer.push(new THREE.Vector3(Math.cos(a) * s.radius, Math.sin(a) * s.radius, 1));
         }
-        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(outer), new THREE.LineBasicMaterial({ color: aegisColor, transparent: true, opacity: 0.75 })));
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(outer), new THREE.LineBasicMaterial({ color: barrierColor, transparent: true, opacity: 0.75 })));
 
         const inner: THREE.Vector3[] = [];
         for (let i = 0; i <= 8; i++) {
