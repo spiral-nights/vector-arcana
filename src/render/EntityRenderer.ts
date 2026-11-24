@@ -8,6 +8,9 @@ export class EntityRenderer {
   private readonly wardArcLine: THREE.Line;
   private readonly wardInnerArcLine: THREE.Line;
   private readonly channelArcLine: THREE.Line;
+  private readonly chargeGroup = new THREE.Group();
+  private readonly chargeCore: THREE.Line;
+  private readonly chargeRing: THREE.Line;
   private readonly noseCone: THREE.LineLoop;
   private readonly thrusterLine: THREE.Line;
   private readonly reticleGroup = new THREE.Group();
@@ -82,6 +85,29 @@ export class EntityRenderer {
     );
     this.channelArcLine.visible = false;
     this.playerGroup.add(this.channelArcLine);
+
+    // Forward Charge Indicator
+    const corePts = [
+      new THREE.Vector3(-8, -8, 2.5), new THREE.Vector3(8, -8, 2.5),
+      new THREE.Vector3(8, 8, 2.5), new THREE.Vector3(-8, 8, 2.5), new THREE.Vector3(-8, -8, 2.5),
+    ];
+    this.chargeCore = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(corePts),
+      new THREE.LineBasicMaterial({ color: 0xe8741a })
+    );
+    const ringPts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      ringPts.push(new THREE.Vector3(Math.cos(a) * 12, Math.sin(a) * 12, 2.2));
+    }
+    this.chargeRing = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(ringPts),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75 })
+    );
+    this.chargeGroup.add(this.chargeCore, this.chargeRing);
+    this.chargeGroup.position.set(28, 0, 0);
+    this.chargeGroup.visible = false;
+    this.playerGroup.add(this.chargeGroup);
 
     this.scene.add(this.playerGroup);
 
@@ -212,6 +238,19 @@ export class EntityRenderer {
       (this.channelArcLine.material as THREE.LineBasicMaterial).color.setHex(p.channel.composition.primaryColorHex);
     } else {
       this.channelArcLine.visible = false;
+    }
+
+    // Forward charge indicator
+    if (p.charge) {
+      this.chargeGroup.visible = true;
+      const scale = 0.4 + p.charge.ratio * 1.05;
+      this.chargeGroup.scale.set(scale, scale, 1);
+      this.chargeCore.rotation.z = timeSec * (4 + p.charge.ratio * 10);
+      this.chargeRing.rotation.z = -timeSec * 3;
+      (this.chargeCore.material as THREE.LineBasicMaterial).color.setHex(p.charge.composition.primaryColorHex);
+      (this.chargeRing.material as THREE.LineBasicMaterial).color.setHex(p.charge.composition.secondaryColorHex);
+    } else {
+      this.chargeGroup.visible = false;
     }
 
     // Orbiting elemental pips

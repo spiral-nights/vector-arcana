@@ -35,6 +35,7 @@ function createInitialPlayer(): PlayerState {
     toxinTimer: 0,
     moving: false,
     channel: null,
+    charge: null,
   };
 }
 
@@ -92,6 +93,7 @@ export class GameSim {
     // Phase Dash & Phase Slash
     if (input.dashPressed && p.dashCooldown <= 0 && p.dashTimer <= 0) {
       this.combat.stopChannel(p);
+      this.combat.cancelCharge(p);
       p.dashTimer = 0.16;
       p.dashCooldown = 0.75;
       p.invulnTimer = 0.22;
@@ -115,6 +117,7 @@ export class GameSim {
         const selfCast = resolveSelfCast(p.queue);
         if (selfCast.effect !== 'NONE') {
           this.combat.stopChannel(p);
+          this.combat.cancelCharge(p);
           this.combat.castSelf(p, selfCast, this.events);
           p.queue = [];
           p.castCooldown = 0.16;
@@ -123,8 +126,14 @@ export class GameSim {
         const spell = resolveSpell(p.queue, input.castAction);
         if (spell) {
           this.combat.stopChannel(p);
+          this.combat.cancelCharge(p);
           if (spell.isChannelable && input.castHeld) {
             this.combat.startChannel(p, spell, this.events);
+          } else if (spell.isChargeable) {
+            this.combat.startCharge(p, spell);
+            if (!input.castHeld) {
+              this.combat.releaseCharge(p, this.events, 0.08);
+            }
           } else {
             this.combat.castSpell(p, spell, input.aimX, input.aimY, this.events);
           }
@@ -160,7 +169,7 @@ export class GameSim {
         }
       }
 
-      const maxSpeed = p.channel ? 245 * 0.68 : 245;
+      const maxSpeed = p.channel ? 245 * 0.68 : p.charge ? 245 * 0.65 : 245;
       const accel = 18;
       p.vx += (mx * maxSpeed - p.vx) * Math.min(1, accel * FIXED_DT);
       p.vy += (my * maxSpeed - p.vy) * Math.min(1, accel * FIXED_DT);

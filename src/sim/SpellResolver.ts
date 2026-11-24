@@ -164,6 +164,7 @@ export interface ResolvedSpell {
   delivery: DeliveryType;
   isNova: boolean;
   isChannelable: boolean;
+  isChargeable: boolean;
   elements: QueueElement[];
   composition: ElementComposition;
   primaryColorHex: number;
@@ -213,6 +214,7 @@ export function resolveSpell(
       delivery: 'PHASE_SLASH',
       isNova: false,
       isChannelable: false,
+      isChargeable: false,
       elements: [...queue],
       composition,
       primaryColorHex: composition.primaryColorHex,
@@ -262,11 +264,14 @@ export function resolveSpell(
 
   const isChannelable =
     !isNova && (delivery === 'SPRAY' || delivery === 'BEAM' || delivery === 'LIGHTNING_BOLT');
+  const isChargeable =
+    !isNova && (delivery === 'ROCK_THROW' || delivery === 'ICICLE_VOLLEY');
 
   return {
     delivery,
     isNova,
     isChannelable,
+    isChargeable,
     elements: [...queue],
     composition,
     primaryColorHex: composition.primaryColorHex,

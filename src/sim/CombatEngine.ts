@@ -4,6 +4,7 @@ import {
   ARENA_HALF_W,
   BeamEntity,
   ChannelState,
+  ChargeState,
   ELEMENT_META,
   ElementComposition,
   MineEntity,
@@ -73,6 +74,82 @@ export class CombatEngine {
     }
   }
 
+  public startCharge(player: PlayerState, spell: ResolvedSpell): void {
+    player.charge = {
+      delivery: spell.delivery as ChargeState['delivery'],
+      elements: spell.elements,
+      composition: spell.composition,
+      stackPower: spell.stackPower,
+      elapsed: 0,
+      maxCharge: 1.25,
+      ratio: 0,
+    };
+  }
+
+  public cancelCharge(player: PlayerState): void {
+    player.charge = null;
+  }
+
+  public releaseCharge(player: PlayerState, events: SimEvent[], overrideRatio?: number): void {
+    const ch = player.charge;
+    if (!ch) return;
+    const r = Math.max(0.05, Math.min(1, overrideRatio ?? ch.ratio));
+    const angle = player.aimAngle;
+    const comp = ch.composition;
+    const counts = comp.counts;
+    const color = comp.primaryColorHex;
+    player.charge = null;
+
+    if (ch.delivery === 'ROCK_THROW') {
+      const kineticCount = counts.KINETIC ?? 1;
+      const speed = (210 + kineticCount * 20) + r * (580 + kineticCount * 45);
+      const range = 150 + r * (760 + kineticCount * 40);
+      const life = range / speed;
+      const radius = (16 + kineticCount * 7) + r * 7;
+      const damage = Math.round(40 * kineticCount * (0.45 + 0.55 * r));
+      const pierce = 2 + kineticCount;
+
+      this.spawnRock(player.x, player.y, angle, speed, radius, damage, pierce, life, color, comp, ch.elements);
+      events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 100 + r * 140, radius: 110 + r * 40 });
+      events.push({ type: 'screen_shake', intensity: 2 + (kineticCount + 1) * r * 1.5 });
+      events.push({ type: 'sfx', sound: 'rock' });
+    } else if (ch.delivery === 'ICICLE_VOLLEY') {
+      const crystalCount = counts.CRYSTAL ?? 1;
+      const count = 7 + crystalCount * 3;
+      const speed = 260 + r * 720;
+      const range = 150 + r * 800;
+      const life = range / speed;
+      const spread = 0.65 - r * 0.36;
+      const damage = Math.round(24 * (0.5 + 0.5 * r));
+
+      for (let i = 0; i < count; i++) {
+        const a = angle + ((i / (count - 1)) - 0.5) * spread;
+        this.projectiles.push({
+          id: this.nextId++,
+          owner: 'PLAYER',
+          kind: 'ICICLE',
+          x: player.x + Math.cos(a) * 22,
+          y: player.y + Math.sin(a) * 22,
+          vx: Math.cos(a) * speed,
+          vy: Math.sin(a) * speed,
+          radius: 12,
+          damage,
+          pierce: 4,
+          life,
+          maxLife: life,
+          colorHex: color,
+          colors: comp.colors,
+          elements: ch.elements,
+          composition: comp,
+          hitIds: [],
+          spin: 0,
+        });
+      }
+      events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 70 + r * 80, radius: 95 + r * 30 });
+      events.push({ type: 'sfx', sound: 'icicle' });
+    }
+  }
+
   public startChannel(player: PlayerState, spell: ResolvedSpell, events: SimEvent[]): void {
     const maxDuration = 2.2 + spell.composition.totalPower * 0.4;
     const delivery = spell.delivery as ChannelState['delivery'];
@@ -117,7 +194,6 @@ export class CombatEngine {
       beamId,
     };
 
-    // Trigger immediate first tick for Spray / Lightning
     if (delivery !== 'BEAM') {
       this.emitChannelTick(player, player.channel, events);
       player.channel.tickTimer = delivery === 'SPRAY' ? 0.06 : 0.075;
@@ -221,7 +297,6 @@ export class CombatEngine {
 
       events.push({ type: 'vfx_lightning', points: pts, colors: comp.colors });
 
-      // Secondary element side-forks
       if (comp.colors.length > 1) {
         const forkA = angle + (Math.random() > 0.5 ? 0.32 : -0.32);
         const fx = curX - Math.cos(angle) * 90 + Math.cos(forkA) * 110;
@@ -252,6 +327,7 @@ export class CombatEngine {
     const comp = spell.composition;
     const counts = comp.counts;
     const color = spell.primaryColorHex;
+    const nonAegisPower = Math.max(1, comp.totalPower - (counts.AEGIS ?? 0));
 
     switch (spell.delivery) {
       case 'SHIELD': {
@@ -279,10 +355,11 @@ export class CombatEngine {
         const kineticCount = counts.KINETIC ?? 1;
         const hp = 100 + kineticCount * 50;
         if (spell.isNova) {
-          const count = 8;
+          const count = nonAegisPower >= 2 ? 10 : 6;
+          const ringR = nonAegisPower >= 2 ? 155 : 110;
           for (let i = 0; i < count; i++) {
             const a = (i / count) * Math.PI * 2;
-            const pos = clampArena(player.x + Math.cos(a) * 115, player.y + Math.sin(a) * 115);
+            const pos = clampArena(player.x + Math.cos(a) * ringR, player.y + Math.sin(a) * ringR);
             this.walls.push({
               id: this.nextId++,
               x: pos.x,
@@ -299,12 +376,13 @@ export class CombatEngine {
             });
           }
         } else {
+          const halfSpan = nonAegisPower >= 2 ? 3 : 2;
           const cx = player.x + Math.cos(angle) * 130;
           const cy = player.y + Math.sin(angle) * 130;
           const perpX = -Math.sin(angle);
           const perpY = Math.cos(angle);
-          for (let i = -2; i <= 2; i++) {
-            const pos = clampArena(cx + perpX * i * 46, cy + perpY * i * 46);
+          for (let i = -halfSpan; i <= halfSpan; i++) {
+            const pos = clampArena(cx + perpX * i * 44, cy + perpY * i * 44);
             this.walls.push({
               id: this.nextId++,
               x: pos.x,
@@ -328,17 +406,30 @@ export class CombatEngine {
 
       case 'MINES': {
         if (spell.isNova) {
-          const count = 8;
+          const count = nonAegisPower >= 2 ? 11 : 6;
+          const ringR = nonAegisPower >= 2 ? 165 : 115;
           for (let i = 0; i < count; i++) {
             const a = (i / count) * Math.PI * 2;
-            const pos = clampArena(player.x + Math.cos(a) * 120, player.y + Math.sin(a) * 120);
+            const pos = clampArena(player.x + Math.cos(a) * ringR, player.y + Math.sin(a) * ringR);
+            this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
+          }
+        } else if (nonAegisPower >= 2) {
+          // 3-element Forward Mines: 9 mines in staggered double arc
+          for (let i = 0; i < 5; i++) {
+            const a = angle + (i - 2) * 0.3;
+            const pos = clampArena(player.x + Math.cos(a) * 135, player.y + Math.sin(a) * 135);
+            this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
+          }
+          for (let i = 0; i < 4; i++) {
+            const a = angle + (i - 1.5) * 0.32;
+            const pos = clampArena(player.x + Math.cos(a) * 185, player.y + Math.sin(a) * 185);
             this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
           }
         } else {
-          const count = 5;
-          for (let i = 0; i < count; i++) {
+          // 2-element Forward Mines: 5 mines
+          for (let i = 0; i < 5; i++) {
             const a = angle + (i - 2) * 0.28;
-            const pos = clampArena(player.x + Math.cos(a) * 150, player.y + Math.sin(a) * 150);
+            const pos = clampArena(player.x + Math.cos(a) * 140, player.y + Math.sin(a) * 140);
             this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
           }
         }
@@ -347,8 +438,9 @@ export class CombatEngine {
       }
 
       case 'STORM': {
-        const nonAegisPower = Math.max(1, comp.totalPower - (counts.AEGIS ?? 0));
-        const radius = 185 + nonAegisPower * 30;
+        const radius = spell.isNova
+          ? 195 + (nonAegisPower - 1) * 80
+          : 185 + nonAegisPower * 35;
         const life = 4.5 + nonAegisPower * 0.75;
         const target = spell.isNova
           ? { x: player.x, y: player.y }
@@ -373,34 +465,30 @@ export class CombatEngine {
       }
 
       case 'ROCK_THROW': {
+        // Nova Rock Throw (Forward Rock Throw uses startCharge / releaseCharge)
         const kineticCount = counts.KINETIC ?? 1;
+        const count = 2 + comp.totalPower * 2;
         const radius = 18 + kineticCount * 8;
-        const speed = 480 + kineticCount * 35;
+        const speed = 460 + kineticCount * 35;
         const damage = 40 * kineticCount;
         const pierce = 2 + kineticCount;
-        if (spell.isNova) {
-          for (let i = 0; i < 4; i++) {
-            const a = angle + (i / 4) * Math.PI * 2;
-            this.spawnRock(player.x, player.y, a, speed, radius, damage, pierce, color, comp, spell.elements);
-          }
-        } else {
-          this.spawnRock(player.x, player.y, angle, speed, radius, damage, pierce, color, comp, spell.elements);
+        for (let i = 0; i < count; i++) {
+          const a = angle + (i / count) * Math.PI * 2;
+          this.spawnRock(player.x, player.y, a, speed, radius, damage, pierce, 1.8, color, comp, spell.elements);
         }
-        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 180, radius: 130 });
-        events.push({ type: 'screen_shake', intensity: 4 + kineticCount * 1.5 });
+        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 140 + comp.totalPower * 65, colorHex: color });
+        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 210 + comp.totalPower * 40, radius: 160 + comp.totalPower * 40 });
+        events.push({ type: 'screen_shake', intensity: 4 + comp.totalPower * 1.5 });
         events.push({ type: 'sfx', sound: 'rock' });
         break;
       }
 
       case 'ICICLE_VOLLEY': {
-        const crystalCount = counts.CRYSTAL ?? 1;
-        const count = spell.isNova ? 14 + crystalCount * 4 : 7 + crystalCount * 3;
-        const spread = spell.isNova ? Math.PI * 2 : 0.45;
+        // Nova Icicle Volley (Forward Icicle Volley uses startCharge / releaseCharge)
+        const count = 6 + comp.totalPower * 5;
         const speed = 740;
         for (let i = 0; i < count; i++) {
-          const a = spell.isNova
-            ? angle + (i / count) * Math.PI * 2
-            : angle + ((i / (count - 1)) - 0.5) * spread;
+          const a = angle + (i / count) * Math.PI * 2;
           this.projectiles.push({
             id: this.nextId++,
             owner: 'PLAYER',
@@ -412,8 +500,8 @@ export class CombatEngine {
             radius: 12,
             damage: 24,
             pierce: 4,
-            life: 1.6,
-            maxLife: 1.6,
+            life: 1.4,
+            maxLife: 1.4,
             colorHex: color,
             colors: comp.colors,
             elements: spell.elements,
@@ -422,17 +510,17 @@ export class CombatEngine {
             spin: 0,
           });
         }
-        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 115, radius: 110 });
+        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 130 + comp.totalPower * 55, colorHex: color });
+        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 135 + comp.totalPower * 30, radius: 140 });
         events.push({ type: 'sfx', sound: 'icicle' });
         break;
       }
 
       case 'BEAM': {
         // Nova Beam (Forward Beam is channeled via startChannel)
-        const beamPower = (counts.VOID ?? 0) + (counts.NANO ?? 0);
-        const length = 880 + beamPower * 90;
+        const count = 2 + comp.totalPower * 2;
+        const length = 260 + comp.totalPower * 130;
         const width = 18 + comp.totalPower * 5;
-        const count = 6;
         for (let i = 0; i < count; i++) {
           const a = angle + (i / count) * Math.PI * 2;
           this.beams.push({
@@ -454,34 +542,35 @@ export class CombatEngine {
             clashDist: length,
           });
         }
+        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 140 + comp.totalPower * 65, colorHex: color });
         if (spell.elements.includes('VOID')) {
-          events.push({ type: 'grid_well', x: player.x, y: player.y, strength: 260, radius: 220 });
+          events.push({ type: 'grid_well', x: player.x, y: player.y, strength: 220 + comp.totalPower * 60, radius: 190 + comp.totalPower * 50 });
         }
-        events.push({ type: 'screen_shake', intensity: 4.5 });
+        events.push({ type: 'screen_shake', intensity: 4 + comp.totalPower });
         events.push({ type: 'sfx', sound: 'beam' });
         break;
       }
 
       case 'LIGHTNING_BOLT': {
         // Nova Lightning (Forward Lightning is channeled via startChannel)
-        const voltCount = counts.VOLT ?? 1;
-        const arcs = 8;
-        const range = 440 + voltCount * 65;
+        const arcs = 4 + comp.totalPower * 3;
+        const range = 200 + comp.totalPower * 95;
         for (let i = 0; i < arcs; i++) {
           const a = angle + (i / arcs) * Math.PI * 2;
           const tx = player.x + Math.cos(a) * range;
           const ty = player.y + Math.sin(a) * range;
           events.push({ type: 'vfx_lightning', points: [{ x: player.x, y: player.y }, { x: tx, y: ty }], colors: comp.colors });
           events.push({ type: 'vfx_burst', x: tx, y: ty, colorHex: color, count: 12, radius: 40 });
-          events.push({ type: 'grid_impulse', x: tx, y: ty, strength: 140, radius: 110 });
+          events.push({ type: 'grid_impulse', x: tx, y: ty, strength: 130 + comp.totalPower * 25, radius: 110 });
         }
+        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: range * 0.85, colorHex: color });
         events.push({ type: 'sfx', sound: 'lightning' });
         break;
       }
 
       case 'SPRAY': {
         // Nova Spray (Forward Spray is channeled via startChannel)
-        const range = 310 + comp.totalPower * 45;
+        const range = 165 + (comp.totalPower - 1) * 90;
         events.push({
           type: 'vfx_spray',
           x: player.x,
@@ -492,7 +581,12 @@ export class CombatEngine {
           colors: comp.weightedColors,
           isNova: true,
         });
-        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: range * 0.75, colorHex: color });
+        for (let rIdx = 0; rIdx < comp.totalPower; rIdx++) {
+          const ringR = range * (0.55 + rIdx * 0.25);
+          const ringColor = comp.colors[rIdx % comp.colors.length]!;
+          events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: ringR, colorHex: ringColor, duration: 0.32 + rIdx * 0.08 });
+        }
+
         const puddleKind = spell.elements.includes('TOXIN')
           ? 'TOXIN'
           : spell.elements.includes('PLASMA')
@@ -502,15 +596,17 @@ export class CombatEngine {
           : null;
         if (puddleKind) {
           const stack = counts[puddleKind] ?? 1;
-          for (let i = 0; i < 4; i++) {
-            const a = (i / 4) * Math.PI * 2;
-            const pos = clampArena(player.x + Math.cos(a) * 140, player.y + Math.sin(a) * 140, 45);
+          const puddleCount = 2 + comp.totalPower * 2;
+          const dist = range * 0.55;
+          for (let i = 0; i < puddleCount; i++) {
+            const a = (i / puddleCount) * Math.PI * 2;
+            const pos = clampArena(player.x + Math.cos(a) * dist, player.y + Math.sin(a) * dist, 45);
             this.pools.push({
               id: this.nextId++,
               kind: puddleKind,
               x: pos.x,
               y: pos.y,
-              radius: 60 + stack * 22,
+              radius: 56 + stack * 20,
               life: 5,
               maxLife: 5,
               colorHex: ELEMENT_META[puddleKind].colorHex,
@@ -518,7 +614,7 @@ export class CombatEngine {
             });
           }
         }
-        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 160, radius: 150 });
+        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 140 + comp.totalPower * 55, radius: range * 0.85 });
         events.push({ type: 'sfx', sound: 'spray' });
         break;
       }
@@ -577,7 +673,7 @@ export class CombatEngine {
       y,
       radius: 16,
       triggerRadius: 46,
-      blastRadius: 135 + composition.totalPower * 25,
+      blastRadius: 135 + composition.totalPower * 30,
       damage: 50,
       armTimer: 0.35,
       life: 10,
@@ -596,6 +692,7 @@ export class CombatEngine {
     radius: number,
     damage: number,
     pierce: number,
+    life: number,
     colorHex: number,
     composition: ElementComposition,
     elements: QueueElement[]
@@ -611,8 +708,8 @@ export class CombatEngine {
       radius,
       damage,
       pierce,
-      life: 2.6,
-      maxLife: 2.6,
+      life,
+      maxLife: life,
       colorHex,
       colors: composition.colors,
       elements,
@@ -632,7 +729,6 @@ export class CombatEngine {
     events.push({ type: 'vfx_ring', x: p.x, y: p.y, radius: blastRadius, colorHex: p.colorHex });
     events.push({ type: 'screen_shake', intensity: 5 + kineticCount * 2 });
 
-    // Proportional secondary elemental payload effects
     const puddleEl = p.elements.includes('TOXIN')
       ? 'TOXIN'
       : p.elements.includes('PLASMA')
@@ -690,6 +786,16 @@ export class CombatEngine {
   }
 
   public step(dt: number, player: PlayerState, castHeld: boolean, events: SimEvent[]): void {
+    // Update active charge
+    if (player.charge) {
+      if (castHeld) {
+        player.charge.elapsed = Math.min(player.charge.maxCharge, player.charge.elapsed + dt);
+        player.charge.ratio = player.charge.elapsed / player.charge.maxCharge;
+      } else {
+        this.releaseCharge(player, events);
+      }
+    }
+
     // Update active channel
     if (player.channel) {
       const ch = player.channel;
@@ -742,7 +848,6 @@ export class CombatEngine {
       p.y += p.vy * dt;
       p.spin += dt * 7;
 
-      // Secondary elemental trail for multi-element rocks
       if (p.kind === 'ROCK' && p.colors.length > 1 && Math.random() < 0.45) {
         const trailColor = p.composition.secondaryColorHex;
         events.push({ type: 'vfx_burst', x: p.x, y: p.y, colorHex: trailColor, count: 3, radius: 18 });
@@ -758,7 +863,7 @@ export class CombatEngine {
       }
     }
 
-    // Update non-channeled beams (e.g. Nova beams)
+    // Update non-channeled beams
     for (let i = this.beams.length - 1; i >= 0; i--) {
       const b = this.beams[i]!;
       if (player.channel && player.channel.beamId === b.id) continue;
@@ -799,7 +904,7 @@ export class CombatEngine {
       }
     }
 
-    // Update storms with ratio-driven cadence and 3D orbital strikes
+    // Update storms
     for (let i = this.storms.length - 1; i >= 0; i--) {
       const s = this.storms[i]!;
       s.life -= dt;

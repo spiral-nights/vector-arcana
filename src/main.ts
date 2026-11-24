@@ -113,7 +113,9 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     pendingCast = 'SELF';
   } else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
-    pendingDash = true;
+    if (preset === 'ARROWS_LMB') {
+      pendingDash = true;
+    }
   } else if (e.code === 'Escape') {
     const snap = sim.getSnapshot();
     if (snap.phase === 'PLAYING') sim.setPhase('PAUSED');
@@ -199,7 +201,8 @@ function frame(now: number): void {
   hudTimer += rawDt;
   if (hudTimer >= 0.05) {
     hudTimer = 0;
-    hud.update(snapshot, []);
+    const shiftHeld = keysDown.has('ShiftLeft') || keysDown.has('ShiftRight');
+    hud.update(snapshot, [], preset === 'CLASSIC' && shiftHeld);
   }
 
   sceneManager.render(rawDt);

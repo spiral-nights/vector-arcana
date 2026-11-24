@@ -71,6 +71,16 @@ export interface ChannelState {
   beamId: number | null;
 }
 
+export interface ChargeState {
+  delivery: 'ROCK_THROW' | 'ICICLE_VOLLEY';
+  elements: QueueElement[];
+  composition: ElementComposition;
+  stackPower: number;
+  elapsed: number;
+  maxCharge: number;
+  ratio: number;
+}
+
 export type DeliveryType =
   | 'SHIELD'
   | 'WALL'
@@ -144,6 +154,7 @@ export interface PlayerState {
   toxinTimer: number;
   moving: boolean;
   channel: ChannelState | null;
+  charge: ChargeState | null;
 }
 
 export interface EnemyEntity {

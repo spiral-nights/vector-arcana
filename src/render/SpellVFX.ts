@@ -462,9 +462,12 @@ export class SpellVFX {
       const w = items[idx]!;
       alive.add(w.id);
       let g = this.wallMeshes.get(w.id);
+      const aegisColor = w.colors.includes(0xe6f0ff) ? 0xe6f0ff : w.colorHex;
+      const payloadColors = w.colors.filter((c) => c !== 0xe6f0ff);
+      const p1 = payloadColors[0] ?? w.colorHex;
+      const p2 = payloadColors[1] ?? p1;
       if (!g) {
         g = new THREE.Group();
-        const aegisColor = w.colors.includes(0xe6f0ff) ? 0xe6f0ff : w.colorHex;
         const pts: THREE.Vector3[] = [];
         for (let i = 0; i <= 6; i++) {
           const a = (i / 6) * Math.PI * 2;
@@ -475,9 +478,15 @@ export class SpellVFX {
         const inner: THREE.Vector3[] = [];
         for (let i = 0; i <= 4; i++) {
           const a = (i / 4) * Math.PI * 2;
-          inner.push(new THREE.Vector3(Math.cos(a) * (w.radius * 0.5), Math.sin(a) * (w.radius * 0.5), 2.5));
+          inner.push(new THREE.Vector3(Math.cos(a) * (w.radius * 0.56), Math.sin(a) * (w.radius * 0.56), 2.5));
         }
-        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(inner), new THREE.LineBasicMaterial({ color: w.colorHex })));
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(inner), new THREE.LineBasicMaterial({ color: p1 })));
+
+        const cross = [
+          new THREE.Vector3(-w.radius * 0.36, 0, 3), new THREE.Vector3(w.radius * 0.36, 0, 3),
+          new THREE.Vector3(0, -w.radius * 0.36, 3), new THREE.Vector3(0, w.radius * 0.36, 3),
+        ];
+        g.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(cross), new THREE.LineBasicMaterial({ color: p2 })));
 
         g.position.set(w.x, w.y, 0);
         this.wallMeshes.set(w.id, g);
@@ -489,6 +498,7 @@ export class SpellVFX {
           connPts.push(new THREE.Vector3(prev.x, prev.y, 2), new THREE.Vector3(w.x, w.y, 2));
         }
       }
+      (this.wallConnectors.material as THREE.LineBasicMaterial).color.setHex(p2);
     }
     this.wallConnectors.geometry.setFromPoints(connPts);
     this.pruneMap(this.wallMeshes, alive);
@@ -502,6 +512,10 @@ export class SpellVFX {
       if (!g) {
         g = new THREE.Group();
         const aegisColor = m.colors.includes(0xe6f0ff) ? 0xe6f0ff : m.colorHex;
+        const payloadColors = m.colors.filter((c) => c !== 0xe6f0ff);
+        const p1 = payloadColors[0] ?? m.colorHex;
+        const p2 = payloadColors[1] ?? p1;
+
         const pts: THREE.Vector3[] = [];
         for (let i = 0; i <= 8; i++) {
           const a = (i / 8) * Math.PI * 2;
@@ -512,16 +526,23 @@ export class SpellVFX {
         const inner: THREE.Vector3[] = [];
         for (let i = 0; i <= 4; i++) {
           const a = (i / 4) * Math.PI * 2;
-          inner.push(new THREE.Vector3(Math.cos(a) * (m.radius * 0.55), Math.sin(a) * (m.radius * 0.55), 2.5));
+          inner.push(new THREE.Vector3(Math.cos(a) * (m.radius * 0.62), Math.sin(a) * (m.radius * 0.62), 2.5));
         }
-        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(inner), new THREE.LineBasicMaterial({ color: m.colorHex })));
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(inner), new THREE.LineBasicMaterial({ color: p1 })));
+
+        const cross = [
+          new THREE.Vector3(-m.radius * 0.42, -m.radius * 0.42, 3), new THREE.Vector3(m.radius * 0.42, m.radius * 0.42, 3),
+          new THREE.Vector3(-m.radius * 0.42, m.radius * 0.42, 3), new THREE.Vector3(m.radius * 0.42, -m.radius * 0.42, 3),
+        ];
+        g.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(cross), new THREE.LineBasicMaterial({ color: p2 })));
 
         const trig: THREE.Vector3[] = [];
-        for (let i = 0; i <= 20; i++) {
-          const a = (i / 20) * Math.PI * 2;
+        for (let i = 0; i <= 24; i++) {
+          const a = (i / 24) * Math.PI * 2;
           trig.push(new THREE.Vector3(Math.cos(a) * m.triggerRadius, Math.sin(a) * m.triggerRadius, 0.8));
         }
-        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(trig), new THREE.LineBasicMaterial({ color: m.colorHex, transparent: true, opacity: 0.25 })));
+        const trigOpacity = payloadColors.length >= 2 ? 0.55 : 0.28;
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(trig), new THREE.LineBasicMaterial({ color: p2, transparent: true, opacity: trigOpacity })));
 
         g.position.set(m.x, m.y, 0);
         this.mineMeshes.set(m.id, g);
@@ -529,6 +550,7 @@ export class SpellVFX {
       }
       g.children[0]!.rotation.z = timeSec * 2 + m.id;
       g.children[1]!.rotation.z = -timeSec * 3.5;
+      g.children[2]!.rotation.z = timeSec * 4.5;
     }
     this.pruneMap(this.mineMeshes, alive);
   }

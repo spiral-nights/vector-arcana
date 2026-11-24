@@ -233,7 +233,11 @@ export class HUD {
     }
   }
 
-  public update(snapshot: SimSnapshot, highScores: Array<{ score: number; wave: number }>): void {
+  public update(
+    snapshot: SimSnapshot,
+    highScores: Array<{ score: number; wave: number }>,
+    shiftHeld = false
+  ): void {
     this.waveEl.textContent = String(snapshot.wave);
     this.scoreEl.textContent = snapshot.score.toLocaleString();
     this.multEl.textContent = `x${snapshot.multiplier}`;
@@ -253,8 +257,9 @@ export class HUD {
       this.bossWrap.classList.remove('visible');
     }
 
-    // Channel meter
+    // Channel or Charge meter
     const ch = snapshot.player.channel;
+    const charge = snapshot.player.charge;
     if (ch) {
       this.channelWrap.style.display = 'flex';
       this.channelWrap.style.flexDirection = 'column';
@@ -262,6 +267,14 @@ export class HUD {
       this.channelLabel.textContent = `CHANNELING ${ch.delivery.replace('_', ' ')}`;
       this.channelFill.style.width = `${Math.max(0, (ch.remaining / ch.maxDuration) * 100)}%`;
       this.channelFill.style.background = `#${ch.composition.primaryColorHex.toString(16).padStart(6, '0')}`;
+    } else if (charge) {
+      this.channelWrap.style.display = 'flex';
+      this.channelWrap.style.flexDirection = 'column';
+      this.channelWrap.style.gap = '3px';
+      const pct = Math.round(charge.ratio * 100);
+      this.channelLabel.textContent = `CHARGING ${charge.delivery.replace('_', ' ')} (${pct}%)`;
+      this.channelFill.style.width = `${pct}%`;
+      this.channelFill.style.background = `#${charge.composition.primaryColorHex.toString(16).padStart(6, '0')}`;
     } else {
       this.channelWrap.style.display = 'none';
     }
@@ -271,7 +284,9 @@ export class HUD {
     if (q.length === 0) {
       this.queueEl.textContent = 'QUEUE: EMPTY';
     } else {
-      this.queueEl.innerHTML = `<span style="color:#ffffff;font-weight:700">${formatSpellPreview(q, 'FORWARD')}</span>`;
+      const previewMode = shiftHeld ? 'NOVA' : 'FORWARD';
+      const prefix = shiftHeld ? 'NOVA: ' : '';
+      this.queueEl.innerHTML = `<span style="color:#ffffff;font-weight:700">${prefix}${formatSpellPreview(q, previewMode)}</span>`;
     }
 
     for (const el of BASE_ELEMENTS) {

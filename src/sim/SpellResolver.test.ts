@@ -173,6 +173,14 @@ describe('SpellResolver — Composition Ratios, Colors & Channeling', () => {
     expect(resolveSpell(['AEGIS'], 'FORWARD')?.isChannelable).toBe(false);
   });
 
+  it('marks FORWARD ROCK_THROW and ICICLE_VOLLEY as chargeable, but not NOVA', () => {
+    expect(resolveSpell(['KINETIC'], 'FORWARD')?.isChargeable).toBe(true);
+    expect(resolveSpell(['CRYSTAL'], 'FORWARD')?.isChargeable).toBe(true);
+    expect(resolveSpell(['KINETIC'], 'NOVA')?.isChargeable).toBe(false);
+    expect(resolveSpell(['CRYSTAL'], 'NOVA')?.isChargeable).toBe(false);
+    expect(resolveSpell(['THERMAL'], 'FORWARD')?.isChargeable).toBe(false);
+  });
+
   it('formats spell preview with counts and resolved delivery', () => {
     expect(formatSpellPreview(['FLUX', 'FLUX', 'KINETIC'])).toBe('2× FLUX + KINETIC → ROCK THROW');
     expect(formatSpellPreview(['AEGIS', 'CRYO'])).toBe('AEGIS + CRYO → STORM');
