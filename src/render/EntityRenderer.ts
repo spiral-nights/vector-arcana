@@ -449,6 +449,15 @@ export class EntityRenderer {
           }
         }
       }
+
+      // Telegraph line for WEAVER / WARDEN charging beam
+      const telegraph = group.userData.telegraph as THREE.Line | undefined;
+      if (telegraph) {
+        telegraph.visible = e.aiState === 'CHARGE';
+        if (telegraph.visible) {
+          telegraph.rotation.z = e.beamAngle - group.rotation.z;
+        }
+      }
     }
 
     for (const [id, group] of this.enemyMeshes.entries()) {
@@ -506,6 +515,13 @@ export class EntityRenderer {
         pts.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, 2));
       }
       group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: baseColor })));
+      const tele = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 2), new THREE.Vector3(580, 0, 2)]),
+        new THREE.LineBasicMaterial({ color: 0xb429ff, transparent: true, opacity: 0.45 })
+      );
+      tele.visible = false;
+      group.add(tele);
+      group.userData.telegraph = tele;
     } else if (e.archetype === 'SPLITTER') {
       baseColor = 0xe8741a;
       const outer = [
@@ -535,6 +551,13 @@ export class EntityRenderer {
         }
         group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(platePts), new THREE.LineBasicMaterial({ color: 0xe6f0ff })));
       }
+      const tele = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 2), new THREE.Vector3(620, 0, 2)]),
+        new THREE.LineBasicMaterial({ color: 0xff2e97, transparent: true, opacity: 0.5 })
+      );
+      tele.visible = false;
+      group.add(tele);
+      group.userData.telegraph = tele;
     }
 
     group.userData.baseColor = baseColor;

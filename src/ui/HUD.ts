@@ -63,6 +63,8 @@ export class HUD {
   private readonly overdriveFill: HTMLElement;
   private readonly bossWrap: HTMLElement;
   private readonly bossFill: HTMLElement;
+  private readonly waveBanner: HTMLElement;
+  private bannerTimer: number | null = null;
   private readonly queueEl: HTMLElement;
   private readonly channelWrap: HTMLElement;
   private readonly channelLabel: HTMLElement;
@@ -121,6 +123,8 @@ export class HUD {
         <div class="boss-track"><div class="boss-fill" id="boss-fill" style="width:100%"></div></div>
       </div>
 
+      <div id="wave-banner" style="position:fixed;top:24%;left:50%;transform:translateX(-50%);font-size:28px;font-weight:800;letter-spacing:0.2em;color:#00f5ff;text-shadow:0 0 18px rgba(0,245,255,0.7);opacity:0;transition:opacity 0.25s;pointer-events:none;"></div>
+
       <div class="hud-bottom">
         <div class="channel-wrap" id="hud-channel-wrap" style="display:none;width:240px;">
           <div class="bar-header"><span id="hud-channel-label">CHANNELING</span></div>
@@ -168,6 +172,7 @@ export class HUD {
     this.overdriveFill = this.root.querySelector('#hud-od-fill')!;
     this.bossWrap = this.root.querySelector('#boss-wrap')!;
     this.bossFill = this.root.querySelector('#boss-fill')!;
+    this.waveBanner = this.root.querySelector('#wave-banner')!;
     this.queueEl = this.root.querySelector('#hud-queue')!;
     this.channelWrap = this.root.querySelector('#hud-channel-wrap')!;
     this.channelLabel = this.root.querySelector('#hud-channel-label')!;
@@ -221,6 +226,16 @@ export class HUD {
 
   public setMuted(muted: boolean): void {
     this.muteBtn.textContent = muted ? 'AUDIO: OFF' : 'AUDIO: ON';
+  }
+
+  public showWaveBanner(wave: number, isBoss: boolean): void {
+    this.waveBanner.textContent = isBoss ? `BOSS WAVE ${wave} — SECTOR WARDEN` : `WAVE ${wave}`;
+    this.waveBanner.style.color = isBoss ? '#ff2e97' : '#00f5ff';
+    this.waveBanner.style.opacity = '1';
+    if (this.bannerTimer !== null) window.clearTimeout(this.bannerTimer);
+    this.bannerTimer = window.setTimeout(() => {
+      this.waveBanner.style.opacity = '0';
+    }, 2000);
   }
 
   public setPreset(preset: ControlPreset): void {

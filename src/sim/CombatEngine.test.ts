@@ -237,3 +237,167 @@ describe('CombatEngine — Per-Element Self-Casting', () => {
     expect(sim2.getSnapshot().player.wardRemaining).toBeGreaterThan(0);
   });
 });
+
+describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Director', () => {
+  it('deals 2x VOLT damage to PRIMED targets and freezes PRIMED targets hit by CRYO', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    const e1 = sim.combat.spawnEnemy('BASTION', 120, 0, 1);
+    e1.hasFrontShield = false;
+    e1.baseArmor = 0;
+    const e2 = sim.combat.spawnEnemy('BASTION', 220, 0, 1);
+    e2.hasFrontShield = false;
+    e2.baseArmor = 0;
+
+    const ev: ReturnType<GameSim['drainEvents']> = [];
+    sim.combat.applyElementalHit(e1, 10, ['VOLT'], 1, 0, ev);
+    const normalDmg = e1.maxHp - e1.hp;
+
+    sim.combat.applyElementalHit(e2, 0, ['FLUX'], 1, 0, ev);
+    expect(e2.statuses.PRIMED).toBeDefined();
+    sim.combat.applyElementalHit(e2, 10, ['VOLT'], 1, 0, ev);
+    const primedDmg = e2.maxHp - e2.hp;
+    expect(primedDmg).toBeCloseTo(normalDmg * 2);
+
+    sim.combat.applyElementalHit(e2, 0, ['CRYO'], 1, 0, ev);
+    expect(e2.statuses.FROZEN).toBeDefined();
+  });
+
+  it('triggers SHATTER and spawns 6 SHATTER_SHARD projectiles when FROZEN enemy is hit by KINETIC', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    const e = sim.combat.spawnEnemy('BASTION', 150, 0, 1);
+    e.hasFrontShield = false;
+    const ev: ReturnType<GameSim['drainEvents']> = [];
+    sim.combat.applyElementalHit(e, 0, ['FLUX'], 1, 0, ev);
+    sim.combat.applyElementalHit(e, 0, ['CRYO'], 1, 0, ev);
+    expect(e.statuses.FROZEN).toBeDefined();
+
+    sim.combat.applyElementalHit(e, 20, ['KINETIC'], 1, 0, ev);
+    expect(e.statuses.FROZEN).toBeUndefined();
+    const shards = sim.combat.projectiles.filter((p) => p.kind === 'SHATTER_SHARD');
+    expect(shards.length).toBe(6);
+  });
+
+  it('IGNITED shreds 50% armor and clears FROZEN', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    const e = sim.combat.spawnEnemy('BASTION', 150, 0, 1);
+    e.hasFrontShield = false;
+    e.baseArmor = 1.0;
+    const ev: ReturnType<GameSim['drainEvents']> = [];
+    sim.combat.applyElementalHit(e, 0, ['FLUX'], 1, 0, ev);
+    sim.combat.applyElementalHit(e, 0, ['CRYO'], 1, 0, ev);
+    expect(e.statuses.FROZEN).toBeDefined();
+
+    sim.combat.applyElementalHit(e, 20, ['THERMAL'], 1, 0, ev);
+    expect(e.statuses.FROZEN).toBeUndefined();
+    expect(e.statuses.IGNITED).toBeDefined();
+
+    const hpBefore = e.hp;
+    sim.combat.applyElementalHit(e, 30, ['VOID'], 1, 0, ev);
+    // effectiveArmor = 0.5 -> 30 / 1.5 = 20 damage
+    expect(hpBefore - e.hp).toBeCloseTo(20);
+  });
+
+  it('BASTION front shield blocks frontal BEAM/SPRAY, shatters to KINETIC, and takes damage from behind', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    const e = sim.combat.spawnEnemy('BASTION', 150, 0, 1);
+    e.shieldAngle = Math.PI; // facing left toward player at (0,0)
+    const ev: ReturnType<GameSim['drainEvents']> = [];
+
+    // Frontal hit (dirX > 0 from player at 0 to enemy at 150 -> incoming from left = Math.PI)
+    sim.combat.applyElementalHit(e, 40, ['THERMAL'], 1, 0, ev);
+    expect(e.hp).toBe(e.maxHp);
+
+    // Flanking hit from behind (dirX < 0)
+    sim.combat.applyElementalHit(e, 40, ['THERMAL'], -1, 0, ev);
+    expect(e.hp).toBeLessThan(e.maxHp);
+
+    // KINETIC shatters front shield
+    sim.combat.applyElementalHit(e, 30, ['KINETIC'], 1, 0, ev);
+    expect(e.hasFrontShield).toBe(false);
+    expect(e.shieldHp).toBe(0);
+  });
+
+  it('SPLITTER spawns 3 Swarmers on normal death, and 0 when killed while FROZEN', () => {
+    const simNormal = new GameSim();
+    simNormal.combat.enemies = [];
+    const s1 = simNormal.combat.spawnEnemy('SPLITTER', 300, 0, 1);
+    s1.hp = 0;
+    simNormal.step(makeInput());
+    expect(simNormal.getSnapshot().enemies.filter((e) => e.archetype === 'SWARMER').length).toBe(3);
+
+    const simFrozen = new GameSim();
+    simFrozen.combat.enemies = [];
+    const s2 = simFrozen.combat.spawnEnemy('SPLITTER', 300, 0, 1);
+    s2.statuses.FROZEN = { type: 'FROZEN', remaining: 2, stacks: 1, potency: 1 };
+    s2.hp = 0;
+    simFrozen.step(makeInput());
+    expect(simFrozen.getSnapshot().enemies.filter((e) => e.archetype === 'SWARMER').length).toBe(0);
+  });
+
+  it('WEAVER enters Beam Clash against opposing player VOID beam and detonates when overpowered', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    const weaver = sim.combat.spawnEnemy('WEAVER', 240, 0, 1);
+    weaver.aiState = 'FIRE';
+    weaver.aiTimer = 2.0;
+    weaver.beamAngle = Math.PI;
+    sim.combat.beams.push({
+      id: 9001,
+      owner: 'ENEMY',
+      ownerEnemyId: weaver.id,
+      x: 240,
+      y: 0,
+      angle: Math.PI,
+      length: 500,
+      width: 14,
+      damagePerSec: 20,
+      life: 2.0,
+      maxLife: 2.0,
+      colorHex: 0xb429ff,
+      colors: [0xb429ff],
+      elements: ['VOID'],
+      composition: { counts: { VOID: 1 }, ratios: { VOID: 1 }, totalPower: 1, colors: [0xb429ff], weightedColors: [0xb429ff], primaryColorHex: 0xb429ff, secondaryColorHex: 0xb429ff },
+      clashing: false,
+      clashDist: 500,
+    });
+
+    queueAndStep(sim, ['VOID', 'VOID']);
+    sim.step(makeInput({ castAction: 'FORWARD', castHeld: true, aimX: 240, aimY: 0 }));
+    let sawClash = false;
+    for (let i = 0; i < 48; i++) {
+      sim.step(makeInput({ castHeld: true, aimX: 240, aimY: 0 }));
+      if (sim.drainEvents().some((e) => e.type === 'beam_clash')) {
+        sawClash = true;
+      }
+    }
+    expect(sawClash).toBe(true);
+    expect(sim.getSnapshot().enemies.some((e) => e.id === weaver.id)).toBe(false);
+  });
+
+  it('WaveDirector spawns Sector Warden boss on Wave 5', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    const ev: ReturnType<GameSim['drainEvents']> = [];
+    sim.waveDirector.startWave(5, ev);
+    for (let i = 0; i < 20; i++) {
+      sim.step(makeInput());
+    }
+    expect(sim.getSnapshot().enemies.some((e) => e.archetype === 'WARDEN')).toBe(true);
+    expect(sim.getSnapshot().boss).not.toBeNull();
+  });
+
+  it('channeled FLUX + THERMAL (Plasma) beam spawns 0 puddles in empty space', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    queueAndStep(sim, ['FLUX', 'THERMAL', 'VOID']);
+    sim.step(makeInput({ castAction: 'FORWARD', castHeld: true, aimX: 300, aimY: 0 }));
+    for (let i = 0; i < 40; i++) {
+      sim.step(makeInput({ castHeld: true, aimX: 300, aimY: 0 }));
+    }
+    expect(sim.getSnapshot().pools.length).toBe(0);
+  });
+});

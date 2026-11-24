@@ -1,5 +1,6 @@
 import { CombatEngine } from './CombatEngine';
 import { enqueueElement, resolveSelfCast, resolveSpell } from './SpellResolver';
+import { WaveDirector } from './WaveDirector';
 import {
   ARENA_HALF_H,
   ARENA_HALF_W,
@@ -45,15 +46,22 @@ export class GameSim {
   private phase: SimSnapshot['phase'] = 'PLAYING';
   private tick = 0;
   private player: PlayerState = createInitialPlayer();
-  private combat = new CombatEngine();
+  public readonly combat = new CombatEngine();
+  public readonly waveDirector = new WaveDirector();
   private events: SimEvent[] = [];
+
+  constructor() {
+    this.waveDirector.startWave(1, this.events);
+  }
 
   public startNewRun(): void {
     this.phase = 'PLAYING';
     this.tick = 0;
     this.player = createInitialPlayer();
     this.combat.reset();
+    this.waveDirector.reset();
     this.events.length = 0;
+    this.waveDirector.startWave(1, this.events);
   }
 
   public setPhase(phase: SimSnapshot['phase']): void {
@@ -79,7 +87,6 @@ export class GameSim {
       p.wardElement = null;
     }
 
-    // Process element queue inputs
     for (const el of input.queuedElements) {
       const res = enqueueElement(p.queue, el, 'IGNORE');
       p.queue = res.queue;
@@ -92,7 +99,6 @@ export class GameSim {
       }
     }
 
-    // Phase Dash & Phase Slash
     if (input.dashPressed && p.dashCooldown <= 0 && p.dashTimer <= 0) {
       this.combat.stopChannel(p);
       this.combat.cancelCharge(p);
@@ -114,7 +120,6 @@ export class GameSim {
       }
     }
 
-    // Cast actions
     if (input.castAction && p.castCooldown <= 0) {
       if (input.castAction === 'SELF') {
         const selfCast = resolveSelfCast(p.queue);
@@ -212,7 +217,30 @@ export class GameSim {
     p.x = Math.max(-ARENA_HALF_W + margin, Math.min(ARENA_HALF_W - margin, p.x));
     p.y = Math.max(-ARENA_HALF_H + margin, Math.min(ARENA_HALF_H - margin, p.y));
 
-    this.combat.step(FIXED_DT, p, input.castHeld, input.selfHeld, this.events);
+    this.waveDirector.step(
+      FIXED_DT,
+      this.combat.enemies.length,
+      p,
+      (arch, x, y) => this.combat.spawnEnemy(arch, x, y, this.waveDirector.wave),
+      this.events
+    );
+
+    this.combat.step(
+      FIXED_DT,
+      p,
+      input.castHeld,
+      input.selfHeld,
+      this.waveDirector.wave,
+      (arch) => this.waveDirector.onEnemyKilled(arch),
+      () => this.waveDirector.onPlayerDamaged(),
+      this.events
+    );
+
+    if (p.hp <= 0) {
+      this.phase = 'GAME_OVER';
+      this.events.push({ type: 'game_over', score: this.waveDirector.score, wave: this.waveDirector.wave });
+      this.events.push({ type: 'sfx', sound: 'game_over' });
+    }
   }
 
   public drainEvents(): SimEvent[] {
@@ -223,15 +251,16 @@ export class GameSim {
   }
 
   public getSnapshot(): SimSnapshot {
+    const warden = this.combat.enemies.find((e) => e.archetype === 'WARDEN');
     return {
       phase: this.phase,
       tick: this.tick,
-      wave: 1,
-      score: 0,
-      multiplier: 1,
-      multiplierTimer: 0,
+      wave: this.waveDirector.wave,
+      score: this.waveDirector.score,
+      multiplier: this.waveDirector.multiplier,
+      multiplierTimer: this.waveDirector.multiplierTimer,
       player: this.player,
-      enemies: [],
+      enemies: this.combat.enemies,
       projectiles: this.combat.projectiles,
       beams: this.combat.beams,
       walls: this.combat.walls,
@@ -242,7 +271,7 @@ export class GameSim {
       slashes: this.combat.slashes,
       augments: {},
       pendingAugments: [],
-      boss: null,
+      boss: warden ? { name: 'SECTOR WARDEN', hp: warden.hp, maxHp: warden.maxHp } : null,
     };
   }
 }

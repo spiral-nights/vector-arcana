@@ -160,6 +160,10 @@ window.addEventListener('keydown', (e) => {
     if (preset === 'ARROWS_LMB') {
       pendingDash = true;
     }
+  } else if (e.code === 'Enter') {
+    if (sim.getSnapshot().phase === 'GAME_OVER') {
+      sim.startNewRun();
+    }
   } else if (e.code === 'Escape') {
     const snap = sim.getSnapshot();
     if (snap.phase === 'PLAYING') sim.setPhase('PAUSED');
@@ -240,6 +244,12 @@ function frame(now: number): void {
       spellVFX.spawnSpray(ev.x, ev.y, ev.angle, ev.spread, ev.range, ev.colors, ev.isNova);
     } else if (ev.type === 'vfx_shatter') {
       spellVFX.spawnBurst(ev.x, ev.y, ev.colorHex, 24, 1.4);
+    } else if (ev.type === 'beam_clash') {
+      spellVFX.spawnBurst(ev.x, ev.y, ev.colorHex, 8, 1.1);
+      spellVFX.spawnShards(ev.x, ev.y, [0x00f5ff, 0xb429ff], 3, 0.9);
+      sceneManager.addScreenShake(2.5);
+    } else if (ev.type === 'wave_start') {
+      hud.showWaveBanner(ev.wave, ev.isBoss);
     }
   }
 

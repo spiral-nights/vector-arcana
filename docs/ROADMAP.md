@@ -50,7 +50,7 @@
 - `Augments.ts` & `Augments.test.ts`: 6 Construct Augments (`Superconductor`, `Permafrost Detonation`, `Prism Refraction`, `Tectonic Mines`, `Overclocked Queue`, `Singularity Pull`) wired into `CombatEngine.ts` with 3-card non-duplicate draft.
 - `SynthAudio.ts`: Pure Web Audio API procedural SFX synthesizer (element queue chimes, cancellations, fusions, beams, clashes, lightning, shatters, sub-bass detonations, dashes, wave/boss cues).
 - `HUD.ts`: Full reactive SVG/DOM HUD, between-wave Augment draft modal, Start overlay, Game-Over modal with `localStorage` top-5 high scores, preset/tilt/mute/pause controls.
-- Hit-stop & screen-shake juice.
+- Hit-stop, screen-shake, and a dedicated visual graphics polish pass.
 
 **Verification:** `pnpm test && pnpm typecheck && pnpm build` + zero Three.js/DOM imports in `src/sim/`.
 
