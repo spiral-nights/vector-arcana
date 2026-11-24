@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createGlowSprite } from './GlowUtil';
 import {
   ArenaPillar,
   BeamEntity,
@@ -324,36 +325,37 @@ export class SpellVFX {
       });
     }
 
-    // Propagating Wave-Pulse Crescent Arcs (Image 3 style)
+    // Double-layered propagating Wave-Pulse Crescent Arcs (Image 3 style)
     const arcCount = isNova ? 4 : 1;
     for (let i = 0; i < arcCount; i++) {
       const a = isNova ? angle + (i / arcCount) * Math.PI * 2 : angle;
       const arcSpan = isNova ? Math.PI * 0.65 : spread * 0.85;
-      const arcR = 26;
-      const pts: THREE.Vector3[] = [];
-      for (let s = 0; s <= 14; s++) {
-        const sa = -arcSpan * 0.5 + (s / 14) * arcSpan;
-        pts.push(new THREE.Vector3(Math.cos(sa) * arcR, Math.sin(sa) * arcR, 2.5));
-      }
       const cHex = palette[i % palette.length]!;
-      const line = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(pts),
-        new THREE.LineBasicMaterial({ color: cHex, transparent: true, opacity: 0.9 })
-      );
-      line.position.set(x, y, 0);
-      line.rotation.z = a;
-      this.scene.add(line);
-      const maxLife = 0.34;
-      const spd = range * 2.35;
-      this.waveArcs.push({
-        line,
-        x,
-        y,
-        vx: Math.cos(a) * spd,
-        vy: Math.sin(a) * spd,
-        life: maxLife,
-        maxLife,
-      });
+      for (const layerR of [26, 20]) {
+        const pts: THREE.Vector3[] = [];
+        for (let s = 0; s <= 14; s++) {
+          const sa = -arcSpan * 0.5 + (s / 14) * arcSpan;
+          pts.push(new THREE.Vector3(Math.cos(sa) * layerR, Math.sin(sa) * layerR, 2.5));
+        }
+        const line = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(pts),
+          new THREE.LineBasicMaterial({ color: cHex, transparent: true, opacity: layerR === 26 ? 0.92 : 0.6 })
+        );
+        line.position.set(x, y, 0);
+        line.rotation.z = a;
+        this.scene.add(line);
+        const maxLife = 0.34;
+        const spd = range * (layerR === 26 ? 2.35 : 2.15);
+        this.waveArcs.push({
+          line,
+          x,
+          y,
+          vx: Math.cos(a) * spd,
+          vy: Math.sin(a) * spd,
+          life: maxLife,
+          maxLife,
+        });
+      }
     }
   }
 
@@ -555,11 +557,12 @@ export class SpellVFX {
               new THREE.MeshBasicMaterial({
                 color: p.colorHex,
                 transparent: true,
-                opacity: 0.14,
+                opacity: 0.22,
                 blending: THREE.AdditiveBlending,
               })
             )
           );
+          g.add(createGlowSprite(p.colorHex, s * 2.4, 0.35));
           if (secondary !== p.colorHex) {
             const oct = new THREE.OctahedronGeometry(p.radius * 0.72, 0);
             const octWire = new THREE.WireframeGeometry(oct);
@@ -587,8 +590,8 @@ export class SpellVFX {
       if (p.kind === 'ROCK') {
         g.rotation.x = p.spin;
         g.rotation.y = p.spin * 0.7;
-        if (g.children[2]) {
-          g.children[2].rotation.z = -p.spin * 1.5;
+        if (g.children[3]) {
+          g.children[3].rotation.z = -p.spin * 1.5;
         }
       } else {
         g.rotation.z = Math.atan2(p.vy, p.vx);
@@ -629,6 +632,23 @@ export class SpellVFX {
             )
           );
         }
+        // 4: Translucent additive energy ribbon strip
+        const ribbonGeo = new THREE.PlaneGeometry(1, Math.max(8, b.width * 0.65));
+        const ribbon = new THREE.Mesh(
+          ribbonGeo,
+          new THREE.MeshBasicMaterial({
+            color: b.colorHex,
+            transparent: true,
+            opacity: 0.24,
+            blending: THREE.AdditiveBlending,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          })
+        );
+        group.add(ribbon);
+        // 5 & 6: Soft muzzle & tip glow sprites
+        group.add(createGlowSprite(b.colorHex, 34, 0.35));
+        group.add(createGlowSprite(b.colors[1] ?? b.colorHex, 38, 0.35));
         this.beamMeshes.set(b.id, group);
         this.scene.add(group);
       }
@@ -651,6 +671,14 @@ export class SpellVFX {
         }
         pos.needsUpdate = true;
       }
+
+      const ribbon = group.children[4] as THREE.Mesh;
+      ribbon.position.set(b.x + cos * (len * 0.5), b.y + sin * (len * 0.5), 2.2);
+      ribbon.rotation.z = b.angle;
+      ribbon.scale.set(len, 1, 1);
+
+      group.children[5]!.position.set(b.x, b.y, 3);
+      group.children[6]!.position.set(b.x + cos * len, b.y + sin * len, 3);
 
       // Stream fine particles & tiny directional shards along the entire beam length
       this.spawnBeamFlowParticle(b.x, b.y, cos, sin, nx, ny, len, b.width, b.composition.weightedColors);
@@ -675,34 +703,34 @@ export class SpellVFX {
       const p2 = payloadColors[1] ?? p1;
       if (!g) {
         g = new THREE.Group();
-        const pts: THREE.Vector3[] = [];
-        for (let i = 0; i <= 6; i++) {
-          const a = (i / 6) * Math.PI * 2;
-          pts.push(new THREE.Vector3(Math.cos(a) * w.radius, Math.sin(a) * w.radius, 2));
-        }
-        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: barrierColor })));
-
-        const inner: THREE.Vector3[] = [];
-        for (let i = 0; i <= 4; i++) {
-          const a = (i / 4) * Math.PI * 2;
-          inner.push(new THREE.Vector3(Math.cos(a) * (w.radius * 0.56), Math.sin(a) * (w.radius * 0.56), 2.5));
-        }
-        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(inner), new THREE.LineBasicMaterial({ color: p1 })));
-
-        const cross = [
-          new THREE.Vector3(-w.radius * 0.36, 0, 3), new THREE.Vector3(w.radius * 0.36, 0, 3),
-          new THREE.Vector3(0, -w.radius * 0.36, 3), new THREE.Vector3(0, w.radius * 0.36, 3),
-        ];
-        g.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(cross), new THREE.LineBasicMaterial({ color: p2 })));
-
-        g.position.set(w.x, w.y, 0);
+        // Tall 3D glowing fortress obelisk (clearly distinct from Mines)
+        const cyl = new THREE.CylinderGeometry(w.radius * 0.68, w.radius * 0.85, 42, 6, 1);
+        cyl.rotateX(Math.PI / 2);
+        const wire = new THREE.WireframeGeometry(cyl);
+        g.add(new THREE.LineSegments(wire, new THREE.LineBasicMaterial({ color: barrierColor })));
+        g.add(
+          new THREE.Mesh(
+            cyl,
+            new THREE.MeshBasicMaterial({
+              color: p1,
+              transparent: true,
+              opacity: 0.2,
+              blending: THREE.AdditiveBlending,
+            })
+          )
+        );
+        g.add(createGlowSprite(p1, w.radius * 2.4, 0.35));
+        g.position.set(w.x, w.y, 21);
         this.wallMeshes.set(w.id, g);
         this.scene.add(g);
       }
       if (idx > 0) {
         const prev = items[idx - 1]!;
         if (Math.hypot(w.x - prev.x, w.y - prev.y) < 120) {
-          connPts.push(new THREE.Vector3(prev.x, prev.y, 2), new THREE.Vector3(w.x, w.y, 2));
+          connPts.push(
+            new THREE.Vector3(prev.x, prev.y, 6), new THREE.Vector3(w.x, w.y, 6),
+            new THREE.Vector3(prev.x, prev.y, 34), new THREE.Vector3(w.x, w.y, 34)
+          );
         }
       }
       (this.wallConnectors.material as THREE.LineBasicMaterial).color.setHex(p2);
@@ -723,41 +751,40 @@ export class SpellVFX {
         const p1 = payloadColors[0] ?? m.colorHex;
         const p2 = payloadColors[1] ?? p1;
 
-        const pts: THREE.Vector3[] = [];
-        for (let i = 0; i <= 8; i++) {
-          const a = (i / 8) * Math.PI * 2;
-          pts.push(new THREE.Vector3(Math.cos(a) * m.radius, Math.sin(a) * m.radius, 2));
-        }
-        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: barrierColor })));
-
-        const inner: THREE.Vector3[] = [];
-        for (let i = 0; i <= 4; i++) {
-          const a = (i / 4) * Math.PI * 2;
-          inner.push(new THREE.Vector3(Math.cos(a) * (m.radius * 0.62), Math.sin(a) * (m.radius * 0.62), 2.5));
-        }
-        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(inner), new THREE.LineBasicMaterial({ color: p1 })));
+        // Compact floating 3D icosahedron pod
+        const ico = new THREE.IcosahedronGeometry(m.radius * 0.72, 0);
+        const wire = new THREE.WireframeGeometry(ico);
+        ico.dispose();
+        const pod = new THREE.LineSegments(wire, new THREE.LineBasicMaterial({ color: barrierColor }));
+        pod.position.set(0, 0, 10);
+        g.add(pod);
 
         const cross = [
-          new THREE.Vector3(-m.radius * 0.42, -m.radius * 0.42, 3), new THREE.Vector3(m.radius * 0.42, m.radius * 0.42, 3),
-          new THREE.Vector3(-m.radius * 0.42, m.radius * 0.42, 3), new THREE.Vector3(m.radius * 0.42, -m.radius * 0.42, 3),
+          new THREE.Vector3(-m.radius * 0.8, 0, 10), new THREE.Vector3(m.radius * 0.8, 0, 10),
+          new THREE.Vector3(0, -m.radius * 0.8, 10), new THREE.Vector3(0, m.radius * 0.8, 10),
         ];
         g.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(cross), new THREE.LineBasicMaterial({ color: p2 })));
+
+        const glow = createGlowSprite(p1, 24, 0.52);
+        glow.position.set(0, 0, 10);
+        g.add(glow);
 
         const trig: THREE.Vector3[] = [];
         for (let i = 0; i <= 24; i++) {
           const a = (i / 24) * Math.PI * 2;
-          trig.push(new THREE.Vector3(Math.cos(a) * m.triggerRadius, Math.sin(a) * m.triggerRadius, 0.8));
+          trig.push(new THREE.Vector3(Math.cos(a) * m.triggerRadius, Math.sin(a) * m.triggerRadius, 0.6));
         }
-        const trigOpacity = payloadColors.length >= 2 ? 0.55 : 0.28;
-        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(trig), new THREE.LineBasicMaterial({ color: p2, transparent: true, opacity: trigOpacity })));
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(trig), new THREE.LineBasicMaterial({ color: p1, transparent: true, opacity: payloadColors.length >= 2 ? 0.5 : 0.25 })));
 
         g.position.set(m.x, m.y, 0);
         this.mineMeshes.set(m.id, g);
         this.scene.add(g);
       }
-      g.children[0]!.rotation.z = timeSec * 2 + m.id;
+      g.children[0]!.rotation.x = timeSec * 2 + m.id;
+      g.children[0]!.rotation.y = timeSec * 1.5;
       g.children[1]!.rotation.z = -timeSec * 3.5;
-      g.children[2]!.rotation.z = timeSec * 4.5;
+      const pulse = 0.88 + Math.sin(timeSec * 8 + m.id) * 0.14;
+      g.children[2]!.scale.set(24 * pulse, 24 * pulse, 1);
     }
     this.pruneMap(this.mineMeshes, alive);
   }
@@ -847,6 +874,33 @@ export class SpellVFX {
           new THREE.LineSegments(
             new THREE.BufferGeometry().setFromPoints(wirePts),
             new THREE.LineBasicMaterial({ color: s.colorHex, transparent: true, opacity: 0.92 })
+          )
+        );
+        // Faceted hard-light energy glass fill
+        const fillPositions: number[] = [];
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const p00 = grid[r]![c]!;
+            const p10 = grid[r]![c + 1]!;
+            const p01 = grid[r + 1]![c]!;
+            const p11 = grid[r + 1]![c + 1]!;
+            fillPositions.push(p00.x, p00.y, p00.z, p10.x, p10.y, p10.z, p11.x, p11.y, p11.z);
+            fillPositions.push(p00.x, p00.y, p00.z, p11.x, p11.y, p11.z, p01.x, p01.y, p01.z);
+          }
+        }
+        const fillGeo = new THREE.BufferGeometry();
+        fillGeo.setAttribute('position', new THREE.Float32BufferAttribute(fillPositions, 3));
+        g.add(
+          new THREE.Mesh(
+            fillGeo,
+            new THREE.MeshBasicMaterial({
+              color: s.colorHex,
+              transparent: true,
+              opacity: 0.16,
+              blending: THREE.AdditiveBlending,
+              side: THREE.DoubleSide,
+              depthWrite: false,
+            })
           )
         );
         this.shieldMeshes.set(s.id, g);
@@ -1070,6 +1124,10 @@ export class SpellVFX {
 
   private disposeObject(obj: THREE.Object3D): void {
     obj.traverse((child) => {
+      if (child instanceof THREE.Sprite) {
+        child.material.dispose();
+        return;
+      }
       if (child instanceof THREE.Line || child instanceof THREE.LineLoop || child instanceof THREE.LineSegments || child instanceof THREE.Mesh) {
         child.geometry.dispose();
         if (child.material instanceof THREE.Material) child.material.dispose();

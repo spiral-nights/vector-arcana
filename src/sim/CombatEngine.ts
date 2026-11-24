@@ -559,8 +559,8 @@ export class CombatEngine {
       }
 
       case 'WALL': {
-        const kineticCount = counts.KINETIC ?? 1;
-        const hp = 100 + kineticCount * 50;
+        const kineticCount = counts.KINETIC ?? 0;
+        const hp = kineticCount > 0 ? 200 + kineticCount * 80 : 120;
         if (spell.isNova) {
           const count = nonBarrierPower >= 2 ? 10 : 6;
           const ringR = nonBarrierPower >= 2 ? 155 : 110;
@@ -574,8 +574,9 @@ export class CombatEngine {
               radius: 22,
               hp,
               maxHp: hp,
-              life: 8,
-              maxLife: 8,
+              life: 9,
+              maxLife: 9,
+              pulseTimer: 0.15,
               colorHex: color,
               colors: comp.colors,
               elements: spell.elements,
@@ -597,8 +598,9 @@ export class CombatEngine {
               radius: 22,
               hp,
               maxHp: hp,
-              life: 8,
-              maxLife: 8,
+              life: 9,
+              maxLife: 9,
+              pulseTimer: 0.15,
               colorHex: color,
               colors: comp.colors,
               elements: spell.elements,
@@ -613,8 +615,8 @@ export class CombatEngine {
 
       case 'MINES': {
         if (spell.isNova) {
-          const count = nonBarrierPower >= 2 ? 11 : 6;
-          const ringR = nonBarrierPower >= 2 ? 165 : 115;
+          const count = nonBarrierPower >= 2 ? 6 : 4;
+          const ringR = nonBarrierPower >= 2 ? 155 : 115;
           for (let i = 0; i < count; i++) {
             const a = (i / count) * Math.PI * 2;
             const pos = clampArena(player.x + Math.cos(a) * ringR, player.y + Math.sin(a) * ringR);
@@ -622,19 +624,14 @@ export class CombatEngine {
           }
         } else if (nonBarrierPower >= 2) {
           for (let i = 0; i < 5; i++) {
-            const a = angle + (i - 2) * 0.3;
-            const pos = clampArena(player.x + Math.cos(a) * 135, player.y + Math.sin(a) * 135);
-            this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
-          }
-          for (let i = 0; i < 4; i++) {
-            const a = angle + (i - 1.5) * 0.32;
-            const pos = clampArena(player.x + Math.cos(a) * 185, player.y + Math.sin(a) * 185);
+            const a = angle + (i - 2) * 0.28;
+            const pos = clampArena(player.x + Math.cos(a) * 150, player.y + Math.sin(a) * 150);
             this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
           }
         } else {
-          for (let i = 0; i < 5; i++) {
-            const a = angle + (i - 2) * 0.28;
-            const pos = clampArena(player.x + Math.cos(a) * 140, player.y + Math.sin(a) * 140);
+          for (let i = 0; i < 3; i++) {
+            const a = angle + (i - 1) * 0.34;
+            const pos = clampArena(player.x + Math.cos(a) * 135, player.y + Math.sin(a) * 135);
             this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
           }
         }
@@ -1284,7 +1281,7 @@ export class CombatEngine {
           continue;
         }
       } else {
-        // Enemy projectile vs player shields and player
+        // Enemy projectile vs player shields, walls, and player
         let blocked = false;
         for (const s of this.shields) {
           const d = Math.hypot(p.x - s.x, p.y - s.y);
@@ -1294,6 +1291,17 @@ export class CombatEngine {
               s.hp -= p.damage;
               blocked = true;
               events.push({ type: 'vfx_burst', x: p.x, y: p.y, colorHex: s.colorHex, count: 6, radius: 20 });
+              break;
+            }
+          }
+        }
+        if (!blocked) {
+          for (const w of this.walls) {
+            if (Math.hypot(p.x - w.x, p.y - w.y) <= w.radius + p.radius) {
+              w.hp -= p.damage;
+              blocked = true;
+              events.push({ type: 'vfx_burst', x: p.x, y: p.y, colorHex: w.colorHex, count: 6, radius: 20 });
+              events.push({ type: 'sfx', sound: 'shield_block' });
               break;
             }
           }
@@ -1432,15 +1440,25 @@ export class CombatEngine {
         }
         const eCos = Math.cos(b.angle);
         const eSin = Math.sin(b.angle);
+        let wallLimit = pillarLimit;
+        for (const w of this.walls) {
+          const { perpDist, along } = pointToRayDist(w.x, w.y, b.x, b.y, eCos, eSin, wallLimit);
+          if (perpDist <= w.radius + 6 && along > 8) {
+            wallLimit = Math.min(wallLimit, Math.max(8, along - w.radius * 0.5));
+            w.hp -= 28 * dt;
+            b.clashing = true;
+            b.clashDist = wallLimit;
+          }
+        }
         for (const s of this.shields) {
-          const { perpDist, along } = pointToRayDist(s.x, s.y, b.x, b.y, eCos, eSin, pillarLimit);
+          const { perpDist, along } = pointToRayDist(s.x, s.y, b.x, b.y, eCos, eSin, wallLimit);
           if (perpDist <= s.radius + 12) {
             b.clashing = true;
             b.clashDist = Math.min(b.clashDist, Math.max(10, along - s.radius));
             s.hp -= 35 * dt;
           }
         }
-        const effLen = b.clashing ? b.clashDist : pillarLimit;
+        const effLen = b.clashing ? b.clashDist : wallLimit;
         const { perpDist } = pointToRayDist(player.x, player.y, b.x, b.y, eCos, eSin, effLen);
         if (perpDist <= 16 + b.width * 0.4) {
           this.damagePlayer(player, 24 * dt + 10, undefined, onPlayerDamaged, events);
@@ -1460,10 +1478,14 @@ export class CombatEngine {
       }
     }
 
-    // Update walls & push enemies out
+    // Update walls: block enemies + trigger distinct per-element wall mechanics
     for (let i = this.walls.length - 1; i >= 0; i--) {
       const w = this.walls[i]!;
       w.life -= dt;
+      w.pulseTimer -= dt;
+      const isStone = w.elements.includes('KINETIC');
+      const isCrystal = w.elements.includes('CRYSTAL');
+
       for (const e of this.enemies) {
         const dx = e.x - w.x;
         const dy = e.y - w.y;
@@ -1472,11 +1494,77 @@ export class CombatEngine {
         if (dist > 0.01 && dist < minD) {
           e.x = w.x + (dx / dist) * minD;
           e.y = w.y + (dy / dist) * minD;
-          this.applyElementalHit(e, 24 * dt, w.elements, dx, dy, events, true);
-          w.hp -= 15 * dt;
+          if (isStone) {
+            e.vx += (dx / dist) * 140;
+            e.vy += (dy / dist) * 140;
+          }
+          this.applyElementalHit(e, 26 * dt, w.elements, dx, dy, events, true);
+          w.hp -= 12 * dt;
         }
       }
+
+      if (w.pulseTimer <= 0) {
+        w.pulseTimer = 0.45;
+        if (w.elements.includes('THERMAL')) {
+          this.applyAoEDamage(w.x, w.y, 78, 12, ['THERMAL'], 40, events);
+          events.push({ type: 'vfx_ring', x: w.x, y: w.y, radius: 75, colorHex: ELEMENT_META.THERMAL.colorHex, duration: 0.28 });
+        }
+        if (w.elements.includes('FLUX') || w.elements.includes('PLASMA')) {
+          const kind = w.elements.includes('PLASMA') ? 'PLASMA' : 'FLUX';
+          if (this.pools.length < 24) {
+            this.pools.push({
+              id: this.nextId++,
+              kind,
+              x: w.x,
+              y: w.y,
+              radius: 50,
+              life: 4.5,
+              maxLife: 4.5,
+              colorHex: ELEMENT_META[kind].colorHex,
+              tickTimer: 0.25,
+            });
+          }
+        }
+        if (w.elements.includes('VOID')) {
+          this.applyAoEDamage(w.x, w.y, 130, 8, ['VOID'], -150, events);
+          events.push({ type: 'grid_well', x: w.x, y: w.y, strength: 130, radius: 130 });
+        }
+        if (w.elements.includes('NANO')) {
+          if (Math.hypot(player.x - w.x, player.y - w.y) <= 95) {
+            player.hp = Math.min(player.maxHp, player.hp + 3);
+            events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: ELEMENT_META.NANO.colorHex, count: 4, radius: 24 });
+          }
+        }
+      }
+
       if (w.life <= 0 || w.hp <= 0) {
+        if (isCrystal) {
+          const comp = computeComposition(['CRYSTAL']);
+          for (let s = 0; s < 4; s++) {
+            const a = (s / 4) * Math.PI * 2;
+            this.projectiles.push({
+              id: this.nextId++,
+              owner: 'PLAYER',
+              kind: 'SHATTER_SHARD',
+              x: w.x + Math.cos(a) * 12,
+              y: w.y + Math.sin(a) * 12,
+              vx: Math.cos(a) * 460,
+              vy: Math.sin(a) * 460,
+              radius: 8,
+              damage: 26,
+              pierce: 2,
+              life: 0.85,
+              maxLife: 0.85,
+              colorHex: 0x80ffff,
+              colors: [0x80ffff, 0x00f5ff],
+              elements: ['CRYSTAL'],
+              composition: comp,
+              hitIds: [],
+              spin: 0,
+            });
+          }
+          events.push({ type: 'vfx_shatter', x: w.x, y: w.y, colorHex: 0x80ffff });
+        }
         this.walls.splice(i, 1);
       }
     }

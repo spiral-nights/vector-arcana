@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createGlowSprite } from './GlowUtil';
 import { ELEMENT_META, EnemyEntity, QueueElement, SimSnapshot } from '../sim/types';
 
 export class EntityRenderer {
@@ -6,6 +7,7 @@ export class EntityRenderer {
   private readonly playerGroup = new THREE.Group();
   private readonly shipChevrons: THREE.LineLoop[] = [];
   private readonly noseTipMesh: THREE.Mesh;
+  private readonly shipGlow: THREE.Sprite;
   private readonly muzzleSparkle: THREE.LineSegments;
   private readonly thrusterLine: THREE.Line;
   private readonly rearHaloLine: THREE.Line;
@@ -61,6 +63,9 @@ export class EntityRenderer {
       })
     );
     this.playerGroup.add(this.noseTipMesh);
+
+    this.shipGlow = createGlowSprite(0x00f5ff, 46, 0.28);
+    this.playerGroup.add(this.shipGlow);
 
     // Very small 4-point muzzle sparkle when actively shooting
     const sparklePts = [
@@ -301,6 +306,7 @@ export class EntityRenderer {
       (ch.material as THREE.LineBasicMaterial).color.setHex(activeColor);
     }
     (this.noseTipMesh.material as THREE.MeshBasicMaterial).color.setHex(activeColor);
+    this.shipGlow.material.color.setHex(activeColor);
     (this.rearHaloLine.material as THREE.LineBasicMaterial).color.setHex(activeColor);
     (this.thrusterLine.material as THREE.LineBasicMaterial).color.setHex(activeColor);
 
@@ -507,6 +513,7 @@ export class EntityRenderer {
         pts.push(new THREE.Vector3(Math.cos(a) * rad, Math.sin(a) * rad, 1.5));
       }
       group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: baseColor })));
+      group.add(createGlowSprite(baseColor, r * 2.5, 0.3));
     } else if (e.archetype === 'BASTION') {
       baseColor = 0xe6f0ff;
       const pts: THREE.Vector3[] = [];
@@ -520,7 +527,8 @@ export class EntityRenderer {
         const a = -e.shieldArc + (i / 14) * e.shieldArc * 2;
         arcPts.push(new THREE.Vector3(Math.cos(a) * (r + 8), Math.sin(a) * (r + 8), 2.5));
       }
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(arcPts), new THREE.LineBasicMaterial({ color: 0xe6f0ff })));
+      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(arcPts), new THREE.LineBasicMaterial({ color: 0x00f5ff })));
+      group.add(createGlowSprite(baseColor, r * 2.4, 0.28));
     } else if (e.archetype === 'STALKER') {
       baseColor = 0x00f5ff;
       const pts = [
@@ -531,6 +539,13 @@ export class EntityRenderer {
         new THREE.Vector3(r * 1.2, 0, 2),
       ];
       group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: baseColor })));
+      const outer: THREE.Vector3[] = [];
+      for (let i = 0; i <= 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        outer.push(new THREE.Vector3(Math.cos(a) * (r * 1.25), Math.sin(a) * (r * 1.25), 1.6));
+      }
+      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(outer), new THREE.LineBasicMaterial({ color: baseColor, transparent: true, opacity: 0.55 })));
+      group.add(createGlowSprite(baseColor, r * 2.4, 0.3));
     } else if (e.archetype === 'WEAVER') {
       baseColor = 0xb429ff;
       const pts: THREE.Vector3[] = [];
@@ -539,6 +554,14 @@ export class EntityRenderer {
         pts.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, 2));
       }
       group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: baseColor })));
+      const tri = [
+        new THREE.Vector3(r * 0.75, 0, 2.5),
+        new THREE.Vector3(-r * 0.45, r * 0.65, 2.5),
+        new THREE.Vector3(-r * 0.45, -r * 0.65, 2.5),
+        new THREE.Vector3(r * 0.75, 0, 2.5),
+      ];
+      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(tri), new THREE.LineBasicMaterial({ color: 0xff5e99 })));
+      group.add(createGlowSprite(baseColor, r * 2.6, 0.32));
       const tele = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 2), new THREE.Vector3(580, 0, 2)]),
         new THREE.LineBasicMaterial({ color: 0xb429ff, transparent: true, opacity: 0.45 })
@@ -548,17 +571,16 @@ export class EntityRenderer {
       group.userData.telegraph = tele;
     } else if (e.archetype === 'SPLITTER') {
       baseColor = 0xe8741a;
-      const outer = [
-        new THREE.Vector3(-r, -r, 2), new THREE.Vector3(r, -r, 2),
-        new THREE.Vector3(r, r, 2), new THREE.Vector3(-r, r, 2), new THREE.Vector3(-r, -r, 2),
-      ];
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(outer), new THREE.LineBasicMaterial({ color: baseColor })));
+      const box = new THREE.BoxGeometry(r * 1.4, r * 1.4, r * 1.4, 1, 1, 1);
+      group.add(new THREE.LineSegments(new THREE.WireframeGeometry(box), new THREE.LineBasicMaterial({ color: baseColor })));
+      box.dispose();
       const innerR = r * 0.52;
       const inner = [
         new THREE.Vector3(0, innerR, 3), new THREE.Vector3(innerR, 0, 3),
         new THREE.Vector3(0, -innerR, 3), new THREE.Vector3(-innerR, 0, 3), new THREE.Vector3(0, innerR, 3),
       ];
       group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(inner), new THREE.LineBasicMaterial({ color: 0xb429ff })));
+      group.add(createGlowSprite(baseColor, r * 2.5, 0.3));
     } else {
       baseColor = 0xff2e97;
       const corePts: THREE.Vector3[] = [];
@@ -575,6 +597,7 @@ export class EntityRenderer {
         }
         group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(platePts), new THREE.LineBasicMaterial({ color: 0xe6f0ff })));
       }
+      group.add(createGlowSprite(baseColor, r * 2.8, 0.38));
       const tele = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 2), new THREE.Vector3(620, 0, 2)]),
         new THREE.LineBasicMaterial({ color: 0xff2e97, transparent: true, opacity: 0.5 })
@@ -590,6 +613,10 @@ export class EntityRenderer {
 
   private disposeGroup(group: THREE.Group): void {
     for (const child of group.children) {
+      if (child instanceof THREE.Sprite) {
+        child.material.dispose();
+        continue;
+      }
       if (child instanceof THREE.Line || child instanceof THREE.LineLoop || child instanceof THREE.LineSegments) {
         child.geometry.dispose();
         if (child.material instanceof THREE.Material) child.material.dispose();

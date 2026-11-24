@@ -29,22 +29,22 @@ describe('CombatEngine — Mines Scaling & Multi-Color', () => {
     const sim2 = new GameSim();
     queueAndStep(sim2, ['BARRIER', 'VOID']);
     sim2.step(makeInput({ castAction: 'FORWARD' }));
-    expect(sim2.getSnapshot().mines.length).toBe(5);
+    expect(sim2.getSnapshot().mines.length).toBe(3);
 
     const sim3 = new GameSim();
     queueAndStep(sim3, ['BARRIER', 'VOID', 'THERMAL']);
     sim3.step(makeInput({ castAction: 'FORWARD' }));
-    expect(sim3.getSnapshot().mines.length).toBe(9);
+    expect(sim3.getSnapshot().mines.length).toBe(5);
 
     const nova2 = new GameSim();
     queueAndStep(nova2, ['BARRIER', 'VOID']);
     nova2.step(makeInput({ castAction: 'NOVA' }));
-    expect(nova2.getSnapshot().mines.length).toBe(6);
+    expect(nova2.getSnapshot().mines.length).toBe(4);
 
     const nova3 = new GameSim();
     queueAndStep(nova3, ['BARRIER', 'VOID', 'THERMAL']);
     nova3.step(makeInput({ castAction: 'NOVA' }));
-    expect(nova3.getSnapshot().mines.length).toBe(11);
+    expect(nova3.getSnapshot().mines.length).toBe(6);
   });
 
   it('stores all mixed element colors on deployed mines', () => {
@@ -159,10 +159,10 @@ describe('GameSim — Click-to-Move & Post-Nova Movement', () => {
       sim.step(makeInput({ moveClickTarget: null }));
     }
     const midX = sim.getSnapshot().player.x;
-    expect(midX).toBeGreaterThan(80);
+    expect(midX).toBeGreaterThan(50);
     expect(sim.getSnapshot().player.moveTarget).toEqual({ x: 200, y: 0 });
 
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 90; i++) {
       sim.step(makeInput({ moveClickTarget: null }));
     }
     expect(sim.getSnapshot().player.x).toBeGreaterThan(180);
@@ -179,7 +179,7 @@ describe('GameSim — Click-to-Move & Post-Nova Movement', () => {
     for (let i = 0; i < 20; i++) {
       sim.step(makeInput());
     }
-    expect(sim.getSnapshot().player.x).toBeGreaterThan(xAfterNova + 40);
+    expect(sim.getSnapshot().player.x).toBeGreaterThan(xAfterNova + 30);
   });
 });
 
@@ -447,6 +447,72 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
 
     expect(p.invulnTimer).toBeCloseTo(0.75);
     expect(e.vx).toBeGreaterThan(150);
+  });
+
+  it('walls block enemy projectiles, burning walls ignite, crystal walls shatter, and void walls pull', () => {
+    // 1. Wall blocks enemy FROST_NEEDLE
+    const simBlock = new GameSim();
+    simBlock.combat.enemies = [];
+    simBlock.waveDirector.rifts = [];
+    queueAndStep(simBlock, ['BARRIER', 'KINETIC']);
+    simBlock.step(makeInput({ castAction: 'FORWARD' }));
+    const wall = simBlock.getSnapshot().walls[2]!;
+    simBlock.combat.projectiles.push({
+      id: 999,
+      owner: 'ENEMY',
+      kind: 'FROST_NEEDLE',
+      x: wall.x,
+      y: wall.y,
+      vx: -100,
+      vy: 0,
+      radius: 7,
+      damage: 12,
+      pierce: 1,
+      life: 2,
+      maxLife: 2,
+      colorHex: 0x00f5ff,
+      colors: [0x00f5ff],
+      elements: ['CRYO'],
+      composition: { counts: { CRYO: 1 }, ratios: { CRYO: 1 }, totalPower: 1, colors: [0x00f5ff], weightedColors: [0x00f5ff], primaryColorHex: 0x00f5ff, secondaryColorHex: 0x00f5ff },
+      hitIds: [],
+      spin: 0,
+    });
+    simBlock.step(makeInput());
+    expect(simBlock.getSnapshot().projectiles.length).toBe(0);
+
+    // 2. Burning wall ignites nearby enemies
+    const simBurn = new GameSim();
+    simBurn.combat.enemies = [];
+    simBurn.waveDirector.rifts = [];
+    queueAndStep(simBurn, ['BARRIER', 'KINETIC', 'THERMAL']);
+    simBurn.step(makeInput({ castAction: 'FORWARD' }));
+    const bw = simBurn.getSnapshot().walls[2]!;
+    const e = simBurn.combat.spawnEnemy('BASTION', bw.x + 50, bw.y, 1);
+    e.hasFrontShield = false;
+    for (let i = 0; i < 30; i++) simBurn.step(makeInput());
+    expect(e.statuses.IGNITED).toBeDefined();
+
+    // 3. Crystal wall shatters into 4 SHATTER_SHARDs on expiry
+    const simCrys = new GameSim();
+    simCrys.combat.enemies = [];
+    simCrys.waveDirector.rifts = [];
+    queueAndStep(simCrys, ['BARRIER', 'FLUX', 'CRYO']);
+    simCrys.step(makeInput({ castAction: 'FORWARD' }));
+    const cw = simCrys.getSnapshot().walls[0]!;
+    cw.life = 0.01;
+    simCrys.step(makeInput());
+    expect(simCrys.getSnapshot().projectiles.filter((p) => p.kind === 'SHATTER_SHARD').length).toBeGreaterThanOrEqual(4);
+
+    // 4. Void wall pulls nearby enemies inward
+    const simVoid = new GameSim();
+    simVoid.combat.enemies = [];
+    simVoid.waveDirector.rifts = [];
+    queueAndStep(simVoid, ['BARRIER', 'KINETIC', 'VOID']);
+    simVoid.step(makeInput({ castAction: 'FORWARD' }));
+    const vw = simVoid.getSnapshot().walls[2]!;
+    const ve = simVoid.combat.spawnEnemy('BASTION', vw.x + 90, vw.y, 1);
+    for (let i = 0; i < 15; i++) simVoid.step(makeInput());
+    expect(ve.vx).toBeLessThan(0);
   });
 
   it('channeled FLUX + THERMAL (Plasma) beam spawns 0 puddles in empty space', () => {

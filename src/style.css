@@ -279,6 +279,28 @@ body {
   text-shadow: 0 1px 4px #000;
 }
 
+.minimap-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 14px;
+  background: rgba(6, 10, 20, 0.86);
+  border: 1px solid rgba(0, 229, 255, 0.38);
+  border-radius: 6px;
+  padding: 5px;
+  box-shadow: 0 0 20px rgba(0, 168, 255, 0.16);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.minimap-label {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  text-align: center;
+}
+
 /* Modals */
 .modal-backdrop {
   position: fixed;

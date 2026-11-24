@@ -1,5 +1,5 @@
 import { formatSpellPreview } from '../sim/SpellResolver';
-import { BASE_ELEMENTS, ControlPreset, ELEMENT_META, QueueElement, SimSnapshot } from '../sim/types';
+import { ARENA_HALF_H, ARENA_HALF_W, BASE_ELEMENTS, ControlPreset, ELEMENT_META, QueueElement, SimSnapshot } from '../sim/types';
 
 export interface HUDCallbacks {
   onToggleTilt: () => void;
@@ -64,6 +64,8 @@ export class HUD {
   private readonly bossWrap: HTMLElement;
   private readonly bossFill: HTMLElement;
   private readonly waveBanner: HTMLElement;
+  private readonly minimapCanvas: HTMLCanvasElement;
+  private readonly minimapCtx: CanvasRenderingContext2D | null;
   private bannerTimer: number | null = null;
   private readonly queueEl: HTMLElement;
   private readonly channelWrap: HTMLElement;
@@ -135,6 +137,11 @@ export class HUD {
         <div class="controls-hint" id="hud-hint"></div>
       </div>
 
+      <div class="minimap-panel">
+        <span class="minimap-label">SECTOR RADAR</span>
+        <canvas id="hud-minimap" width="196" height="134"></canvas>
+      </div>
+
       <div class="modal-backdrop" id="modal-start">
         <div class="modal-card">
           <div class="modal-title">Vector Arcana</div>
@@ -173,6 +180,8 @@ export class HUD {
     this.bossWrap = this.root.querySelector('#boss-wrap')!;
     this.bossFill = this.root.querySelector('#boss-fill')!;
     this.waveBanner = this.root.querySelector('#wave-banner')!;
+    this.minimapCanvas = this.root.querySelector('#hud-minimap')!;
+    this.minimapCtx = this.minimapCanvas.getContext('2d');
     this.queueEl = this.root.querySelector('#hud-queue')!;
     this.channelWrap = this.root.querySelector('#hud-channel-wrap')!;
     this.channelLabel = this.root.querySelector('#hud-channel-label')!;
@@ -258,6 +267,117 @@ export class HUD {
     }
   }
 
+  private drawMinimap(snapshot: SimSnapshot): void {
+    const ctx = this.minimapCtx;
+    if (!ctx) return;
+    const w = this.minimapCanvas.width;
+    const h = this.minimapCanvas.height;
+    const toX = (wx: number): number => ((wx + ARENA_HALF_W) / (ARENA_HALF_W * 2)) * w;
+    const toY = (wy: number): number => ((ARENA_HALF_H - wy) / (ARENA_HALF_H * 2)) * h;
+    const scale = w / (ARENA_HALF_W * 2);
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(5, 8, 18, 0.92)';
+    ctx.fillRect(0, 0, w, h);
+
+    // Subtle grid
+    ctx.strokeStyle = 'rgba(26, 107, 255, 0.16)';
+    ctx.lineWidth = 1;
+    for (let gx = 1; gx < 6; gx++) {
+      const px = (gx / 6) * w;
+      ctx.beginPath();
+      ctx.moveTo(px, 0);
+      ctx.lineTo(px, h);
+      ctx.stroke();
+    }
+    for (let gy = 1; gy < 4; gy++) {
+      const py = (gy / 4) * h;
+      ctx.beginPath();
+      ctx.moveTo(0, py);
+      ctx.lineTo(w, py);
+      ctx.stroke();
+    }
+
+    // Cover pillars
+    ctx.fillStyle = 'rgba(26, 107, 255, 0.55)';
+    for (const pil of snapshot.pillars) {
+      ctx.beginPath();
+      ctx.arc(toX(pil.x), toY(pil.y), Math.max(2.5, pil.radius * scale), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Pools
+    for (const pool of snapshot.pools) {
+      ctx.fillStyle = pool.kind === 'PLASMA' ? 'rgba(255, 94, 153, 0.28)' : 'rgba(26, 107, 255, 0.28)';
+      ctx.beginPath();
+      ctx.arc(toX(pool.x), toY(pool.y), Math.max(2, pool.radius * scale), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Walls & Mines
+    ctx.fillStyle = '#e6f0ff';
+    for (const wall of snapshot.walls) {
+      ctx.fillRect(toX(wall.x) - 1.5, toY(wall.y) - 1.5, 3, 3);
+    }
+    ctx.fillStyle = '#fff733';
+    for (const mine of snapshot.mines) {
+      ctx.fillRect(toX(mine.x) - 1, toY(mine.y) - 1, 2, 2);
+    }
+
+    // Spawn Rifts
+    ctx.strokeStyle = '#b429ff';
+    ctx.lineWidth = 1.5;
+    for (const rift of snapshot.rifts) {
+      ctx.beginPath();
+      ctx.arc(toX(rift.x), toY(rift.y), Math.max(4, rift.radius * scale), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Enemies
+    for (const e of snapshot.enemies) {
+      ctx.fillStyle =
+        e.archetype === 'WARDEN' ? '#ff2e97' :
+        e.archetype === 'BASTION' ? '#e6f0ff' :
+        e.archetype === 'STALKER' ? '#00f5ff' :
+        e.archetype === 'WEAVER' ? '#b429ff' :
+        e.archetype === 'SPLITTER' ? '#e8741a' : '#ff2e97';
+      const r = e.archetype === 'WARDEN' ? 5 : 2.3;
+      ctx.beginPath();
+      ctx.arc(toX(e.x), toY(e.y), r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // East Gate
+    const gx = toX(snapshot.gate.x);
+    const gy = toY(snapshot.gate.y);
+    ctx.fillStyle = snapshot.gate.open ? '#39ff14' : '#4a5568';
+    ctx.fillRect(gx - 3, gy - 8, 5, 16);
+
+    // Waypoint
+    const p = snapshot.player;
+    if (p.moveTarget) {
+      ctx.strokeStyle = '#00f5ff';
+      ctx.beginPath();
+      ctx.arc(toX(p.moveTarget.x), toY(p.moveTarget.y), 3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Player chevron
+    const px = toX(p.x);
+    const py = toY(p.y);
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(-p.aimAngle);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(5, 0);
+    ctx.lineTo(-3, 3);
+    ctx.lineTo(-3, -3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
   public update(
     snapshot: SimSnapshot,
     highScores: Array<{ score: number; wave: number }>,
@@ -323,6 +443,8 @@ export class HUD {
       slot.style.boxShadow = isQueued ? `0 0 16px ${meta.color}88` : 'none';
       slot.style.borderColor = isQueued ? meta.color : `${meta.color}55`;
     }
+
+    this.drawMinimap(snapshot);
 
     this.startModal.classList.toggle('open', snapshot.phase === 'TITLE');
     this.augmentModal.classList.toggle('open', snapshot.phase === 'AUGMENT_CHOICE');

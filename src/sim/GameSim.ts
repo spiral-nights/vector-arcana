@@ -103,9 +103,9 @@ export class GameSim {
       this.combat.stopChannel(p);
       this.combat.cancelCharge(p);
       p.moveTarget = null;
-      p.dashTimer = 0.16;
+      p.dashTimer = 0.19;
       p.dashCooldown = 0.75;
-      p.invulnTimer = 0.22;
+      p.invulnTimer = 0.24;
       p.dashDirX = Math.cos(p.aimAngle);
       p.dashDirY = Math.sin(p.aimAngle);
       this.events.push({ type: 'grid_impulse', x: p.x, y: p.y, strength: 180, radius: 130 });
@@ -168,7 +168,7 @@ export class GameSim {
 
     if (p.dashTimer > 0) {
       p.dashTimer = Math.max(0, p.dashTimer - FIXED_DT);
-      const dashSpeed = 180 / 0.16;
+      const dashSpeed = 180 / 0.19;
       p.vx = p.dashDirX * dashSpeed;
       p.vy = p.dashDirY * dashSpeed;
       p.moving = true;
@@ -203,8 +203,8 @@ export class GameSim {
         }
       }
 
-      const maxSpeed = p.channel ? 245 * 0.68 : p.charge ? 245 * 0.65 : 245;
-      const accel = 18;
+      const maxSpeed = p.channel ? 165 * 0.68 : p.charge ? 165 * 0.65 : 165;
+      const accel = 13;
       p.vx += (mx * maxSpeed - p.vx) * Math.min(1, accel * FIXED_DT);
       p.vy += (my * maxSpeed - p.vy) * Math.min(1, accel * FIXED_DT);
       p.moving = Math.hypot(mx, my) > 0.05;

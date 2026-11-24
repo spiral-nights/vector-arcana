@@ -235,6 +235,7 @@ export interface WallPylonEntity {
   maxHp: number;
   life: number;
   maxLife: number;
+  pulseTimer: number;
   colorHex: number;
   colors: number[];
   elements: QueueElement[];
