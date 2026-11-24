@@ -51,7 +51,7 @@ export interface EnqueueResult {
 export function enqueueElement(
   current: readonly QueueElement[],
   next: BaseElement,
-  overflow: OverflowMode = 'FIFO'
+  overflow: OverflowMode = 'IGNORE'
 ): EnqueueResult {
   const queue = [...current];
 

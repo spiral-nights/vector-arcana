@@ -954,17 +954,6 @@ export class CombatEngine {
               const wy = beam.y + Math.sin(beam.angle) * 240;
               events.push({ type: 'grid_well', x: wx, y: wy, strength: 130 * voidCount, radius: 170 });
             }
-            if (ch.composition.colors.length > 1) {
-              const dist = 160 + Math.random() * 280;
-              events.push({
-                type: 'vfx_burst',
-                x: beam.x + Math.cos(beam.angle) * dist,
-                y: beam.y + Math.sin(beam.angle) * dist,
-                colorHex: ch.composition.secondaryColorHex,
-                count: 6,
-                radius: 30,
-              });
-            }
             const beamPuddle = ch.elements.includes('PLASMA')
               ? 'PLASMA'
               : ch.elements.includes('FLUX')

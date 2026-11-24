@@ -67,7 +67,7 @@ When a base element is pressed, check the current queue (max 3 slots):
    - `KINETIC` ↔ `VOLT`
    - `VOID` ↔ `NANO`
 2. **Self-Limit:** Maximum **1** `BARRIER` allowed in the queue.
-3. **Overflow:** Configurable (`FIFO` default — drops oldest element when 4th non-cancelling element is queued; or `IGNORE`).
+3. **Strict 3-Slot Cap:** Once 3 non-cancelling, non-fusing elements are queued, additional elements are ignored (`IGNORE` default; `FIFO` configurable).
 
 ### 3.3 Sub-Element Fusion (Automatic in Queue)
 When compatible base elements coexist, they fuse in-place into a 1-slot compound sub-element. Fused sub-elements **do not** cancel against base elements (e.g., `PLASMA + VOLT` is valid):

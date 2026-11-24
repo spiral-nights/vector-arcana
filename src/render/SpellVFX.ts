@@ -94,10 +94,10 @@ export class SpellVFX {
     this.particleGeometry.setAttribute('position', new THREE.BufferAttribute(this.particlePositions, 3));
     this.particleGeometry.setAttribute('color', new THREE.BufferAttribute(this.particleColors, 3));
     const mat = new THREE.PointsMaterial({
-      size: 7,
+      size: 6,
       vertexColors: true,
       transparent: true,
-      opacity: 0.95,
+      opacity: 0.85,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -127,6 +127,39 @@ export class SpellVFX {
         y: y - Math.sin(angle) * 16,
         vx: Math.cos(backA) * spd,
         vy: Math.sin(backA) * spd,
+        life: maxLife,
+        maxLife,
+        color,
+      });
+    }
+  }
+
+  public spawnBeamFlowParticle(
+    bx: number,
+    by: number,
+    cos: number,
+    sin: number,
+    nx: number,
+    ny: number,
+    len: number,
+    width: number,
+    weightedColors: number[]
+  ): void {
+    const palette = weightedColors.length > 0 ? weightedColors : [0xb429ff];
+    for (let k = 0; k < 2; k++) {
+      if (this.particles.length >= this.maxParticles) this.particles.shift();
+      const dist = Math.random() * len;
+      const lat = (Math.random() - 0.5) * width * 0.9;
+      const cHex = palette[Math.floor(Math.random() * palette.length)]!;
+      const color = new THREE.Color(cHex).multiplyScalar(0.78);
+      const spd = 420 + Math.random() * 260;
+      const flutter = (Math.random() - 0.5) * 45;
+      const maxLife = 0.22 + Math.random() * 0.18;
+      this.particles.push({
+        x: bx + cos * dist + nx * lat,
+        y: by + sin * dist + ny * lat,
+        vx: cos * spd + nx * flutter,
+        vy: sin * spd + ny * flutter,
         life: maxLife,
         maxLife,
         color,
@@ -564,11 +597,11 @@ export class SpellVFX {
 
       if (!group) {
         group = new THREE.Group();
-        // 0: Crisp primary-colored inner core (no harsh white lens-flare blowout)
+        // 0: Crisp primary-colored inner core (no white blowout)
         group.add(
           new THREE.Line(
             new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
-            new THREE.LineBasicMaterial({ color: b.colorHex, transparent: true, opacity: 0.92 })
+            new THREE.LineBasicMaterial({ color: b.colorHex, transparent: true, opacity: 0.88 })
           )
         );
         // 1..3: 3 Helical braided ribbons
@@ -579,7 +612,7 @@ export class SpellVFX {
           group.add(
             new THREE.Line(
               new THREE.BufferGeometry().setFromPoints(pts),
-              new THREE.LineBasicMaterial({ color: cHex, transparent: true, opacity: 0.78 })
+              new THREE.LineBasicMaterial({ color: cHex, transparent: true, opacity: 0.72 })
             )
           );
         }
@@ -606,9 +639,11 @@ export class SpellVFX {
         pos.needsUpdate = true;
       }
 
+      // Stream fine particles & tiny directional shards along the entire beam length
+      this.spawnBeamFlowParticle(b.x, b.y, cos, sin, nx, ny, len, b.width, b.composition.weightedColors);
       if (Math.random() < 0.35) {
-        const d = 40 + Math.random() * Math.min(len, 450);
-        this.spawnShards(b.x + cos * d, b.y + sin * d, b.colors, 1, 0.55);
+        const d = Math.random() * len;
+        this.spawnShards(b.x + cos * d, b.y + sin * d, b.colors, 1, 0.65);
       }
     }
     this.pruneMap(this.beamMeshes, alive);

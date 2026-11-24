@@ -43,7 +43,7 @@ export class SceneManager {
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
 
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.9, 0.42, 0.16);
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.62, 0.34, 0.28);
     this.composer.addPass(this.bloomPass);
     this.composer.addPass(new OutputPass());
 

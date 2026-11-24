@@ -6,6 +6,7 @@ export class EntityRenderer {
   private readonly playerGroup = new THREE.Group();
   private readonly shipChevrons: THREE.LineLoop[] = [];
   private readonly noseTipMesh: THREE.Mesh;
+  private readonly muzzleSparkle: THREE.LineSegments;
   private readonly thrusterLine: THREE.Line;
   private readonly rearHaloLine: THREE.Line;
   private readonly hullArcLine: THREE.Line;
@@ -51,14 +52,29 @@ export class EntityRenderer {
     this.noseTipMesh = new THREE.Mesh(
       tipGeo,
       new THREE.MeshBasicMaterial({
-        color: 0xffffff,
+        color: 0x00f5ff,
         transparent: true,
-        opacity: 0.92,
+        opacity: 0.55,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
       })
     );
     this.playerGroup.add(this.noseTipMesh);
+
+    // Very small 4-point muzzle sparkle when actively shooting
+    const sparklePts = [
+      new THREE.Vector3(-9, 0, 3.5), new THREE.Vector3(9, 0, 3.5),
+      new THREE.Vector3(0, -9, 3.5), new THREE.Vector3(0, 9, 3.5),
+      new THREE.Vector3(-3.5, -3.5, 3.5), new THREE.Vector3(3.5, 3.5, 3.5),
+      new THREE.Vector3(-3.5, 3.5, 3.5), new THREE.Vector3(3.5, -3.5, 3.5),
+    ];
+    this.muzzleSparkle = new THREE.LineSegments(
+      new THREE.BufferGeometry().setFromPoints(sparklePts),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 })
+    );
+    this.muzzleSparkle.position.set(25, 0, 0);
+    this.muzzleSparkle.visible = false;
+    this.playerGroup.add(this.muzzleSparkle);
 
     // Thruster wake
     const thrustPts = [
@@ -269,8 +285,21 @@ export class EntityRenderer {
     for (const ch of this.shipChevrons) {
       (ch.material as THREE.LineBasicMaterial).color.setHex(activeColor);
     }
+    (this.noseTipMesh.material as THREE.MeshBasicMaterial).color.setHex(activeColor);
     (this.rearHaloLine.material as THREE.LineBasicMaterial).color.setHex(activeColor);
     (this.thrusterLine.material as THREE.LineBasicMaterial).color.setHex(activeColor);
+
+    const isShooting =
+      (p.channel !== null && p.channel.delivery !== 'SELF_HEAL') ||
+      snapshot.beams.some((b) => b.owner === 'PLAYER') ||
+      snapshot.slashes.length > 0;
+    this.muzzleSparkle.visible = isShooting;
+    if (isShooting) {
+      this.muzzleSparkle.rotation.z = timeSec * 14;
+      const pulse = 0.75 + Math.sin(timeSec * 45) * 0.25;
+      this.muzzleSparkle.scale.set(pulse, pulse, 1);
+      (this.muzzleSparkle.material as THREE.LineBasicMaterial).color.setHex(activeColor);
+    }
 
     this.reticleGroup.position.set(aimWorld.x, aimWorld.y, 0);
     this.reticleGroup.rotation.z = timeSec * 1.5;

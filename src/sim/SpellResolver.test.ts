@@ -38,14 +38,17 @@ describe('SpellResolver — Cancellations', () => {
     expect(r.queue).toEqual(['BARRIER', 'THERMAL']);
   });
 
-  it('supports FIFO overflow by default and IGNORE overflow optionally', () => {
+  it('ignores a 4th non-cancelling element by default (strict 3-slot cap), and supports FIFO optionally', () => {
+    const q = buildQueue(['VOID', 'THERMAL', 'THERMAL', 'THERMAL']);
+    expect(q).toEqual(['VOID', 'THERMAL', 'THERMAL']);
+
+    const ignored = enqueueElement(['VOID', 'THERMAL', 'THERMAL'], 'THERMAL');
+    expect(ignored.action).toBe('overflow_ignored');
+    expect(ignored.queue).toEqual(['VOID', 'THERMAL', 'THERMAL']);
+
     const fifo = enqueueElement(['THERMAL', 'THERMAL', 'KINETIC'], 'VOID', 'FIFO');
     expect(fifo.action).toBe('overflow_fifo');
     expect(fifo.queue).toEqual(['THERMAL', 'KINETIC', 'VOID']);
-
-    const ignored = enqueueElement(['THERMAL', 'THERMAL', 'KINETIC'], 'VOID', 'IGNORE');
-    expect(ignored.action).toBe('overflow_ignored');
-    expect(ignored.queue).toEqual(['THERMAL', 'THERMAL', 'KINETIC']);
   });
 });
 

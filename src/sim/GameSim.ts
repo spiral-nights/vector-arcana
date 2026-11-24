@@ -81,7 +81,7 @@ export class GameSim {
 
     // Process element queue inputs
     for (const el of input.queuedElements) {
-      const res = enqueueElement(p.queue, el, 'FIFO');
+      const res = enqueueElement(p.queue, el, 'IGNORE');
       p.queue = res.queue;
       if (res.action === 'cancelled') {
         this.events.push({ type: 'sfx', sound: 'cancel' });
