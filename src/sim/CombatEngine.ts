@@ -49,28 +49,156 @@ export class CombatEngine {
     this.slashes = [];
   }
 
+  public startSelfHealChannel(player: PlayerState, selfCast: ResolvedSelfCast, events: SimEvent[]): void {
+    const nanoStacks = selfCast.composition.counts.NANO ?? 1;
+    const maxDuration = 2.2 + nanoStacks * 0.5;
+    player.channel = {
+      delivery: 'SELF_HEAL',
+      elements: selfCast.elements,
+      composition: selfCast.composition,
+      remaining: maxDuration,
+      maxDuration,
+      tickTimer: 0,
+      beamId: null,
+    };
+    player.hp = Math.min(player.maxHp, player.hp + selfCast.healPerSec * 0.25);
+    events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: selfCast.colorHex, count: 16, radius: 45 });
+    events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 64, colorHex: selfCast.colorHex });
+    events.push({ type: 'sfx', sound: 'heal' });
+  }
+
   public castSelf(player: PlayerState, selfCast: ResolvedSelfCast, events: SimEvent[]): void {
-    if (selfCast.effect === 'HEAL') {
-      player.hp = Math.min(player.maxHp, player.hp + selfCast.healPower);
-      events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: selfCast.colorHex, count: 24, radius: 55 });
-      events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 70, colorHex: selfCast.colorHex });
-      events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 130, radius: 110 });
-      events.push({ type: 'sfx', sound: 'heal' });
-    } else if (selfCast.effect === 'CLEANSE') {
-      player.ignitedTimer = 0;
-      player.toxinTimer = 0;
-      events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: selfCast.colorHex, count: 24, radius: 55 });
-      events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 70, colorHex: selfCast.colorHex });
-      events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 130, radius: 110 });
-      events.push({ type: 'sfx', sound: 'cleanse' });
-    } else if (selfCast.effect === 'WARD') {
-      player.wardRemaining = 6;
-      player.wardMaxDuration = 6;
-      player.wardElement = selfCast.wardElement;
-      events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: selfCast.colorHex, count: 28, radius: 60 });
-      events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 85, colorHex: selfCast.colorHex });
-      events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 160, radius: 120 });
-      events.push({ type: 'sfx', sound: 'ward' });
+    const comp = selfCast.composition;
+    const counts = comp.counts;
+
+    switch (selfCast.effect) {
+      case 'SHIELD_WARD': {
+        player.wardRemaining = 6;
+        player.wardMaxDuration = 6;
+        player.wardElement = selfCast.wardElement;
+        if (!selfCast.wardElement) {
+          // Pure BARRIER self-cast: 360° Geodesic Personal Shield Dome
+          this.shields.push({
+            id: this.nextId++,
+            x: player.x,
+            y: player.y,
+            angle: player.aimAngle,
+            arc: Math.PI,
+            radius: 56,
+            hp: 180,
+            maxHp: 180,
+            life: 6,
+            maxLife: 6,
+            isNova: true,
+            colorHex: selfCast.colorHex,
+            colors: comp.colors,
+          });
+        }
+        events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: selfCast.colorHex, count: 24, radius: 60 });
+        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 85, colorHex: selfCast.colorHex });
+        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 160, radius: 120 });
+        events.push({ type: 'sfx', sound: 'ward' });
+        break;
+      }
+
+      case 'KINETIC_ARMOR': {
+        player.armorHp = Math.min(player.maxArmorHp, player.armorHp + selfCast.armorAmount);
+        const radius = 120 + comp.totalPower * 25;
+        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius, colorHex: selfCast.colorHex });
+        events.push({ type: 'vfx_shards', x: player.x, y: player.y, colors: comp.colors, count: 14, speedScale: 0.9 });
+        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 200, radius: radius + 20 });
+        events.push({ type: 'screen_shake', intensity: 4 });
+        if (selfCast.elements.includes('FLUX') || selfCast.elements.includes('PLASMA')) {
+          const kind = selfCast.elements.includes('PLASMA') ? 'PLASMA' : 'FLUX';
+          this.pools.push({
+            id: this.nextId++,
+            kind,
+            x: player.x,
+            y: player.y,
+            radius: 78,
+            life: 5,
+            maxLife: 5,
+            colorHex: ELEMENT_META[kind].colorHex,
+            tickTimer: 0.25,
+          });
+        }
+        events.push({ type: 'sfx', sound: 'rock' });
+        break;
+      }
+
+      case 'SELF_HEAL': {
+        this.startSelfHealChannel(player, selfCast, events);
+        break;
+      }
+
+      case 'VOID_BURST': {
+        const radius = 130 + comp.totalPower * 35;
+        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius, colorHex: selfCast.colorHex });
+        events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: selfCast.colorHex, count: 28, radius: radius * 0.7 });
+        events.push({ type: 'vfx_shards', x: player.x, y: player.y, colors: comp.colors, count: 18, speedScale: 1.1 });
+        events.push({ type: 'grid_well', x: player.x, y: player.y, strength: 240 + comp.totalPower * 40, radius: radius + 40 });
+        events.push({ type: 'screen_shake', intensity: 4.5 });
+        events.push({ type: 'sfx', sound: 'beam' });
+        break;
+      }
+
+      case 'VOLT_NOVA': {
+        const voltStacks = counts.VOLT ?? 1;
+        const arcs = 4 + voltStacks * 3;
+        const range = 210 + voltStacks * 65;
+        for (let i = 0; i < arcs; i++) {
+          const a = (i / arcs) * Math.PI * 2 + (Math.random() - 0.5) * 0.2;
+          const tx = player.x + Math.cos(a) * range;
+          const ty = player.y + Math.sin(a) * range;
+          events.push({ type: 'vfx_lightning', points: [{ x: player.x, y: player.y }, { x: tx, y: ty }], colors: comp.colors });
+          events.push({ type: 'vfx_burst', x: tx, y: ty, colorHex: selfCast.colorHex, count: 8, radius: 30 });
+        }
+        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: range * 0.7, colorHex: selfCast.colorHex });
+        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 160 + voltStacks * 35, radius: range * 0.8 });
+        events.push({ type: 'sfx', sound: 'lightning' });
+        break;
+      }
+
+      case 'ELEMENT_AOE': {
+        if (selfCast.elements.includes('FLUX') || selfCast.elements.includes('PLASMA') || selfCast.elements.includes('CRYO') || selfCast.elements.includes('CRYSTAL')) {
+          player.ignitedTimer = 0;
+        }
+        const radius = 135 + comp.totalPower * 45;
+        events.push({
+          type: 'vfx_spray',
+          x: player.x,
+          y: player.y,
+          angle: player.aimAngle,
+          spread: Math.PI * 2,
+          range: radius,
+          colors: comp.weightedColors,
+          isNova: true,
+        });
+        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius, colorHex: selfCast.colorHex });
+        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 150 + comp.totalPower * 35, radius: radius + 20 });
+
+        const puddleKind = selfCast.elements.includes('PLASMA')
+          ? 'PLASMA'
+          : selfCast.elements.includes('FLUX')
+          ? 'FLUX'
+          : null;
+        if (puddleKind) {
+          const stack = counts[puddleKind] ?? 1;
+          this.pools.push({
+            id: this.nextId++,
+            kind: puddleKind,
+            x: player.x,
+            y: player.y,
+            radius: 75 + stack * 25,
+            life: 5,
+            maxLife: 5,
+            colorHex: ELEMENT_META[puddleKind].colorHex,
+            tickTimer: 0.25,
+          });
+        }
+        events.push({ type: 'sfx', sound: selfCast.elements.includes('FLUX') ? 'cleanse' : 'spray' });
+        break;
+      }
     }
   }
 
@@ -157,7 +285,7 @@ export class CombatEngine {
 
     if (delivery === 'BEAM') {
       const counts = spell.composition.counts;
-      const beamPower = (counts.VOID ?? 0) + (counts.NANO ?? 0) + (counts.TOXIN ?? 0);
+      const beamPower = (counts.VOID ?? 0) + (counts.NANO ?? 0);
       const length = 880 + beamPower * 90;
       const width = 18 + spell.composition.totalPower * 5;
       const b: BeamEntity = {
@@ -237,9 +365,7 @@ export class CombatEngine {
         radius: 110,
       });
 
-      const puddleKind = ch.elements.includes('TOXIN')
-        ? 'TOXIN'
-        : ch.elements.includes('PLASMA')
+      const puddleKind = ch.elements.includes('PLASMA')
         ? 'PLASMA'
         : ch.elements.includes('FLUX')
         ? 'FLUX'
@@ -587,9 +713,7 @@ export class CombatEngine {
           events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: ringR, colorHex: ringColor, duration: 0.32 + rIdx * 0.08 });
         }
 
-        const puddleKind = spell.elements.includes('TOXIN')
-          ? 'TOXIN'
-          : spell.elements.includes('PLASMA')
+        const puddleKind = spell.elements.includes('PLASMA')
           ? 'PLASMA'
           : spell.elements.includes('FLUX')
           ? 'FLUX'
@@ -730,9 +854,7 @@ export class CombatEngine {
     events.push({ type: 'vfx_ring', x: p.x, y: p.y, radius: blastRadius, colorHex: p.colorHex });
     events.push({ type: 'screen_shake', intensity: 5 + kineticCount * 2 });
 
-    const puddleEl = p.elements.includes('TOXIN')
-      ? 'TOXIN'
-      : p.elements.includes('PLASMA')
+    const puddleEl = p.elements.includes('PLASMA')
       ? 'PLASMA'
       : p.elements.includes('FLUX')
       ? 'FLUX'
@@ -786,7 +908,7 @@ export class CombatEngine {
     }
   }
 
-  public step(dt: number, player: PlayerState, castHeld: boolean, events: SimEvent[]): void {
+  public step(dt: number, player: PlayerState, castHeld: boolean, selfHeld: boolean, events: SimEvent[]): void {
     // Update active charge
     if (player.charge) {
       if (castHeld) {
@@ -801,7 +923,20 @@ export class CombatEngine {
     if (player.channel) {
       const ch = player.channel;
       ch.remaining -= dt;
-      if (!castHeld || ch.remaining <= 0) {
+      if (ch.delivery === 'SELF_HEAL') {
+        if (!selfHeld || ch.remaining <= 0) {
+          this.stopChannel(player);
+        } else {
+          const nanoStacks = ch.composition.counts.NANO ?? 1;
+          player.hp = Math.min(player.maxHp, player.hp + nanoStacks * 24 * dt);
+          ch.tickTimer -= dt;
+          if (ch.tickTimer <= 0) {
+            ch.tickTimer = 0.18;
+            events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 56, colorHex: ELEMENT_META.NANO.colorHex });
+            events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: ELEMENT_META.NANO.colorHex, count: 8, radius: 35 });
+          }
+        }
+      } else if (!castHeld || ch.remaining <= 0) {
         this.stopChannel(player);
       } else if (ch.delivery === 'BEAM') {
         const beam = this.beams.find((b) => b.id === ch.beamId);
@@ -830,9 +965,7 @@ export class CombatEngine {
                 radius: 30,
               });
             }
-            const beamPuddle = ch.elements.includes('TOXIN')
-              ? 'TOXIN'
-              : ch.elements.includes('PLASMA')
+            const beamPuddle = ch.elements.includes('PLASMA')
               ? 'PLASMA'
               : ch.elements.includes('FLUX')
               ? 'FLUX'

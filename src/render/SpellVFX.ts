@@ -564,11 +564,11 @@ export class SpellVFX {
 
       if (!group) {
         group = new THREE.Group();
-        // 0: White-hot core
+        // 0: Crisp primary-colored inner core (no harsh white lens-flare blowout)
         group.add(
           new THREE.Line(
             new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
-            new THREE.LineBasicMaterial({ color: 0xffffff })
+            new THREE.LineBasicMaterial({ color: b.colorHex, transparent: true, opacity: 0.92 })
           )
         );
         // 1..3: 3 Helical braided ribbons
@@ -579,7 +579,7 @@ export class SpellVFX {
           group.add(
             new THREE.Line(
               new THREE.BufferGeometry().setFromPoints(pts),
-              new THREE.LineBasicMaterial({ color: cHex, transparent: true, opacity: 0.92 })
+              new THREE.LineBasicMaterial({ color: cHex, transparent: true, opacity: 0.78 })
             )
           );
         }

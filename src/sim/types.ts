@@ -13,7 +13,7 @@ export type BaseElement =
   | 'KINETIC'
   | 'THERMAL';
 
-export type SubElement = 'CRYSTAL' | 'PLASMA' | 'TOXIN';
+export type SubElement = 'CRYSTAL' | 'PLASMA';
 
 export type QueueElement = BaseElement | SubElement;
 
@@ -48,7 +48,6 @@ export const ELEMENT_META: Record<QueueElement, ElementMeta> = {
   THERMAL: { id: 'THERMAL', name: 'Thermal', color: '#FF1E2D', colorHex: 0xff1e2d, hotkey: 'F', isSub: false },
   CRYSTAL: { id: 'CRYSTAL', name: 'Crystal', color: '#80FFFF', colorHex: 0x80ffff, hotkey: '', isSub: true },
   PLASMA: { id: 'PLASMA', name: 'Plasma', color: '#FF5E99', colorHex: 0xff5e99, hotkey: '', isSub: true },
-  TOXIN: { id: 'TOXIN', name: 'Toxin', color: '#C6FF00', colorHex: 0xc6ff00, hotkey: '', isSub: true },
 };
 
 export interface ElementComposition {
@@ -62,7 +61,7 @@ export interface ElementComposition {
 }
 
 export interface ChannelState {
-  delivery: 'SPRAY' | 'BEAM' | 'LIGHTNING_BOLT';
+  delivery: 'SPRAY' | 'BEAM' | 'LIGHTNING_BOLT' | 'SELF_HEAL';
   elements: QueueElement[];
   composition: ElementComposition;
   remaining: number;
@@ -138,6 +137,8 @@ export interface PlayerState {
   aimAngle: number;
   hp: number;
   maxHp: number;
+  armorHp: number;
+  maxArmorHp: number;
   wardRemaining: number;
   wardMaxDuration: number;
   wardElement: QueueElement | null;
@@ -151,7 +152,6 @@ export interface PlayerState {
   overclockTimer: number;
   overclockMax: number;
   ignitedTimer: number;
-  toxinTimer: number;
   moving: boolean;
   moveTarget: { x: number; y: number } | null;
   channel: ChannelState | null;
@@ -289,7 +289,7 @@ export interface ShieldBarrierEntity {
 
 export interface PoolEntity {
   id: number;
-  kind: 'FLUX' | 'PLASMA' | 'TOXIN';
+  kind: 'FLUX' | 'PLASMA';
   x: number;
   y: number;
   radius: number;
@@ -322,6 +322,7 @@ export interface SimInput {
   queuedElements: BaseElement[];
   castAction: CastMode | null;
   castHeld: boolean;
+  selfHeld: boolean;
   dashPressed: boolean;
 }
 

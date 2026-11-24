@@ -62,9 +62,13 @@ describe('SpellResolver — Sub-Element Fusion', () => {
     expect(spell?.delivery).toBe('LIGHTNING_BOLT');
   });
 
-  it('fuses FLUX + VOID -> TOXIN and frees slot for 2 more elements', () => {
-    const q = buildQueue(['FLUX', 'VOID', 'KINETIC', 'THERMAL']);
-    expect(q).toEqual(['TOXIN', 'KINETIC', 'THERMAL']);
+  it('keeps FLUX + VOID as water + void BEAM without poison fusion', () => {
+    const q = buildQueue(['FLUX', 'VOID']);
+    expect(q).toEqual(['FLUX', 'VOID']);
+    const spell = resolveSpell(q, 'FORWARD');
+    expect(spell?.delivery).toBe('BEAM');
+    expect(spell?.composition.colors).toContain(ELEMENT_META.FLUX.colorHex);
+    expect(spell?.composition.colors).toContain(ELEMENT_META.VOID.colorHex);
   });
 });
 
@@ -78,10 +82,9 @@ describe('SpellResolver — 10-Spell Priority Table', () => {
     expect(resolveSpell(['BARRIER', 'CRYSTAL'], 'FORWARD')?.delivery).toBe('WALL');
   });
 
-  it('3. Mines when BARRIER + (VOID | NANO | TOXIN)', () => {
+  it('3. Mines when BARRIER + (VOID | NANO)', () => {
     expect(resolveSpell(['BARRIER', 'VOID'], 'FORWARD')?.delivery).toBe('MINES');
     expect(resolveSpell(['BARRIER', 'NANO'], 'FORWARD')?.delivery).toBe('MINES');
-    expect(resolveSpell(['BARRIER', 'TOXIN'], 'FORWARD')?.delivery).toBe('MINES');
   });
 
   it('4. Storm when BARRIER + (THERMAL | CRYO | VOLT | FLUX | PLASMA), never containing KINETIC', () => {
@@ -109,13 +112,11 @@ describe('SpellResolver — 10-Spell Priority Table', () => {
     expect(resolveSpell(['CRYSTAL', 'VOID', 'THERMAL'], 'FORWARD')?.delivery).toBe('CRYSTAL_SHARDS');
   });
 
-  it('7. Beam when (VOID | NANO | TOXIN) without higher priority, regardless of lower-priority stacks', () => {
+  it('7. Beam when (VOID | NANO) without higher priority, regardless of lower-priority stacks', () => {
     expect(resolveSpell(['VOID', 'THERMAL'], 'FORWARD')?.delivery).toBe('BEAM');
     expect(resolveSpell(['VOID', 'THERMAL', 'THERMAL'], 'FORWARD')?.delivery).toBe('BEAM');
     expect(resolveSpell(['NANO', 'PLASMA'], 'FORWARD')?.delivery).toBe('BEAM');
-    expect(resolveSpell(['VOID', 'TOXIN', 'THERMAL'], 'FORWARD')?.delivery).toBe('BEAM');
-    expect(resolveSpell(['NANO', 'TOXIN', 'THERMAL'], 'FORWARD')?.delivery).toBe('BEAM');
-    expect(resolveSpell(['TOXIN', 'THERMAL', 'THERMAL'], 'FORWARD')?.delivery).toBe('BEAM');
+    expect(resolveSpell(['FLUX', 'VOID', 'THERMAL'], 'FORWARD')?.delivery).toBe('BEAM');
   });
 
   it('8. Lightning Bolt when VOLT without higher priority', () => {
@@ -143,13 +144,18 @@ describe('SpellResolver — 10-Spell Priority Table', () => {
 });
 
 describe('SpellResolver — Self Cast', () => {
-  it('resolves NANO heal, FLUX cleanse, and BARRIER + Element ward', () => {
-    expect(resolveSelfCast(['NANO', 'NANO']).effect).toBe('HEAL');
-    expect(resolveSelfCast(['NANO', 'NANO']).healPower).toBe(44);
-    expect(resolveSelfCast(['FLUX']).effect).toBe('CLEANSE');
-    const ward = resolveSelfCast(['BARRIER', 'THERMAL']);
-    expect(ward.effect).toBe('WARD');
-    expect(ward.wardElement).toBe('THERMAL');
+  it('resolves all 6 per-element self-cast effects cleanly', () => {
+    expect(resolveSelfCast(['BARRIER']).effect).toBe('SHIELD_WARD');
+    expect(resolveSelfCast(['BARRIER', 'THERMAL']).wardElement).toBe('THERMAL');
+    expect(resolveSelfCast(['KINETIC', 'KINETIC']).effect).toBe('KINETIC_ARMOR');
+    expect(resolveSelfCast(['KINETIC', 'KINETIC']).armorAmount).toBe(70);
+    expect(resolveSelfCast(['NANO', 'NANO']).effect).toBe('SELF_HEAL');
+    expect(resolveSelfCast(['NANO', 'NANO']).healPerSec).toBe(48);
+    expect(resolveSelfCast(['VOID']).effect).toBe('VOID_BURST');
+    expect(resolveSelfCast(['VOLT']).effect).toBe('VOLT_NOVA');
+    expect(resolveSelfCast(['FLUX']).effect).toBe('ELEMENT_AOE');
+    expect(resolveSelfCast(['THERMAL']).effect).toBe('ELEMENT_AOE');
+    expect(resolveSelfCast(['CRYO']).effect).toBe('ELEMENT_AOE');
   });
 });
 

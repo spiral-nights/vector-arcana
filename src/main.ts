@@ -33,6 +33,7 @@ let hitStopTimer = 0;
 const keysDown = new Set<string>();
 let lmbDown = false;
 let rmbDown = false;
+let mmbDown = false;
 let clientMouseX = window.innerWidth / 2;
 let clientMouseY = window.innerHeight / 2;
 let pendingQueue: BaseElement[] = [];
@@ -44,6 +45,7 @@ function clearHeldInputs(): void {
   keysDown.clear();
   lmbDown = false;
   rmbDown = false;
+  mmbDown = false;
 }
 
 function syncShiftFromMouse(e: MouseEvent): void {
@@ -104,6 +106,7 @@ window.addEventListener('mousedown', (e) => {
   syncShiftFromMouse(e);
   if (e.button === 1) {
     e.preventDefault();
+    mmbDown = true;
     pendingCast = 'SELF';
     return;
   }
@@ -132,6 +135,7 @@ window.addEventListener('mousedown', (e) => {
 window.addEventListener('mouseup', (e) => {
   syncShiftFromMouse(e);
   if (e.button === 0) lmbDown = false;
+  if (e.button === 1) mmbDown = false;
   if (e.button === 2) {
     e.preventDefault();
     rmbDown = false;
@@ -190,6 +194,7 @@ function frame(now: number): void {
     const moveX = (keysDown.has('ArrowRight') ? 1 : 0) - (keysDown.has('ArrowLeft') ? 1 : 0);
     const moveY = (keysDown.has('ArrowUp') ? 1 : 0) - (keysDown.has('ArrowDown') ? 1 : 0);
     const castHeld = preset === 'CLASSIC' ? rmbDown && !shiftHeld : lmbDown;
+    const selfHeld = mmbDown || keysDown.has('KeyC');
     const moveToCursor = preset === 'CLASSIC' && lmbDown && !shiftHeld;
 
     sim.step({
@@ -202,6 +207,7 @@ function frame(now: number): void {
       queuedElements: pendingQueue,
       castAction: pendingCast,
       castHeld,
+      selfHeld,
       dashPressed: pendingDash,
     });
     pendingQueue = [];

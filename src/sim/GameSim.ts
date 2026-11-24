@@ -19,6 +19,8 @@ function createInitialPlayer(): PlayerState {
     aimAngle: 0,
     hp: 100,
     maxHp: 100,
+    armorHp: 0,
+    maxArmorHp: 105,
     wardRemaining: 0,
     wardMaxDuration: 6,
     wardElement: null,
@@ -32,7 +34,6 @@ function createInitialPlayer(): PlayerState {
     overclockTimer: 0,
     overclockMax: 3,
     ignitedTimer: 0,
-    toxinTimer: 0,
     moving: false,
     moveTarget: null,
     channel: null,
@@ -120,7 +121,14 @@ export class GameSim {
         if (selfCast.effect !== 'NONE') {
           this.combat.stopChannel(p);
           this.combat.cancelCharge(p);
-          this.combat.castSelf(p, selfCast, this.events);
+          if (selfCast.effect === 'SELF_HEAL' && input.selfHeld) {
+            this.combat.startSelfHealChannel(p, selfCast, this.events);
+          } else {
+            this.combat.castSelf(p, selfCast, this.events);
+            if (selfCast.effect === 'SELF_HEAL' && !input.selfHeld) {
+              this.combat.stopChannel(p);
+            }
+          }
           p.queue = [];
           p.castCooldown = 0.16;
         }
@@ -204,7 +212,7 @@ export class GameSim {
     p.x = Math.max(-ARENA_HALF_W + margin, Math.min(ARENA_HALF_W - margin, p.x));
     p.y = Math.max(-ARENA_HALF_H + margin, Math.min(ARENA_HALF_H - margin, p.y));
 
-    this.combat.step(FIXED_DT, p, input.castHeld, this.events);
+    this.combat.step(FIXED_DT, p, input.castHeld, input.selfHeld, this.events);
   }
 
   public drainEvents(): SimEvent[] {

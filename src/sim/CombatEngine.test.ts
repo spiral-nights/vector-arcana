@@ -13,6 +13,7 @@ function makeInput(overrides: Partial<SimInput> = {}): SimInput {
     queuedElements: [],
     castAction: null,
     castHeld: false,
+    selfHeld: false,
     dashPressed: false,
     ...overrides,
   };
@@ -177,5 +178,62 @@ describe('GameSim — Click-to-Move & Post-Nova Movement', () => {
       sim.step(makeInput());
     }
     expect(sim.getSnapshot().player.x).toBeGreaterThan(xAfterNova + 40);
+  });
+});
+
+describe('CombatEngine — Per-Element Self-Casting', () => {
+  it('channels NANO self-healing while selfHeld is true and stops when released', () => {
+    const sim = new GameSim();
+    sim.getSnapshot().player.hp = 40;
+    queueAndStep(sim, ['NANO', 'NANO']);
+    sim.step(makeInput({ castAction: 'SELF', selfHeld: true }));
+    for (let i = 0; i < 30; i++) {
+      sim.step(makeInput({ selfHeld: true }));
+    }
+    const hpAfterHold = sim.getSnapshot().player.hp;
+    expect(hpAfterHold).toBeGreaterThan(55);
+
+    sim.step(makeInput({ selfHeld: false }));
+    expect(sim.getSnapshot().player.channel).toBeNull();
+  });
+
+  it('triggers local VOID burst with gravity well and zero beams', () => {
+    const sim = new GameSim();
+    queueAndStep(sim, ['VOID', 'VOID']);
+    sim.step(makeInput({ castAction: 'SELF' }));
+    expect(sim.getSnapshot().beams.length).toBe(0);
+    const events = sim.drainEvents();
+    expect(events.some((e) => e.type === 'grid_well')).toBe(true);
+    expect(events.some((e) => e.type === 'vfx_ring')).toBe(true);
+  });
+
+  it('triggers multi-directional VOLT lightning bolts around player on self-cast', () => {
+    const sim = new GameSim();
+    queueAndStep(sim, ['VOLT', 'VOLT']);
+    sim.step(makeInput({ castAction: 'SELF' }));
+    const bolts = sim.drainEvents().filter((e) => e.type === 'vfx_lightning');
+    expect(bolts.length).toBeGreaterThanOrEqual(7);
+  });
+
+  it('grants KINETIC armor plating and shockwave on self-cast', () => {
+    const sim = new GameSim();
+    queueAndStep(sim, ['KINETIC', 'KINETIC']);
+    sim.step(makeInput({ castAction: 'SELF' }));
+    expect(sim.getSnapshot().player.armorHp).toBe(70);
+    expect(sim.drainEvents().some((e) => e.type === 'vfx_ring')).toBe(true);
+  });
+
+  it('spawns 360° shield dome on [BARRIER] self-cast and sets wardElement on [BARRIER, THERMAL]', () => {
+    const sim1 = new GameSim();
+    queueAndStep(sim1, ['BARRIER']);
+    sim1.step(makeInput({ castAction: 'SELF' }));
+    expect(sim1.getSnapshot().shields.length).toBe(1);
+    expect(sim1.getSnapshot().shields[0]?.isNova).toBe(true);
+
+    const sim2 = new GameSim();
+    queueAndStep(sim2, ['BARRIER', 'THERMAL']);
+    sim2.step(makeInput({ castAction: 'SELF' }));
+    expect(sim2.getSnapshot().player.wardElement).toBe('THERMAL');
+    expect(sim2.getSnapshot().player.wardRemaining).toBeGreaterThan(0);
   });
 });

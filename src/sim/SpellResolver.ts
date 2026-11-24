@@ -31,7 +31,6 @@ interface FusionRecipe {
 const FUSION_RECIPES: readonly FusionRecipe[] = [
   { a: 'FLUX', b: 'CRYO', result: 'CRYSTAL' },
   { a: 'FLUX', b: 'THERMAL', result: 'PLASMA' },
-  { a: 'FLUX', b: 'VOID', result: 'TOXIN' },
 ];
 
 export type EnqueueAction =
@@ -151,11 +150,21 @@ export function computeComposition(elements: readonly QueueElement[]): ElementCo
   };
 }
 
-export type SelfEffectType = 'HEAL' | 'CLEANSE' | 'WARD' | 'NONE';
+export type SelfEffectType =
+  | 'SHIELD_WARD'
+  | 'KINETIC_ARMOR'
+  | 'SELF_HEAL'
+  | 'VOID_BURST'
+  | 'VOLT_NOVA'
+  | 'ELEMENT_AOE'
+  | 'NONE';
 
 export interface ResolvedSelfCast {
   effect: SelfEffectType;
-  healPower: number;
+  elements: QueueElement[];
+  composition: ElementComposition;
+  healPerSec: number;
+  armorAmount: number;
   wardElement: QueueElement | null;
   colorHex: number;
 }
@@ -174,33 +183,86 @@ export interface ResolvedSpell {
 }
 
 export function resolveSelfCast(queue: readonly QueueElement[]): ResolvedSelfCast {
-  if (queue.length === 0) {
-    return { effect: 'NONE', healPower: 0, wardElement: null, colorHex: 0x00f5ff };
-  }
   const comp = computeComposition(queue);
+  if (queue.length === 0) {
+    return {
+      effect: 'NONE',
+      elements: [],
+      composition: comp,
+      healPerSec: 0,
+      armorAmount: 0,
+      wardElement: null,
+      colorHex: 0x00f5ff,
+    };
+  }
   if (queue.includes('BARRIER')) {
     const payload = queue.find((e) => e !== 'BARRIER') ?? null;
     const colorHex = payload ? ELEMENT_META[payload].colorHex : ELEMENT_META.BARRIER.colorHex;
-    return { effect: 'WARD', healPower: 0, wardElement: payload, colorHex };
+    return {
+      effect: 'SHIELD_WARD',
+      elements: [...queue],
+      composition: comp,
+      healPerSec: 0,
+      armorAmount: 0,
+      wardElement: payload,
+      colorHex,
+    };
+  }
+  if (queue.includes('KINETIC')) {
+    const kineticStacks = comp.counts.KINETIC ?? 1;
+    return {
+      effect: 'KINETIC_ARMOR',
+      elements: [...queue],
+      composition: comp,
+      healPerSec: 0,
+      armorAmount: Math.min(105, 35 * kineticStacks),
+      wardElement: null,
+      colorHex: comp.primaryColorHex,
+    };
   }
   if (queue.includes('NANO')) {
     const nanoStacks = comp.counts.NANO ?? 1;
     return {
-      effect: 'HEAL',
-      healPower: nanoStacks * 22,
+      effect: 'SELF_HEAL',
+      elements: [...queue],
+      composition: comp,
+      healPerSec: nanoStacks * 24,
+      armorAmount: 0,
       wardElement: null,
       colorHex: ELEMENT_META.NANO.colorHex,
     };
   }
-  if (queue.includes('FLUX')) {
+  if (queue.includes('VOID')) {
     return {
-      effect: 'CLEANSE',
-      healPower: 0,
+      effect: 'VOID_BURST',
+      elements: [...queue],
+      composition: comp,
+      healPerSec: 0,
+      armorAmount: 0,
       wardElement: null,
-      colorHex: ELEMENT_META.FLUX.colorHex,
+      colorHex: comp.primaryColorHex,
     };
   }
-  return { effect: 'NONE', healPower: 0, wardElement: null, colorHex: comp.primaryColorHex };
+  if (queue.includes('VOLT')) {
+    return {
+      effect: 'VOLT_NOVA',
+      elements: [...queue],
+      composition: comp,
+      healPerSec: 0,
+      armorAmount: 0,
+      wardElement: null,
+      colorHex: comp.primaryColorHex,
+    };
+  }
+  return {
+    effect: 'ELEMENT_AOE',
+    elements: [...queue],
+    composition: comp,
+    healPerSec: 0,
+    armorAmount: 0,
+    wardElement: null,
+    colorHex: comp.primaryColorHex,
+  };
 }
 
 export function resolveSpell(
@@ -242,7 +304,7 @@ export function resolveSpell(
     delivery = 'SHIELD';
   } else if (has('BARRIER') && hasAny('KINETIC', 'CRYSTAL')) {
     delivery = 'WALL';
-  } else if (has('BARRIER') && hasAny('VOID', 'NANO', 'TOXIN')) {
+  } else if (has('BARRIER') && hasAny('VOID', 'NANO')) {
     delivery = 'MINES';
   } else if (has('BARRIER') && hasAny('THERMAL', 'CRYO', 'VOLT', 'FLUX', 'PLASMA')) {
     delivery = 'STORM';
@@ -251,7 +313,7 @@ export function resolveSpell(
     stackPower = composition.counts.KINETIC ?? 1;
   } else if (has('CRYSTAL')) {
     delivery = 'CRYSTAL_SHARDS';
-  } else if (hasAny('VOID', 'NANO', 'TOXIN')) {
+  } else if (hasAny('VOID', 'NANO')) {
     delivery = 'BEAM';
   } else if (has('VOLT')) {
     delivery = 'LIGHTNING_BOLT';

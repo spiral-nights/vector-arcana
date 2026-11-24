@@ -71,9 +71,8 @@ When a base element is pressed, check the current queue (max 3 slots):
 
 ### 3.3 Sub-Element Fusion (Automatic in Queue)
 When compatible base elements coexist, they fuse in-place into a 1-slot compound sub-element. Fused sub-elements **do not** cancel against base elements (e.g., `PLASMA + VOLT` is valid):
-- `FLUX + CRYO → CRYSTAL` (`#66FFFF`, Ice Shards)
-- `FLUX + THERMAL → PLASMA` (`#FF8866`, Superheated Steam; applies `PRIMED` without cancelling `VOLT`)
-- `FLUX + VOID → TOXIN` (`#A8FF00`, Corrosive Acid; leaves lingering acid grid pools)
+- `FLUX + CRYO → CRYSTAL` (`#80FFFF`, Ice Shards)
+- `FLUX + THERMAL → PLASMA` (`#FF5E99`, Superheated Steam; applies `PRIMED` without cancelling `VOLT`)
 
 ---
 
@@ -85,21 +84,23 @@ On Forward Cast (`RMB` in Classic), the resolver inspects the queue from **Prior
 | --- | --- | --- | --- |
 | **1** | **Shield (Barrier)** | `[BARRIER]` alone | Curved 3D wireframe octagonal barrier; blocks projectiles and reflects enemy beams. |
 | **2** | **Wall** | `BARRIER` + (`KINETIC` or `CRYSTAL`) | 5 destructible geometric pylons perpendicular to aim, inheriting secondary elements. |
-| **3** | **Mines** | `BARRIER` + (`VOID` or `NANO` or `TOXIN`) | 5 floating octagonal proximity pods in forward arc; detonate on contact. |
+| **3** | **Mines** | `BARRIER` + (`VOID` or `NANO`) | 5–9 floating octagonal proximity pods in forward arc; detonate on contact. |
 | **4** | **Storm** | `BARRIER` + (`THERMAL` or `CRYO` or `VOLT` or `FLUX` or `PLASMA`) | Persistent circular orbital hazard (`radius = 185+`, `4.5s+`) at cursor. Never contains `KINETIC` (Wall). |
 | **5** | **Rock Throw** | `KINETIC` + Any (no `BARRIER`) | Spinning 3D amber wireframe cube; pierces weak swarmers, detonates on heavies/walls; scales with `KINETIC` stacks. |
 | **6** | **Crystal Shards** | `CRYSTAL` + Any (no `BARRIER`/`KINETIC`) | Cone burst of 7–13 piercing cyan crystal shards (chargeable). |
-| **7** | **Beam** | (`VOID`, `NANO`, or `TOXIN`) + Any (no `BARRIER`/`KINETIC`/`CRYSTAL`) | Continuous braided laser beam; clashes with enemy beams. |
+| **7** | **Beam** | (`VOID` or `NANO`) + Any (no `BARRIER`/`KINETIC`/`CRYSTAL`) | Continuous braided laser beam; clashes with enemy beams. |
 | **8** | **Lightning Bolt** | `VOLT` + Any (without higher priority) | Instant jagged electric arcs jumping up to 4 targets (8 if `PRIMED`). |
 | **9** | **Spray** | `THERMAL`, `CRYO`, `FLUX`, or `PLASMA` | Wide close-range wave-pulse jet for swarm control and priming. |
 | **10** | **Phase Slash** | `Shift + LMB` / `Shift` Dash | 180-unit dash with i-frames + wide geometric cleave imbued with queued elements (+ elemental trail if `BARRIER` queued). |
 
 ### Secondary Cast Modes
-- **Self Cast (`MMB` / `Space`):**
-  - `[NANO]`: Restores hull HP.
-  - `[FLUX]`: Extinguishes `IGNITED` and clears `TOXIN`.
-  - `[BARRIER + Element]`: 6s Personal Hexagonal Ward granting 75% damage reduction against that element and damaging enemies on contact.
-  - `[BARRIER]` alone: Brief general ward.
+- **Self Cast (`MMB` / `C`):**
+  - `[BARRIER]`: 360° Geodesic Personal Shield Dome; `[BARRIER + Element]`: 6s Personal Hexagonal Ward (75% DR vs element + contact damage).
+  - `[KINETIC]`: Temporary Kinetic Armor Plating + local seismic knockback shockwave.
+  - `[NANO]`: Continuous channeled self-healing while button is held.
+  - `[VOID]`: Local radial dark-arcane burst + inward gravity well (no cross-arena beam).
+  - `[VOLT]`: Multi-directional radial lightning bolts around the ship.
+  - `[THERMAL]` / `[FLUX]` / `[CRYO]` / `[PLASMA]` / `[CRYSTAL]`: Self cleanse/status effect + radial elemental AoE.
 - **Nova Cast (`Shift + RMB`):** Converts spells into a 360° circular ring/burst centered on the player.
 
 ---

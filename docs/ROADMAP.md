@@ -23,7 +23,7 @@
 ---
 
 ## Milestone 2: 8-Element Queue & 10-Spell Deterministic Engine
-- `SpellResolver.ts`: Pure queue engine implementing all 5 opposite-element cancellations (`THERMAL ↔ CRYO`, `FLUX ↔ VOLT`, `KINETIC ↔ VOLT`, `BARRIER ↔ VOLT`, `VOID ↔ NANO`), max-1 `BARRIER` cap, FIFO/IGNORE overflow, 3 sub-element fusions (`CRYSTAL`, `PLASMA`, `TOXIN`), and the strict 10-spell priority table.
+- `SpellResolver.ts`: Pure queue engine implementing all 4 opposite-element cancellations (`THERMAL ↔ CRYO`, `FLUX ↔ VOLT`, `KINETIC ↔ VOLT`, `VOID ↔ NANO`), max-1 `BARRIER` cap, FIFO/IGNORE overflow, 2 sub-element fusions (`CRYSTAL`, `PLASMA`), and the strict 10-spell priority table.
 - `SpellResolver.test.ts`: Full Vitest coverage of cancellations, fusions, priority edge cases, Nova casts, and Self casts.
 - `CombatEngine.ts`: Full 2D arena execution for all 10 delivery types (`Shield`, `Wall`, `Mines`, `Storm`, `Rock Throw`, `Crystal Shards`, `Beam`, `Lightning Bolt`, `Spray`, `Phase Slash`), Nova (`Space` / `Shift + RMB`), and Self (`MMB`/`C`).
 - `EntityRenderer.ts` & `SpellVFX.ts`: 3 orbiting elemental glyph pips around the ship + procedural 3D wireframe VFX for all 10 spells and grid puddles.

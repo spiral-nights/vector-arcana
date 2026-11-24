@@ -15,6 +15,7 @@ export class EntityRenderer {
   private readonly chargeGroup = new THREE.Group();
   private readonly chargeCore: THREE.Line;
   private readonly chargeRing: THREE.Line;
+  private readonly armorCage: THREE.Line;
   private readonly reticleGroup = new THREE.Group();
   private readonly waypointGroup = new THREE.Group();
   private readonly pipMeshes: THREE.Group[] = [];
@@ -122,6 +123,19 @@ export class EntityRenderer {
     this.chargeGroup.position.set(29, 0, 0);
     this.chargeGroup.visible = false;
     this.playerGroup.add(this.chargeGroup);
+
+    // Kinetic Self-Cast Armor Cage
+    const armorPts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      armorPts.push(new THREE.Vector3(Math.cos(a) * 25, Math.sin(a) * 25, 2.2));
+    }
+    this.armorCage = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(armorPts),
+      new THREE.LineBasicMaterial({ color: 0xe8741a, transparent: true, opacity: 0.85 })
+    );
+    this.armorCage.visible = false;
+    this.playerGroup.add(this.armorCage);
 
     this.scene.add(this.playerGroup);
 
@@ -316,6 +330,15 @@ export class EntityRenderer {
       (this.chargeRing.material as THREE.LineBasicMaterial).color.setHex(p.charge.composition.secondaryColorHex);
     } else {
       this.chargeGroup.visible = false;
+    }
+
+    // Kinetic armor cage
+    if (p.armorHp > 0) {
+      this.armorCage.visible = true;
+      this.armorCage.rotation.z = timeSec * 1.8;
+      (this.armorCage.material as THREE.LineBasicMaterial).opacity = 0.35 + (p.armorHp / Math.max(1, p.maxArmorHp)) * 0.6;
+    } else {
+      this.armorCage.visible = false;
     }
 
     // Rear-Arc Queued Elemental Pips

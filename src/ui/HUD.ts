@@ -245,7 +245,8 @@ export class HUD {
     const hpPct = Math.max(0, Math.min(100, (snapshot.player.hp / snapshot.player.maxHp) * 100));
     this.hullFill.style.width = `${hpPct}%`;
     this.hullFill.classList.toggle('low', hpPct <= 35);
-    this.hullText.textContent = `${Math.ceil(snapshot.player.hp)}/${snapshot.player.maxHp}`;
+    const armorTxt = snapshot.player.armorHp > 0 ? ` +${Math.ceil(snapshot.player.armorHp)}` : '';
+    this.hullText.textContent = `${Math.ceil(snapshot.player.hp)}/${snapshot.player.maxHp}${armorTxt}`;
 
     const odPct = Math.max(0, Math.min(100, (snapshot.player.overclockTimer / snapshot.player.overclockMax) * 100));
     this.overdriveFill.style.width = `${odPct}%`;
@@ -264,7 +265,7 @@ export class HUD {
       this.channelWrap.style.display = 'flex';
       this.channelWrap.style.flexDirection = 'column';
       this.channelWrap.style.gap = '3px';
-      this.channelLabel.textContent = `CHANNELING ${ch.delivery.replace('_', ' ')}`;
+      this.channelLabel.textContent = ch.delivery === 'SELF_HEAL' ? 'HEALING...' : `CHANNELING ${ch.delivery.replace('_', ' ')}`;
       this.channelFill.style.width = `${Math.max(0, (ch.remaining / ch.maxDuration) * 100)}%`;
       this.channelFill.style.background = `#${ch.composition.primaryColorHex.toString(16).padStart(6, '0')}`;
     } else if (charge) {
