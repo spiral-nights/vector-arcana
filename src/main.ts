@@ -1,6 +1,7 @@
 import { SceneManager } from './render/SceneManager';
 import { WarpingGrid } from './render/WarpingGrid';
 import { EntityRenderer } from './render/EntityRenderer';
+import { SpellVFX } from './render/SpellVFX';
 import { GameSim } from './sim/GameSim';
 import { BaseElement, CastMode, ControlPreset, FIXED_DT } from './sim/types';
 import { HUD } from './ui/HUD';
@@ -22,6 +23,7 @@ const hudEl = document.getElementById('hud')!;
 const sceneManager = new SceneManager(appEl);
 const warpingGrid = new WarpingGrid(sceneManager.scene);
 const entityRenderer = new EntityRenderer(sceneManager.scene);
+const spellVFX = new SpellVFX(sceneManager.scene);
 const sim = new GameSim();
 
 let preset: ControlPreset = 'CLASSIC';
@@ -167,12 +169,22 @@ function frame(now: number): void {
       sceneManager.addScreenShake(ev.intensity);
     } else if (ev.type === 'hit_stop') {
       hitStopTimer = Math.max(hitStopTimer, ev.duration);
+    } else if (ev.type === 'vfx_burst') {
+      spellVFX.spawnBurst(ev.x, ev.y, ev.colorHex, ev.count);
+    } else if (ev.type === 'vfx_lightning') {
+      spellVFX.spawnLightning(ev.points, ev.colorHex);
+    } else if (ev.type === 'vfx_spray') {
+      spellVFX.spawnSpray(ev.x, ev.y, ev.angle, ev.spread, ev.range, ev.colorHex, ev.isNova);
+    } else if (ev.type === 'vfx_shatter') {
+      spellVFX.spawnBurst(ev.x, ev.y, ev.colorHex, 24, 1.4);
     }
   }
 
   warpingGrid.update(rawDt);
   const snapshot = sim.getSnapshot();
-  entityRenderer.update(snapshot, aimWorld, now / 1000);
+  const timeSec = now / 1000;
+  entityRenderer.update(snapshot, aimWorld, timeSec);
+  spellVFX.update(snapshot, rawDt, timeSec);
 
   hudTimer += rawDt;
   if (hudTimer >= 0.05) {

@@ -1,3 +1,5 @@
+import { CombatEngine } from './CombatEngine';
+import { enqueueElement, resolveSelfCast, resolveSpell } from './SpellResolver';
 import {
   ARENA_HALF_H,
   ARENA_HALF_W,
@@ -39,12 +41,14 @@ export class GameSim {
   private phase: SimSnapshot['phase'] = 'PLAYING';
   private tick = 0;
   private player: PlayerState = createInitialPlayer();
+  private combat = new CombatEngine();
   private events: SimEvent[] = [];
 
   public startNewRun(): void {
     this.phase = 'PLAYING';
     this.tick = 0;
     this.player = createInitialPlayer();
+    this.combat.reset();
     this.events.length = 0;
   }
 
@@ -65,8 +69,26 @@ export class GameSim {
 
     p.dashCooldown = Math.max(0, p.dashCooldown - FIXED_DT);
     p.invulnTimer = Math.max(0, p.invulnTimer - FIXED_DT);
+    p.castCooldown = Math.max(0, p.castCooldown - FIXED_DT);
+    p.wardRemaining = Math.max(0, p.wardRemaining - FIXED_DT);
+    if (p.wardRemaining <= 0) {
+      p.wardElement = null;
+    }
 
-    // Phase Dash
+    // Process element queue inputs
+    for (const el of input.queuedElements) {
+      const res = enqueueElement(p.queue, el, 'FIFO');
+      p.queue = res.queue;
+      if (res.action === 'cancelled') {
+        this.events.push({ type: 'sfx', sound: 'cancel' });
+      } else if (res.action === 'fused') {
+        this.events.push({ type: 'sfx', sound: 'fusion' });
+      } else if (res.action === 'added' || res.action === 'overflow_fifo') {
+        this.events.push({ type: 'sfx', sound: 'queue' });
+      }
+    }
+
+    // Phase Dash & Phase Slash
     if (input.dashPressed && p.dashCooldown <= 0 && p.dashTimer <= 0) {
       p.dashTimer = 0.16;
       p.dashCooldown = 0.75;
@@ -75,6 +97,33 @@ export class GameSim {
       p.dashDirY = Math.sin(p.aimAngle);
       this.events.push({ type: 'grid_impulse', x: p.x, y: p.y, strength: 180, radius: 130 });
       this.events.push({ type: 'sfx', sound: 'dash' });
+
+      if (p.queue.length > 0) {
+        const slashSpell = resolveSpell(p.queue, 'DASH');
+        if (slashSpell) {
+          this.combat.castSpell(p, slashSpell, input.aimX, input.aimY, this.events);
+          p.queue = [];
+        }
+      }
+    }
+
+    // Cast actions
+    if (input.castAction && p.castCooldown <= 0) {
+      if (input.castAction === 'SELF') {
+        const selfCast = resolveSelfCast(p.queue);
+        if (selfCast.effect !== 'NONE') {
+          this.combat.castSelf(p, selfCast, this.events);
+          p.queue = [];
+          p.castCooldown = 0.16;
+        }
+      } else if (input.castAction === 'FORWARD' || input.castAction === 'NOVA') {
+        const spell = resolveSpell(p.queue, input.castAction);
+        if (spell) {
+          this.combat.castSpell(p, spell, input.aimX, input.aimY, this.events);
+          p.queue = [];
+          p.castCooldown = 0.16;
+        }
+      }
     }
 
     if (p.dashTimer > 0) {
@@ -116,6 +165,8 @@ export class GameSim {
     const margin = 18;
     p.x = Math.max(-ARENA_HALF_W + margin, Math.min(ARENA_HALF_W - margin, p.x));
     p.y = Math.max(-ARENA_HALF_H + margin, Math.min(ARENA_HALF_H - margin, p.y));
+
+    this.combat.step(FIXED_DT, p, this.events);
   }
 
   public drainEvents(): SimEvent[] {
@@ -135,14 +186,14 @@ export class GameSim {
       multiplierTimer: 0,
       player: this.player,
       enemies: [],
-      projectiles: [],
-      beams: [],
-      walls: [],
-      mines: [],
-      storms: [],
-      shields: [],
-      pools: [],
-      slashes: [],
+      projectiles: this.combat.projectiles,
+      beams: this.combat.beams,
+      walls: this.combat.walls,
+      mines: this.combat.mines,
+      storms: this.combat.storms,
+      shields: this.combat.shields,
+      pools: this.combat.pools,
+      slashes: this.combat.slashes,
       augments: {},
       pendingAugments: [],
       boss: null,

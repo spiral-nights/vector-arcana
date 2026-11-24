@@ -1,3 +1,4 @@
+import { resolveSpell } from '../sim/SpellResolver';
 import { BASE_ELEMENTS, ControlPreset, ELEMENT_META, QueueElement, SimSnapshot } from '../sim/types';
 
 export interface HUDCallbacks {
@@ -247,12 +248,15 @@ export class HUD {
     if (q.length === 0) {
       this.queueEl.textContent = 'QUEUE: EMPTY';
     } else {
-      this.queueEl.innerHTML = q
-        .map((el) => {
-          const m = ELEMENT_META[el];
-          return `<span style="color:${m.color};font-weight:700">${m.name.toUpperCase()}</span>`;
-        })
-        .join(' <span style="opacity:0.4">+</span> ');
+      const resolved = resolveSpell(q, 'FORWARD');
+      const spellLabel = resolved ? ` → <span style="color:#ffffff;font-weight:700">${resolved.delivery.replace('_', ' ')}</span>` : '';
+      this.queueEl.innerHTML =
+        q
+          .map((el) => {
+            const m = ELEMENT_META[el];
+            return `<span style="color:${m.color};font-weight:700">${m.name.toUpperCase()}</span>`;
+          })
+          .join(' <span style="opacity:0.4">+</span> ') + spellLabel;
     }
 
     for (const el of BASE_ELEMENTS) {
