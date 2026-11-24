@@ -3,6 +3,7 @@ import { computeComposition, ResolvedSelfCast, ResolvedSpell } from './SpellReso
 import {
   ARENA_HALF_H,
   ARENA_HALF_W,
+  ArenaPillar,
   BeamEntity,
   ChannelState,
   ChargeState,
@@ -10,6 +11,7 @@ import {
   ElementComposition,
   EnemyArchetype,
   EnemyEntity,
+  HazardZoneEntity,
   MineEntity,
   PlayerState,
   PoolEntity,
@@ -60,6 +62,7 @@ export class CombatEngine {
   public shields: ShieldBarrierEntity[] = [];
   public pools: PoolEntity[] = [];
   public slashes: SlashArcEntity[] = [];
+  public hazards: HazardZoneEntity[] = [];
 
   private clashProgress = new Map<string, number>();
 
@@ -74,6 +77,19 @@ export class CombatEngine {
     this.shields = [];
     this.pools = [];
     this.slashes = [];
+    this.hazards = [];
+    this.clashProgress.clear();
+  }
+
+  public clearTransientForSector(): void {
+    this.projectiles = [];
+    this.beams = [];
+    this.walls = [];
+    this.mines = [];
+    this.storms = [];
+    this.pools = [];
+    this.slashes = [];
+    this.hazards = [];
     this.clashProgress.clear();
   }
 
@@ -377,7 +393,8 @@ export class CombatEngine {
     if (ch.delivery === 'SPRAY') {
       const range = 310 + comp.totalPower * 45;
       const spread = 0.85;
-      this.applyConeDamage(player.x, player.y, angle, spread, range, 7 + comp.totalPower * 3, ch.elements, events);
+      const knockback = ch.elements.includes('FLUX') || ch.elements.includes('PLASMA') ? 190 : 120;
+      this.applyConeDamage(player.x, player.y, angle, spread, range, 7 + comp.totalPower * 3, ch.elements, events, knockback);
       events.push({
         type: 'vfx_spray',
         x: player.x + Math.cos(angle) * 20,
@@ -897,7 +914,7 @@ export class CombatEngine {
     const kineticCount = counts.KINETIC ?? 1;
     const blastRadius = 85 + kineticCount * 35;
 
-    this.applyAoEDamage(p.x, p.y, blastRadius, p.damage, p.elements, 260, events);
+    this.applyAoEDamage(p.x, p.y, blastRadius, p.damage, p.elements, 320, events);
     events.push({ type: 'grid_impulse', x: p.x, y: p.y, strength: 220 + kineticCount * 90, radius: blastRadius + 50 });
     events.push({ type: 'vfx_burst', x: p.x, y: p.y, colorHex: p.colorHex, count: 22 + kineticCount * 6, radius: blastRadius * 0.7 });
     events.push({ type: 'vfx_shards', x: p.x, y: p.y, colors: p.colors, count: 16 + kineticCount * 6, speedScale: 1.25 });
@@ -1146,7 +1163,18 @@ export class CombatEngine {
       player.hp = Math.max(0, player.hp - dmg);
       onDamaged();
     }
-    player.invulnTimer = 0.45;
+    player.invulnTimer = 0.75;
+    // Hit-repel shockwave pushing nearby enemies back so player cannot be pinned
+    for (const e of this.enemies) {
+      const edx = e.x - player.x;
+      const edy = e.y - player.y;
+      const edist = Math.hypot(edx, edy);
+      if (edist > 0.1 && edist < 110) {
+        e.vx += (edx / edist) * 240;
+        e.vy += (edy / edist) * 240;
+      }
+    }
+    events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 160, radius: 130 });
     events.push({ type: 'screen_shake', intensity: 6 });
     events.push({ type: 'sfx', sound: 'player_hit' });
     return true;
@@ -1158,6 +1186,7 @@ export class CombatEngine {
     castHeld: boolean,
     selfHeld: boolean,
     wave: number,
+    pillars: readonly ArenaPillar[],
     onKill: (archetype: EnemyArchetype) => void,
     onPlayerDamaged: () => void,
     events: SimEvent[]
@@ -1281,9 +1310,12 @@ export class CombatEngine {
       }
 
       const hitWall = Math.abs(p.x) > ARENA_HALF_W - p.radius || Math.abs(p.y) > ARENA_HALF_H - p.radius;
-      if (p.life <= 0 || hitWall) {
+      const hitPillar = pillars.some((pil) => Math.hypot(p.x - pil.x, p.y - pil.y) <= pil.radius + p.radius);
+      if (p.life <= 0 || hitWall || hitPillar) {
         if (p.kind === 'ROCK') {
           this.detonateRock(p, events);
+        } else if (hitPillar) {
+          events.push({ type: 'vfx_burst', x: p.x, y: p.y, colorHex: p.colorHex, count: 6, radius: 22 });
         }
         this.projectiles.splice(i, 1);
       }
@@ -1306,13 +1338,26 @@ export class CombatEngine {
       const cos = Math.cos(b.angle);
       const sin = Math.sin(b.angle);
 
+      // Truncate beam at nearest ArenaPillar
+      let pillarLimit = b.length;
+      for (const pil of pillars) {
+        const { perpDist, along } = pointToRayDist(pil.x, pil.y, b.x, b.y, cos, sin, pillarLimit);
+        if (perpDist <= pil.radius + 4 && along > 8) {
+          pillarLimit = Math.min(pillarLimit, Math.max(8, along - pil.radius * 0.6));
+        }
+      }
+      if (pillarLimit < b.length) {
+        b.clashing = true;
+        b.clashDist = pillarLimit;
+      }
+
       if (b.owner === 'PLAYER') {
         // Check Beam Clash against enemy beams
         for (const eb of this.beams) {
           if (eb.owner !== 'ENEMY') continue;
           const dot = cos * Math.cos(eb.angle) + sin * Math.sin(eb.angle);
           if (dot > -0.65) continue;
-          const { perpDist, along } = pointToRayDist(eb.x, eb.y, b.x, b.y, cos, sin, b.length);
+          const { perpDist, along } = pointToRayDist(eb.x, eb.y, b.x, b.y, cos, sin, pillarLimit);
           if (perpDist < 38 && along > 10) {
             const key = `${b.id}:${eb.id}`;
             const prog = Math.min(1, (this.clashProgress.get(key) ?? 0) + dt * 1.55);
@@ -1388,14 +1433,14 @@ export class CombatEngine {
         const eCos = Math.cos(b.angle);
         const eSin = Math.sin(b.angle);
         for (const s of this.shields) {
-          const { perpDist, along } = pointToRayDist(s.x, s.y, b.x, b.y, eCos, eSin, b.length);
+          const { perpDist, along } = pointToRayDist(s.x, s.y, b.x, b.y, eCos, eSin, pillarLimit);
           if (perpDist <= s.radius + 12) {
             b.clashing = true;
-            b.clashDist = Math.max(10, along - s.radius);
+            b.clashDist = Math.min(b.clashDist, Math.max(10, along - s.radius));
             s.hp -= 35 * dt;
           }
         }
-        const effLen = b.clashing ? b.clashDist : b.length;
+        const effLen = b.clashing ? b.clashDist : pillarLimit;
         const { perpDist } = pointToRayDist(player.x, player.y, b.x, b.y, eCos, eSin, effLen);
         if (perpDist <= 16 + b.width * 0.4) {
           this.damagePlayer(player, 24 * dt + 10, undefined, onPlayerDamaged, events);
@@ -1640,12 +1685,51 @@ export class CombatEngine {
           spawnMinion: (archetype, x, y) => {
             spawnedMinions.push({ archetype, x, y });
           },
+          spawnHazard: (x, y, radius, delay, damage, colorHex) => {
+            this.hazards.push({
+              id: this.nextId++,
+              x,
+              y,
+              radius,
+              timer: delay,
+              maxTimer: delay,
+              damage,
+              colorHex,
+            });
+          },
           damagePlayer: (amount, sourceEnemy) => {
             this.damagePlayer(player, amount, sourceEnemy, onPlayerDamaged, events);
           },
         },
         events
       );
+
+      // Push enemy outside ArenaPillars
+      for (const pil of pillars) {
+        const pdx = e.x - pil.x;
+        const pdy = e.y - pil.y;
+        const minD = pil.radius + e.radius;
+        const d = Math.hypot(pdx, pdy);
+        if (d > 0.01 && d < minD) {
+          e.x = pil.x + (pdx / d) * minD;
+          e.y = pil.y + (pdy / d) * minD;
+        }
+      }
+    }
+
+    // Update telegraphed hazard zones
+    for (let i = this.hazards.length - 1; i >= 0; i--) {
+      const h = this.hazards[i]!;
+      h.timer -= dt;
+      if (h.timer <= 0) {
+        if (Math.hypot(player.x - h.x, player.y - h.y) <= h.radius + 14) {
+          this.damagePlayer(player, h.damage, undefined, onPlayerDamaged, events);
+        }
+        events.push({ type: 'vfx_ring', x: h.x, y: h.y, radius: h.radius, colorHex: h.colorHex });
+        events.push({ type: 'vfx_burst', x: h.x, y: h.y, colorHex: h.colorHex, count: 16, radius: h.radius * 0.6 });
+        events.push({ type: 'grid_impulse', x: h.x, y: h.y, strength: 160, radius: h.radius + 30 });
+        this.hazards.splice(i, 1);
+      }
     }
 
     // Remove dead enemies & handle Splitter death splits
@@ -1654,12 +1738,12 @@ export class CombatEngine {
       if (e.hp <= 0) {
         const wasFrozen = Boolean(e.statuses.FROZEN);
         if (e.archetype === 'SPLITTER' && !wasFrozen) {
-          for (let s = 0; s < 3; s++) {
-            const a = (s / 3) * Math.PI * 2;
+          for (let s = 0; s < 2; s++) {
+            const a = s * Math.PI + Math.random() * 0.4;
             spawnedMinions.push({
               archetype: 'SWARMER',
-              x: e.x + Math.cos(a) * 18,
-              y: e.y + Math.sin(a) * 18,
+              x: e.x + Math.cos(a) * 20,
+              y: e.y + Math.sin(a) * 20,
             });
           }
         }

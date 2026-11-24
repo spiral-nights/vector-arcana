@@ -1,8 +1,42 @@
-import { ARENA_HALF_H, ARENA_HALF_W, EnemyArchetype, PlayerState, SimEvent } from './types';
+import {
+  ARENA_HALF_H,
+  ARENA_HALF_W,
+  ArenaPillar,
+  EnemyArchetype,
+  PlayerState,
+  SectorGate,
+  SimEvent,
+  SpawnRiftEntity,
+} from './types';
 
-interface SpawnEntry {
-  archetype: EnemyArchetype;
-  delay: number;
+export function generateSectorPillars(sector: number): ArenaPillar[] {
+  const layout = (sector - 1) % 5;
+  const coords: Array<[number, number, number, number]> = [];
+
+  if (layout === 0) {
+    // Quad Sanctum
+    coords.push([-320, 260, 44, 6], [320, 260, 44, 6], [-320, -260, 44, 6], [320, -260, 44, 6]);
+  } else if (layout === 1) {
+    // Twin Corridors
+    coords.push([-220, 180, 48, 4], [-220, -180, 48, 4], [260, 320, 44, 4], [260, -320, 44, 4], [0, 0, 42, 8]);
+  } else if (layout === 2) {
+    // Diamond Ring
+    coords.push([0, 340, 46, 6], [0, -340, 46, 6], [-420, 0, 46, 6], [420, 0, 46, 6]);
+  } else if (layout === 3) {
+    // Asymmetric Bastion
+    coords.push([-380, 240, 48, 8], [-120, -220, 52, 6], [220, 220, 48, 6], [460, -240, 44, 8]);
+  } else {
+    // Boss Arena (wide outer pillars)
+    coords.push([-480, 360, 50, 8], [480, 360, 50, 8], [-480, -360, 50, 8], [480, -360, 50, 8]);
+  }
+
+  return coords.map(([x, y, radius, sides], i) => ({
+    id: i + 1,
+    x,
+    y,
+    radius,
+    sides,
+  }));
 }
 
 export class WaveDirector {
@@ -10,67 +44,104 @@ export class WaveDirector {
   public score = 0;
   public multiplier = 1;
   public multiplierTimer = 0;
-  private spawnQueue: SpawnEntry[] = [];
-  private spawnTimer = 0;
-  private waveClearDelay = 0;
+  public pillars: ArenaPillar[] = [];
+  public rifts: SpawnRiftEntity[] = [];
+  public gate: SectorGate = {
+    open: false,
+    x: ARENA_HALF_W - 34,
+    y: 0,
+    radius: 68,
+  };
+  private nextRiftId = 1;
 
   public reset(): void {
     this.wave = 0;
     this.score = 0;
     this.multiplier = 1;
     this.multiplierTimer = 0;
-    this.spawnQueue = [];
-    this.spawnTimer = 0;
-    this.waveClearDelay = 0;
+    this.pillars = [];
+    this.rifts = [];
+    this.gate.open = false;
+    this.nextRiftId = 1;
   }
 
-  public startWave(waveNum: number, events: SimEvent[]): void {
-    this.wave = waveNum;
-    this.spawnQueue = [];
-    this.spawnTimer = 0.2;
-    this.waveClearDelay = 0;
+  public startWave(sectorNum: number, events: SimEvent[]): void {
+    this.wave = sectorNum;
+    this.pillars = generateSectorPillars(sectorNum);
+    this.rifts = [];
+    this.gate.open = false;
 
-    const isBoss = waveNum % 5 === 0;
-    if (isBoss) {
-      this.spawnQueue.push({ archetype: 'WARDEN', delay: 0.2 });
+    const isBoss = sectorNum % 5 === 0;
+    const squads = this.buildSectorSquads(sectorNum, isBoss);
+
+    const riftPositions: Array<[number, number]> =
+      squads.length === 1
+        ? [[420, 0]]
+        : [
+            [420, 280],
+            [420, -280],
+          ];
+
+    for (let i = 0; i < squads.length; i++) {
+      const [rx, ry] = riftPositions[i % riftPositions.length]!;
+      this.rifts.push({
+        id: this.nextRiftId++,
+        x: rx,
+        y: ry,
+        radius: 56,
+        timer: 2.0,
+        maxTimer: 2.0,
+        archetypes: squads[i]!,
+      });
     }
 
-    const swarmerCount = 14 + waveNum * 4;
-    for (let i = 0; i < swarmerCount; i++) {
-      this.spawnQueue.push({ archetype: 'SWARMER', delay: i % 6 === 0 ? 0.9 : 0.08 });
-    }
-
-    const bastionCount = Math.min(5, Math.floor((waveNum + 1) / 2));
-    for (let i = 0; i < bastionCount; i++) {
-      this.spawnQueue.push({ archetype: 'BASTION', delay: 0.7 });
-    }
-
-    if (waveNum >= 2) {
-      const stalkerCount = Math.min(6, 1 + Math.floor(waveNum * 0.7));
-      for (let i = 0; i < stalkerCount; i++) {
-        this.spawnQueue.push({ archetype: 'STALKER', delay: 0.55 });
-      }
-    }
-
-    if (waveNum >= 3) {
-      const weaverCount = Math.min(5, Math.floor(waveNum * 0.6));
-      for (let i = 0; i < weaverCount; i++) {
-        this.spawnQueue.push({ archetype: 'WEAVER', delay: 0.65 });
-      }
-      const splitterCount = Math.min(5, Math.floor(waveNum * 0.6));
-      for (let i = 0; i < splitterCount; i++) {
-        this.spawnQueue.push({ archetype: 'SPLITTER', delay: 0.65 });
-      }
-    }
-
-    events.push({ type: 'wave_start', wave: waveNum, isBoss });
+    events.push({ type: 'wave_start', wave: sectorNum, isBoss });
     events.push({ type: 'sfx', sound: isBoss ? 'boss_spawn' : 'wave_start' });
+  }
+
+  private buildSectorSquads(sector: number, isBoss: boolean): EnemyArchetype[][] {
+    if (isBoss) {
+      return [
+        ['WARDEN'],
+        ['SWARMER', 'SWARMER', 'STALKER'],
+      ];
+    }
+    if (sector === 1) {
+      return [['SWARMER', 'SWARMER', 'SWARMER', 'SWARMER', 'BASTION']];
+    }
+    if (sector === 2) {
+      return [
+        ['SWARMER', 'SWARMER', 'BASTION'],
+        ['SWARMER', 'SWARMER', 'STALKER', 'STALKER'],
+      ];
+    }
+    if (sector === 3) {
+      return [
+        ['SWARMER', 'SWARMER', 'WEAVER', 'SPLITTER'],
+        ['SWARMER', 'WEAVER', 'SPLITTER'],
+      ];
+    }
+    if (sector === 4) {
+      return [
+        ['SWARMER', 'SWARMER', 'BASTION', 'WEAVER', 'STALKER'],
+        ['SWARMER', 'SWARMER', 'BASTION', 'SPLITTER', 'STALKER'],
+      ];
+    }
+    // Sector 6+ scaling
+    const extra = Math.min(4, Math.floor((sector - 4) / 2));
+    const s1: EnemyArchetype[] = ['SWARMER', 'SWARMER', 'BASTION', 'WEAVER', 'STALKER'];
+    const s2: EnemyArchetype[] = ['SWARMER', 'SWARMER', 'SPLITTER', 'WEAVER', 'STALKER'];
+    for (let i = 0; i < extra; i++) {
+      s1.push(i % 2 === 0 ? 'SWARMER' : 'STALKER');
+      s2.push(i % 2 === 0 ? 'SPLITTER' : 'BASTION');
+    }
+    return [s1, s2];
   }
 
   public step(
     dt: number,
     activeEnemyCount: number,
-    player: PlayerState,
+    _player: PlayerState,
     spawnEnemy: (archetype: EnemyArchetype, x: number, y: number) => void,
     events: SimEvent[]
   ): void {
@@ -82,54 +153,40 @@ export class WaveDirector {
       }
     }
 
-    if (this.spawnQueue.length > 0) {
-      this.spawnTimer -= dt;
-      while (this.spawnQueue.length > 0 && this.spawnTimer <= 0) {
-        const next = this.spawnQueue.shift()!;
-        const pos = this.pickPerimeterSpawn(player);
-        spawnEnemy(next.archetype, pos.x, pos.y);
-        this.spawnTimer += next.delay;
-      }
-    } else if (activeEnemyCount === 0) {
-      this.waveClearDelay += dt;
-      if (this.waveClearDelay >= 1.8) {
-        this.startWave(this.wave + 1, events);
+    for (let i = this.rifts.length - 1; i >= 0; i--) {
+      const r = this.rifts[i]!;
+      r.timer -= dt;
+      if (r.timer <= 0) {
+        const count = r.archetypes.length;
+        for (let k = 0; k < count; k++) {
+          const a = (k / Math.max(1, count)) * Math.PI * 2;
+          const dist = count === 1 ? 0 : 42;
+          const sx = Math.max(-ARENA_HALF_W + 40, Math.min(ARENA_HALF_W - 40, r.x + Math.cos(a) * dist));
+          const sy = Math.max(-ARENA_HALF_H + 40, Math.min(ARENA_HALF_H - 40, r.y + Math.sin(a) * dist));
+          spawnEnemy(r.archetypes[k]!, sx, sy);
+        }
+        events.push({ type: 'vfx_burst', x: r.x, y: r.y, colorHex: 0xb429ff, count: 22, radius: 65 });
+        events.push({ type: 'vfx_ring', x: r.x, y: r.y, radius: 85, colorHex: 0x00f5ff });
+        events.push({ type: 'grid_impulse', x: r.x, y: r.y, strength: 180, radius: 140 });
+        this.rifts.splice(i, 1);
       }
     }
-  }
 
-  private pickPerimeterSpawn(player: PlayerState): { x: number; y: number } {
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const edge = Math.floor(Math.random() * 4);
-      let x = 0;
-      let y = 0;
-      if (edge === 0) {
-        x = (Math.random() * 2 - 1) * (ARENA_HALF_W - 40);
-        y = ARENA_HALF_H - 28;
-      } else if (edge === 1) {
-        x = (Math.random() * 2 - 1) * (ARENA_HALF_W - 40);
-        y = -ARENA_HALF_H + 28;
-      } else if (edge === 2) {
-        x = ARENA_HALF_W - 28;
-        y = (Math.random() * 2 - 1) * (ARENA_HALF_H - 40);
-      } else {
-        x = -ARENA_HALF_W + 28;
-        y = (Math.random() * 2 - 1) * (ARENA_HALF_H - 40);
-      }
-      if (Math.hypot(x - player.x, y - player.y) > 220) {
-        return { x, y };
-      }
+    if (!this.gate.open && this.rifts.length === 0 && activeEnemyCount === 0) {
+      this.gate.open = true;
+      events.push({ type: 'gate_open', wave: this.wave });
+      events.push({ type: 'vfx_ring', x: this.gate.x, y: this.gate.y, radius: 110, colorHex: 0x39ff14 });
+      events.push({ type: 'sfx', sound: 'wave_start' });
     }
-    return { x: player.x > 0 ? -ARENA_HALF_W + 35 : ARENA_HALF_W - 35, y: 0 };
   }
 
   public onEnemyKilled(archetype: EnemyArchetype): void {
     const basePoints =
       archetype === 'WARDEN' ? 1500 :
-      archetype === 'BASTION' ? 160 :
-      archetype === 'WEAVER' ? 140 :
-      archetype === 'SPLITTER' ? 130 :
-      archetype === 'STALKER' ? 110 : 40;
+      archetype === 'BASTION' ? 180 :
+      archetype === 'WEAVER' ? 160 :
+      archetype === 'SPLITTER' ? 150 :
+      archetype === 'STALKER' ? 130 : 60;
 
     this.score += basePoints * this.multiplier;
     this.multiplier = Math.min(16, this.multiplier + 1);

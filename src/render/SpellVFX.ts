@@ -1,12 +1,16 @@
 import * as THREE from 'three';
 import {
+  ArenaPillar,
   BeamEntity,
+  HazardZoneEntity,
   MineEntity,
   PoolEntity,
   ProjectileEntity,
+  SectorGate,
   ShieldBarrierEntity,
   SimSnapshot,
   SlashArcEntity,
+  SpawnRiftEntity,
   StormEntity,
   WallPylonEntity,
 } from '../sim/types';
@@ -73,6 +77,11 @@ export class SpellVFX {
   private readonly shieldMeshes = new Map<number, THREE.Group>();
   private readonly poolMeshes = new Map<number, THREE.Group>();
   private readonly slashMeshes = new Map<number, THREE.Group>();
+  private readonly pillarMeshes = new Map<string, THREE.Group>();
+  private readonly riftMeshes = new Map<number, THREE.Group>();
+  private readonly hazardMeshes = new Map<number, THREE.Group>();
+  private gateGroup: THREE.Group | null = null;
+  private gateLastOpen = false;
 
   private readonly transientLines: TransientLine[] = [];
   private readonly waveArcs: TransientWaveArc[] = [];
@@ -411,6 +420,10 @@ export class SpellVFX {
     this.syncShields(snapshot.shields);
     this.syncPools(snapshot.pools, timeSec);
     this.syncSlashes(snapshot.slashes);
+    this.syncPillars(snapshot.pillars);
+    this.syncRifts(snapshot.rifts, timeSec);
+    this.syncHazards(snapshot.hazards);
+    this.syncGate(snapshot.gate, timeSec);
 
     // Update storm strikes
     for (let i = this.stormStrikes.length - 1; i >= 0; i--) {
@@ -914,6 +927,145 @@ export class SpellVFX {
       }
     }
     this.pruneMap(this.slashMeshes, alive);
+  }
+
+  private syncPillars(items: readonly ArenaPillar[]): void {
+    const alive = new Set<string>();
+    for (const p of items) {
+      const key = `${p.id}:${p.x}:${p.y}:${p.radius}`;
+      alive.add(key);
+      if (!this.pillarMeshes.has(key)) {
+        const g = new THREE.Group();
+        const cyl = new THREE.CylinderGeometry(p.radius, p.radius, 46, p.sides, 1);
+        cyl.rotateX(Math.PI / 2);
+        const wire = new THREE.WireframeGeometry(cyl);
+        g.add(
+          new THREE.LineSegments(
+            wire,
+            new THREE.LineBasicMaterial({ color: 0x1a6bff, transparent: true, opacity: 0.78 })
+          )
+        );
+        g.add(
+          new THREE.Mesh(
+            cyl,
+            new THREE.MeshBasicMaterial({
+              color: 0x00f5ff,
+              transparent: true,
+              opacity: 0.08,
+              blending: THREE.AdditiveBlending,
+            })
+          )
+        );
+        g.position.set(p.x, p.y, 23);
+        this.pillarMeshes.set(key, g);
+        this.scene.add(g);
+      }
+    }
+    for (const [k, obj] of this.pillarMeshes.entries()) {
+      if (!alive.has(k)) {
+        this.scene.remove(obj);
+        this.disposeObject(obj);
+        this.pillarMeshes.delete(k);
+      }
+    }
+  }
+
+  private syncRifts(items: readonly SpawnRiftEntity[], timeSec: number): void {
+    const alive = new Set<number>();
+    for (const r of items) {
+      alive.add(r.id);
+      let g = this.riftMeshes.get(r.id);
+      if (!g) {
+        g = new THREE.Group();
+        const outerPts: THREE.Vector3[] = [];
+        const innerPts: THREE.Vector3[] = [];
+        for (let i = 0; i <= 24; i++) {
+          const a = (i / 24) * Math.PI * 2;
+          outerPts.push(new THREE.Vector3(Math.cos(a) * r.radius, Math.sin(a) * r.radius, 1.5));
+          innerPts.push(new THREE.Vector3(Math.cos(a) * r.radius, Math.sin(a) * r.radius, 2));
+        }
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(outerPts), new THREE.LineBasicMaterial({ color: 0xb429ff, transparent: true, opacity: 0.85 })));
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(innerPts), new THREE.LineBasicMaterial({ color: 0x00f5ff, transparent: true, opacity: 0.9 })));
+        g.position.set(r.x, r.y, 0);
+        this.riftMeshes.set(r.id, g);
+        this.scene.add(g);
+      }
+      const ratio = Math.max(0.05, r.timer / Math.max(0.1, r.maxTimer));
+      g.children[0]!.rotation.z = timeSec * 2.5;
+      g.children[1]!.scale.set(ratio, ratio, 1);
+      g.children[1]!.rotation.z = -timeSec * 3.5;
+    }
+    this.pruneMap(this.riftMeshes, alive);
+  }
+
+  private syncHazards(items: readonly HazardZoneEntity[]): void {
+    const alive = new Set<number>();
+    for (const h of items) {
+      alive.add(h.id);
+      let g = this.hazardMeshes.get(h.id);
+      if (!g) {
+        g = new THREE.Group();
+        const outerPts: THREE.Vector3[] = [];
+        const innerPts: THREE.Vector3[] = [];
+        for (let i = 0; i <= 24; i++) {
+          const a = (i / 24) * Math.PI * 2;
+          outerPts.push(new THREE.Vector3(Math.cos(a) * h.radius, Math.sin(a) * h.radius, 1.2));
+          innerPts.push(new THREE.Vector3(Math.cos(a) * h.radius, Math.sin(a) * h.radius, 1.5));
+        }
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(outerPts), new THREE.LineBasicMaterial({ color: h.colorHex, transparent: true, opacity: 0.85 })));
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(innerPts), new THREE.LineBasicMaterial({ color: 0xff1e2d, transparent: true, opacity: 0.7 })));
+        g.position.set(h.x, h.y, 0);
+        this.hazardMeshes.set(h.id, g);
+        this.scene.add(g);
+      }
+      const fill = 1 - Math.max(0, h.timer / Math.max(0.1, h.maxTimer));
+      g.children[1]!.scale.set(fill, fill, 1);
+    }
+    this.pruneMap(this.hazardMeshes, alive);
+  }
+
+  private syncGate(gate: SectorGate, timeSec: number): void {
+    if (!this.gateGroup || this.gateLastOpen !== gate.open) {
+      if (this.gateGroup) {
+        this.scene.remove(this.gateGroup);
+        this.disposeObject(this.gateGroup);
+      }
+      this.gateLastOpen = gate.open;
+      const g = new THREE.Group();
+      const color = gate.open ? 0x39ff14 : 0x334466;
+      const archPts = [
+        new THREE.Vector3(0, -gate.radius, 2),
+        new THREE.Vector3(-24, -gate.radius * 0.65, 2),
+        new THREE.Vector3(-24, gate.radius * 0.65, 2),
+        new THREE.Vector3(0, gate.radius, 2),
+      ];
+      g.add(
+        new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(archPts),
+          new THREE.LineBasicMaterial({ color, transparent: true, opacity: gate.open ? 0.95 : 0.45 })
+        )
+      );
+      if (gate.open) {
+        const ringPts: THREE.Vector3[] = [];
+        for (let i = 0; i <= 20; i++) {
+          const a = (i / 20) * Math.PI * 2;
+          ringPts.push(new THREE.Vector3(Math.cos(a) * (gate.radius * 0.5), Math.sin(a) * (gate.radius * 0.5), 2.5));
+        }
+        g.add(
+          new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(ringPts),
+            new THREE.LineBasicMaterial({ color: 0x00f5ff, transparent: true, opacity: 0.85 })
+          )
+        );
+      }
+      g.position.set(gate.x, gate.y, 0);
+      this.gateGroup = g;
+      this.scene.add(g);
+    }
+    if (this.gateGroup && gate.open && this.gateGroup.children[1]) {
+      const pulse = 0.85 + Math.sin(timeSec * 6) * 0.2;
+      this.gateGroup.children[1].scale.set(pulse, pulse, 1);
+    }
   }
 
   private disposeObject(obj: THREE.Object3D): void {

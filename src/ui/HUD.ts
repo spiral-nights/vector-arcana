@@ -88,7 +88,7 @@ export class HUD {
       <div class="hud-top">
         <div class="hud-panel hud-stats">
           <div class="stat-block">
-            <span class="stat-label">Wave</span>
+            <span class="stat-label">Sector</span>
             <span class="stat-value" id="hud-wave">1</span>
           </div>
           <div class="stat-block">
@@ -229,13 +229,23 @@ export class HUD {
   }
 
   public showWaveBanner(wave: number, isBoss: boolean): void {
-    this.waveBanner.textContent = isBoss ? `BOSS WAVE ${wave} — SECTOR WARDEN` : `WAVE ${wave}`;
+    this.waveBanner.textContent = isBoss ? `BOSS SECTOR ${wave} — SECTOR WARDEN` : `SECTOR ${wave}`;
     this.waveBanner.style.color = isBoss ? '#ff2e97' : '#00f5ff';
     this.waveBanner.style.opacity = '1';
     if (this.bannerTimer !== null) window.clearTimeout(this.bannerTimer);
     this.bannerTimer = window.setTimeout(() => {
       this.waveBanner.style.opacity = '0';
-    }, 2000);
+    }, 2200);
+  }
+
+  public showGateOpenBanner(): void {
+    this.waveBanner.textContent = 'SECTOR CLEAR — ENTER EAST GATE →';
+    this.waveBanner.style.color = '#39ff14';
+    this.waveBanner.style.opacity = '1';
+    if (this.bannerTimer !== null) window.clearTimeout(this.bannerTimer);
+    this.bannerTimer = window.setTimeout(() => {
+      this.waveBanner.style.opacity = '0';
+    }, 2600);
   }
 
   public setPreset(preset: ControlPreset): void {

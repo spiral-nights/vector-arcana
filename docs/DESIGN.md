@@ -119,14 +119,17 @@ On Forward Cast (`RMB` in Classic), the resolver inspects the queue from **Prior
 
 ---
 
-## 6. Enemy Archetypes & Wave Director
+## 6. Connected Sectors, Cover Pillars & Tactical Enemies
 
-1. **Vector Swarmer (Pink Pinwheel):** Fast, low HP, flocks in clusters of 15–30.
-2. **Barrier Bastion (Emerald Hexagon):** Heavy front-facing directional shield blocking beams/sprays; shattered by `KINETIC` boulders or flanked.
-3. **Cryo Stalker (Cyan Diamond):** Telegraphs short-range teleports and fires slowing frost needles.
-4. **Beam Weaver (Violet Octagon):** Charges and fires a continuous laser beam; opposing player `VOID`/`NANO` beams trigger a **Beam Clash** tug-of-war that detonates the Weaver when overpowered.
-5. **Singularity Splitter (Amber/Violet Nested Cube):** Splits into 3 Swarmers on death unless killed while **`FROZEN`** (Shattered).
-6. **Sector Warden (Boss — Every 5 Waves):** Multi-node geometric core with 3 rotating shield plates, sweeping clashable laser beams, and Swarmer spawners.
+- **Large Connected Sectors (`2200 × 1500`):** Smooth follow camera with mouse look-ahead, rotating geometric cover pillars (blocking beams and projectiles), and an East Sector Gate that unlocks once all rifts and enemies are cleared.
+- **Telegraphed Spawn Rifts:** Squads materialize from 1–2 glowing `2.0s` warp rifts ahead of the player rather than 360° ambushes.
+- **6 Tactical Enemy Archetypes:**
+  1. **Vector Skirmisher (Pink Pinwheel):** Small tactical packs of 3–5 at deliberate speed (`88 u/s`).
+  2. **Barrier Bastion (Silver-White Hexagon):** Slow directional phalanx (`46 u/s`) with frontal shield + close-range telegraphed shockwave ring.
+  3. **Cryo Stalker (Cyan Diamond):** `0.7s` aim telegraph before firing a 3-needle frost fan, then blinks to flank.
+  4. **Beam Weaver (Violet Octagon):** `1.4s` charge telegraph line before firing a continuous clashable laser beam.
+  5. **Singularity Splitter (Amber/Violet Nested Cube):** Lobs telegraphed gravity mortar rings and splits into 2 Skirmishers on death unless killed while **`FROZEN`**.
+  6. **Sector Warden (Boss — Every 5 Sectors):** Massive core with 3 rotating shield plates, sweeping clashable beams, and Skirmisher spawns.
 
 ---
 

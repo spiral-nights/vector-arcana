@@ -150,6 +150,8 @@ describe('CombatEngine — Mixed Volt + Fire + Barrier Storm', () => {
 describe('GameSim — Click-to-Move & Post-Nova Movement', () => {
   it('continues moving toward a clicked waypoint after button release and stops on arrival', () => {
     const sim = new GameSim();
+    sim.getSnapshot().player.x = 0;
+    sim.waveDirector.pillars = [];
     sim.step(makeInput({ moveClickTarget: { x: 200, y: 0 } }));
     expect(sim.getSnapshot().player.moveTarget).toEqual({ x: 200, y: 0 });
 
@@ -321,16 +323,18 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     expect(e.shieldHp).toBe(0);
   });
 
-  it('SPLITTER spawns 3 Swarmers on normal death, and 0 when killed while FROZEN', () => {
+  it('SPLITTER spawns 2 Swarmers on normal death, and 0 when killed while FROZEN', () => {
     const simNormal = new GameSim();
     simNormal.combat.enemies = [];
+    simNormal.waveDirector.rifts = [];
     const s1 = simNormal.combat.spawnEnemy('SPLITTER', 300, 0, 1);
     s1.hp = 0;
     simNormal.step(makeInput());
-    expect(simNormal.getSnapshot().enemies.filter((e) => e.archetype === 'SWARMER').length).toBe(3);
+    expect(simNormal.getSnapshot().enemies.filter((e) => e.archetype === 'SWARMER').length).toBe(2);
 
     const simFrozen = new GameSim();
     simFrozen.combat.enemies = [];
+    simFrozen.waveDirector.rifts = [];
     const s2 = simFrozen.combat.spawnEnemy('SPLITTER', 300, 0, 1);
     s2.statuses.FROZEN = { type: 'FROZEN', remaining: 2, stacks: 1, potency: 1 };
     s2.hp = 0;
@@ -340,6 +344,8 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
 
   it('WEAVER enters Beam Clash against opposing player VOID beam and detonates when overpowered', () => {
     const sim = new GameSim();
+    sim.getSnapshot().player.x = 0;
+    sim.waveDirector.pillars = [];
     sim.combat.enemies = [];
     const weaver = sim.combat.spawnEnemy('WEAVER', 240, 0, 1);
     weaver.aiState = 'FIRE';
@@ -378,16 +384,69 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     expect(sim.getSnapshot().enemies.some((e) => e.id === weaver.id)).toBe(false);
   });
 
-  it('WaveDirector spawns Sector Warden boss on Wave 5', () => {
+  it('WaveDirector spawns Sector Warden boss on Sector 5 after 2.0s rift telegraph', () => {
     const sim = new GameSim();
     sim.combat.enemies = [];
     const ev: ReturnType<GameSim['drainEvents']> = [];
     sim.waveDirector.startWave(5, ev);
-    for (let i = 0; i < 20; i++) {
+    expect(sim.getSnapshot().rifts.length).toBeGreaterThan(0);
+    expect(sim.getSnapshot().enemies.length).toBe(0);
+
+    const ticks = Math.ceil(2.1 / FIXED_DT);
+    for (let i = 0; i < ticks; i++) {
       sim.step(makeInput());
     }
     expect(sim.getSnapshot().enemies.some((e) => e.archetype === 'WARDEN')).toBe(true);
     expect(sim.getSnapshot().boss).not.toBeNull();
+  });
+
+  it('truncates beams at ArenaPillars for real tactical cover', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    sim.waveDirector.pillars = [{ id: 1, x: -700, y: 0, radius: 44, sides: 6 }];
+    const p = sim.getSnapshot().player;
+    p.x = -960;
+    p.y = 0;
+
+    queueAndStep(sim, ['VOID']);
+    sim.step(makeInput({ castAction: 'FORWARD', castHeld: true, aimX: -400, aimY: 0 }));
+    sim.step(makeInput({ castHeld: true, aimX: -400, aimY: 0 }));
+    const beam = sim.getSnapshot().beams[0]!;
+    expect(beam.clashing).toBe(true);
+    expect(beam.clashDist).toBeLessThan(260);
+  });
+
+  it('opens East gate when sector is cleared and advances to Sector 2 on entry', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    sim.step(makeInput());
+    expect(sim.getSnapshot().gate.open).toBe(true);
+
+    const p = sim.getSnapshot().player;
+    p.hp = 60;
+    p.x = sim.getSnapshot().gate.x;
+    p.y = sim.getSnapshot().gate.y;
+    sim.step(makeInput());
+
+    expect(sim.getSnapshot().wave).toBe(2);
+    expect(sim.getSnapshot().gate.open).toBe(false);
+    expect(sim.getSnapshot().player.x).toBeLessThan(-800);
+    expect(sim.getSnapshot().player.hp).toBe(85);
+  });
+
+  it('grants 0.75s i-frames and knocks back nearby enemies on player damage', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    const p = sim.getSnapshot().player;
+    const e = sim.combat.spawnEnemy('SWARMER', p.x + 25, p.y, 1);
+    const ev: ReturnType<GameSim['drainEvents']> = [];
+    sim.combat.damagePlayer(p, 10, e, () => {}, ev);
+
+    expect(p.invulnTimer).toBeCloseTo(0.75);
+    expect(e.vx).toBeGreaterThan(150);
   });
 
   it('channeled FLUX + THERMAL (Plasma) beam spawns 0 puddles in empty space', () => {

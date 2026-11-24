@@ -250,11 +250,14 @@ function frame(now: number): void {
       sceneManager.addScreenShake(2.5);
     } else if (ev.type === 'wave_start') {
       hud.showWaveBanner(ev.wave, ev.isBoss);
+    } else if (ev.type === 'gate_open') {
+      hud.showGateOpenBanner();
     }
   }
 
   warpingGrid.update(rawDt);
   const snapshot = sim.getSnapshot();
+  sceneManager.setCameraTarget(snapshot.player.x, snapshot.player.y, aimWorld.x, aimWorld.y, rawDt);
   if (snapshot.player.moving || snapshot.player.dashTimer > 0) {
     const thrustColor = snapshot.player.queue[0]
       ? ELEMENT_META[snapshot.player.queue[0]].colorHex

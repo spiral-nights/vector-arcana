@@ -19,6 +19,7 @@ export class EntityRenderer {
   private readonly armorCage: THREE.Line;
   private readonly reticleGroup = new THREE.Group();
   private readonly waypointGroup = new THREE.Group();
+  private readonly gatePointer: THREE.LineLoop;
   private readonly pipMeshes: THREE.Group[] = [];
   private readonly pipSlots: Array<QueueElement | null> = [null, null, null];
 
@@ -204,6 +205,20 @@ export class EntityRenderer {
     );
     this.waypointGroup.visible = false;
     this.scene.add(this.waypointGroup);
+
+    // Diegetic East Gate Pointer
+    const ptrPts = [
+      new THREE.Vector3(10, 0, 3),
+      new THREE.Vector3(-4, 6, 3),
+      new THREE.Vector3(-2, 0, 3),
+      new THREE.Vector3(-4, -6, 3),
+    ];
+    this.gatePointer = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints(ptrPts),
+      new THREE.LineBasicMaterial({ color: 0x39ff14, transparent: true, opacity: 0.95 })
+    );
+    this.gatePointer.visible = false;
+    this.scene.add(this.gatePointer);
   }
 
   private createArcLine(radius: number, colorHex: number, opacity: number, span: number): THREE.Line {
@@ -312,6 +327,15 @@ export class EntityRenderer {
       this.waypointGroup.scale.set(pulse, pulse, 1);
     } else {
       this.waypointGroup.visible = false;
+    }
+
+    if (snapshot.gate.open) {
+      const ga = Math.atan2(snapshot.gate.y - p.y, snapshot.gate.x - p.x);
+      this.gatePointer.visible = true;
+      this.gatePointer.position.set(p.x + Math.cos(ga) * 52, p.y + Math.sin(ga) * 52, 0);
+      this.gatePointer.rotation.z = ga;
+    } else {
+      this.gatePointer.visible = false;
     }
 
     // Thruster flicker

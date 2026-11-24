@@ -18,9 +18,11 @@ export class SceneManager {
 
   private tiltEnabled = false;
   private shakeIntensity = 0;
-  private baseCamPos = new THREE.Vector3(0, 0, 600);
-  private frustumHalfW = ARENA_HALF_W + 60;
-  private frustumHalfH = ARENA_HALF_H + 60;
+  private camX = 0;
+  private camY = 0;
+  private baseCamPos = new THREE.Vector3(0, 0, 650);
+  private frustumHalfW = 580;
+  private frustumHalfH = 400;
 
   constructor(container: HTMLElement) {
     this.scene = new THREE.Scene();
@@ -78,8 +80,8 @@ export class SceneManager {
 
   private updateCameraFrustum(width: number, height: number): void {
     const aspect = Math.max(0.1, width / Math.max(1, height));
-    const targetHalfW = ARENA_HALF_W + 70;
-    const targetHalfH = ARENA_HALF_H + 85;
+    const targetHalfW = 580;
+    const targetHalfH = 400;
     const targetAspect = targetHalfW / targetHalfH;
 
     if (aspect >= targetAspect) {
@@ -97,17 +99,29 @@ export class SceneManager {
     this.camera.updateProjectionMatrix();
   }
 
+  public setCameraTarget(targetX: number, targetY: number, aimX: number, aimY: number, dt: number): void {
+    const lookX = Math.max(-90, Math.min(90, (aimX - targetX) * 0.1));
+    const lookY = Math.max(-90, Math.min(90, (aimY - targetY) * 0.1));
+    const maxCamX = Math.max(0, ARENA_HALF_W - this.frustumHalfW * 0.55);
+    const maxCamY = Math.max(0, ARENA_HALF_H - this.frustumHalfH * 0.55);
+    const desiredX = Math.max(-maxCamX, Math.min(maxCamX, targetX + lookX));
+    const desiredY = Math.max(-maxCamY, Math.min(maxCamY, targetY + lookY));
+    const alpha = 1 - Math.exp(-7 * Math.min(dt, 0.05));
+    this.camX += (desiredX - this.camX) * alpha;
+    this.camY += (desiredY - this.camY) * alpha;
+  }
+
   private applyCameraTransform(shakeX: number, shakeY: number): void {
     if (this.tiltEnabled) {
       const rad = THREE.MathUtils.degToRad(8);
       const dist = 650;
-      this.baseCamPos.set(0, -Math.sin(rad) * dist, Math.cos(rad) * dist);
+      this.baseCamPos.set(this.camX, this.camY - Math.sin(rad) * dist, Math.cos(rad) * dist);
     } else {
-      this.baseCamPos.set(0, 0, 650);
+      this.baseCamPos.set(this.camX, this.camY, 650);
     }
     this.camera.position.set(this.baseCamPos.x + shakeX, this.baseCamPos.y + shakeY, this.baseCamPos.z);
     this.camera.up.set(0, 1, 0);
-    this.camera.lookAt(shakeX * 0.3, shakeY * 0.3, 0);
+    this.camera.lookAt(this.camX + shakeX * 0.3, this.camY + shakeY * 0.3, 0);
   }
 
   public setTilt(enabled: boolean): void {

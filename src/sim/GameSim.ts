@@ -13,7 +13,7 @@ import {
 
 function createInitialPlayer(): PlayerState {
   return {
-    x: 0,
+    x: -ARENA_HALF_W + 140,
     y: 0,
     vx: 0,
     vy: 0,
@@ -217,6 +217,17 @@ export class GameSim {
     p.x = Math.max(-ARENA_HALF_W + margin, Math.min(ARENA_HALF_W - margin, p.x));
     p.y = Math.max(-ARENA_HALF_H + margin, Math.min(ARENA_HALF_H - margin, p.y));
 
+    for (const pil of this.waveDirector.pillars) {
+      const pdx = p.x - pil.x;
+      const pdy = p.y - pil.y;
+      const minD = pil.radius + 16;
+      const d = Math.hypot(pdx, pdy);
+      if (d > 0.01 && d < minD) {
+        p.x = pil.x + (pdx / d) * minD;
+        p.y = pil.y + (pdy / d) * minD;
+      }
+    }
+
     this.waveDirector.step(
       FIXED_DT,
       this.combat.enemies.length,
@@ -231,10 +242,25 @@ export class GameSim {
       input.castHeld,
       input.selfHeld,
       this.waveDirector.wave,
+      this.waveDirector.pillars,
       (arch) => this.waveDirector.onEnemyKilled(arch),
       () => this.waveDirector.onPlayerDamaged(),
       this.events
     );
+
+    // Connected Sector Gate Transition
+    const gate = this.waveDirector.gate;
+    if (gate.open && Math.hypot(p.x - gate.x, p.y - gate.y) <= gate.radius) {
+      const nextSector = this.waveDirector.wave + 1;
+      p.x = -ARENA_HALF_W + 140;
+      p.y = 0;
+      p.vx = 0;
+      p.vy = 0;
+      p.moveTarget = null;
+      p.hp = Math.min(p.maxHp, p.hp + 25);
+      this.combat.clearTransientForSector();
+      this.waveDirector.startWave(nextSector, this.events);
+    }
 
     if (p.hp <= 0) {
       this.phase = 'GAME_OVER';
@@ -269,6 +295,10 @@ export class GameSim {
       shields: this.combat.shields,
       pools: this.combat.pools,
       slashes: this.combat.slashes,
+      pillars: this.waveDirector.pillars,
+      rifts: this.waveDirector.rifts,
+      hazards: this.combat.hazards,
+      gate: this.waveDirector.gate,
       augments: {},
       pendingAugments: [],
       boss: warden ? { name: 'SECTOR WARDEN', hp: warden.hp, maxHp: warden.maxHp } : null,

@@ -39,7 +39,7 @@
   - `IGNITED` (`THERMAL`): burn DoT, 50% armor shred, thaws `FROZEN`/`CHILLED`.
   - `CORRUPTED` (`NANO`/`TOXIN`): shield drain, anti-regen, stacking corrosive DoT.
 - `EnemyAI.ts`: All 6 geometric enemy constructs (`Vector Swarmer`, `Barrier Bastion`, `Cryo Stalker`, `Beam Weaver` with Beam Clash, `Singularity Splitter` with Frozen Shatter prevention, and `Sector Warden` boss every 5 waves).
-- `WaveDirector.ts`: Escalating waves, score & combo multiplier (`x1`, `x2`, `x4`...), boss waves every 5 waves.
+- `WaveDirector.ts`: Large connected sectors (`2200 × 1500`), 5 rotating cover pillar layouts, `2.0s` telegraphed spawn rifts, East exit gates, score & combo multiplier (`x1`–`x16`), boss sectors every 5 sectors.
 - `CombatEngine.test.ts`: Unit tests for combos, Bastion shield blocking/shatter, Splitter shatter, Beam Clash, and Wave 5 boss spawning.
 
 **Verification:** `pnpm test && pnpm typecheck && pnpm build`.

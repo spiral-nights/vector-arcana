@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { ARENA_HALF_H, ARENA_HALF_W } from '../sim/types';
 
 export class WarpingGrid {
-  private readonly cols = 48;
-  private readonly rows = 34;
+  private readonly cols = 56;
+  private readonly rows = 38;
   private readonly count: number;
 
   private readonly restX: Float32Array;

@@ -1,7 +1,7 @@
 export const FIXED_DT = 1 / 60;
 
-export const ARENA_HALF_W = 560;
-export const ARENA_HALF_H = 380;
+export const ARENA_HALF_W = 1100;
+export const ARENA_HALF_H = 750;
 
 export type BaseElement =
   | 'FLUX'
@@ -312,6 +312,42 @@ export interface SlashArcEntity {
   colors: number[];
 }
 
+export interface ArenaPillar {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  sides: number;
+}
+
+export interface SpawnRiftEntity {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  timer: number;
+  maxTimer: number;
+  archetypes: EnemyArchetype[];
+}
+
+export interface HazardZoneEntity {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  timer: number;
+  maxTimer: number;
+  damage: number;
+  colorHex: number;
+}
+
+export interface SectorGate {
+  open: boolean;
+  x: number;
+  y: number;
+  radius: number;
+}
+
 export interface SimInput {
   moveX: number;
   moveY: number;
@@ -371,6 +407,7 @@ export type SimEvent =
   | { type: 'vfx_spray'; x: number; y: number; angle: number; spread: number; range: number; colors: number[]; isNova: boolean }
   | { type: 'beam_clash'; x: number; y: number; colorHex: number }
   | { type: 'wave_start'; wave: number; isBoss: boolean }
+  | { type: 'gate_open'; wave: number }
   | { type: 'augment_offer'; choices: AugmentDef[] }
   | { type: 'game_over'; score: number; wave: number };
 
@@ -391,6 +428,10 @@ export interface SimSnapshot {
   shields: readonly ShieldBarrierEntity[];
   pools: readonly PoolEntity[];
   slashes: readonly SlashArcEntity[];
+  pillars: readonly ArenaPillar[];
+  rifts: readonly SpawnRiftEntity[];
+  hazards: readonly HazardZoneEntity[];
+  gate: SectorGate;
   augments: Partial<Record<AugmentId, number>>;
   pendingAugments: AugmentDef[];
   boss: { name: string; hp: number; maxHp: number } | null;
