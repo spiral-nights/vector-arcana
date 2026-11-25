@@ -1,97 +1,136 @@
 import {
-  ARENA_HALF_H,
-  ARENA_HALF_W,
+  createConvexObstacle,
+  generateArenaBoundary,
+  getArenaHorizontalSpanAtY0,
+  makeRegularPolyVerts,
+  makeRotatedRectVerts,
+  makeTrapezoidVerts,
+  makeTriangleVerts,
+  pushPointClearOfObstacles,
+} from './ArenaGeometry';
+import {
   ArenaBlock,
+  ArenaObstacle,
   ArenaPillar,
+  ArenaShapeKind,
   EnemyArchetype,
   PlayerState,
   SectorGate,
   SimEvent,
   SpawnRiftEntity,
+  Vec2,
 } from './types';
 
-export function generateSectorPillars(sector: number): ArenaPillar[] {
-  const layout = (sector - 1) % 5;
-  const coords: Array<[number, number, number, number]> = [];
+export interface SectorArenaLayout {
+  shape: ArenaShapeKind;
+  boundary: Vec2[];
+  pillars: ArenaPillar[];
+  blocks: ArenaBlock[];
+  obstacles: ArenaObstacle[];
+}
 
-  if (layout === 0) {
-    // Cyber Vault
-    coords.push([-120, 210, 36, 6], [120, -210, 36, 6], [420, 0, 38, 6]);
-  } else if (layout === 1) {
-    // Reactor Foundry
-    coords.push([-220, 290, 40, 4], [220, -290, 40, 4], [0, 0, 44, 8]);
-  } else if (layout === 2) {
-    // Cryo Gauntlet
-    coords.push([-520, 140, 38, 6], [520, -140, 38, 6], [0, 0, 36, 6]);
-  } else if (layout === 3) {
-    // Bio-Core Compound
-    coords.push([-180, 0, 38, 8], [180, 0, 38, 8], [0, 330, 36, 6], [0, -330, 36, 6]);
+export function generateSectorArena(sector: number): SectorArenaLayout {
+  const isBoss = sector % 5 === 0;
+  let shape: ArenaShapeKind = 'OCTAGON';
+  const pillarDefs: Array<[number, number, number, number]> = [];
+  const blockDefs: Array<[number, number, number, number, number]> = [];
+  const obstacles: ArenaObstacle[] = [];
+  let obsId = 1;
+
+  if (isBoss) {
+    // Boss Sector: 12-sided Void Colosseum with 4 massive outer angled bastions + 4 pillars
+    shape = 'CITADEL_DECAGON';
+    pillarDefs.push([-275, 0, 42, 8], [275, 0, 42, 8], [0, 345, 40, 8], [0, -345, 40, 8]);
+    obstacles.push(
+      createConvexObstacle(obsId++, makeTrapezoidVerts(-470, 310, 145, 90, 44, -0.45), 88, 'WEDGE'),
+      createConvexObstacle(obsId++, makeTrapezoidVerts(470, 310, 145, 90, 44, 0.45), 88, 'WEDGE'),
+      createConvexObstacle(obsId++, makeTrapezoidVerts(-470, -310, 145, 90, 44, 0.45 + Math.PI), 88, 'WEDGE'),
+      createConvexObstacle(obsId++, makeTrapezoidVerts(470, -310, 145, 90, 44, -0.45 + Math.PI), 88, 'WEDGE')
+    );
   } else {
-    // Void Sanctum Boss Arena
-    coords.push([-260, 0, 42, 8], [260, 0, 42, 8], [0, 320, 38, 8], [0, -320, 38, 8]);
+    const nonBossIdx = (sector - 1 - Math.floor((sector - 1) / 5)) % 6;
+    if (nonBossIdx === 0) {
+      // Cyber Octagon: completely clear center corridor (|y| <= 130) + L-shaped wing bunkers & triangular wedges
+      shape = 'OCTAGON';
+      pillarDefs.push([-140, 235, 36, 6], [140, -235, 36, 6]);
+      obstacles.push(
+        // NW compound L-bunker
+        createConvexObstacle(obsId++, makeRotatedRectVerts(-300, 325, 175, 38, 0), 72, 'BUNKER'),
+        createConvexObstacle(obsId++, makeRotatedRectVerts(-440, 240, 38, 92, 0), 68, 'BUNKER'),
+        // SE compound L-bunker
+        createConvexObstacle(obsId++, makeRotatedRectVerts(300, -325, 175, 38, 0), 72, 'BUNKER'),
+        createConvexObstacle(obsId++, makeRotatedRectVerts(440, -240, 38, 92, 0), 68, 'BUNKER'),
+        // Diagonal tactical triangular deflectors
+        createConvexObstacle(obsId++, makeTriangleVerts(350, 275, 92, 0.65, 1.35), 76, 'WEDGE'),
+        createConvexObstacle(obsId++, makeTriangleVerts(-350, -275, 92, -2.49, 1.35), 76, 'WEDGE')
+      );
+    } else if (nonBossIdx === 1) {
+      // Reactor Core: tapered Hexagon arena with MASSIVE central octagonal reactor + 4 slanted trapezoid baffles
+      shape = 'HEXAGON';
+      pillarDefs.push([-620, 180, 36, 6], [620, -180, 36, 6]);
+      obstacles.push(
+        createConvexObstacle(obsId++, makeRegularPolyVerts(0, 0, 168, 8, Math.PI / 8, 1.08, 0.95), 108, 'REACTOR'),
+        createConvexObstacle(obsId++, makeTrapezoidVerts(-360, 290, 150, 95, 42, -0.35), 74, 'WEDGE'),
+        createConvexObstacle(obsId++, makeTrapezoidVerts(360, 290, 150, 95, 42, 0.35), 74, 'WEDGE'),
+        createConvexObstacle(obsId++, makeTrapezoidVerts(-360, -290, 150, 95, 42, 0.35 + Math.PI), 74, 'WEDGE'),
+        createConvexObstacle(obsId++, makeTrapezoidVerts(360, -290, 150, 95, 42, -0.35 + Math.PI), 74, 'WEDGE')
+      );
+    } else if (nonBossIdx === 2) {
+      // Shard Canyon: faceted Diamond Vault with asymmetric slanted chevrons & giant jagged crystal monoliths
+      shape = 'DIAMOND_VAULT';
+      pillarDefs.push([-540, 0, 36, 6], [540, 0, 36, 6]);
+      obstacles.push(
+        createConvexObstacle(obsId++, makeRotatedRectVerts(-260, 220, 44, 175, 0.48), 80, 'MONOLITH'),
+        createConvexObstacle(obsId++, makeRotatedRectVerts(240, -220, 44, 175, 0.48), 80, 'MONOLITH'),
+        createConvexObstacle(obsId++, makeRegularPolyVerts(0, 18, 96, 5, 0.3, 1.3, 0.85), 94, 'MONOLITH'),
+        createConvexObstacle(obsId++, makeTriangleVerts(-320, -250, 102, 0.5, 1.4), 72, 'WEDGE'),
+        createConvexObstacle(obsId++, makeTriangleVerts(320, 250, 102, -2.64, 1.4), 72, 'WEDGE')
+      );
+    } else if (nonBossIdx === 3) {
+      // Wedge Foundry: Trapezoid Deck (narrow West -> wide East) with huge central T-fortress & wing fins
+      shape = 'TRAPEZOID_WEDGE';
+      pillarDefs.push([-520, 0, 38, 8], [580, 340, 38, 6], [580, -340, 38, 6]);
+      obstacles.push(
+        // T-shaped central citadel
+        createConvexObstacle(obsId++, makeRotatedRectVerts(40, 0, 48, 225, 0), 88, 'BUNKER'),
+        createConvexObstacle(obsId++, makeRotatedRectVerts(-85, 0, 95, 52, 0), 82, 'BUNKER'),
+        // Slanted East wing deflectors
+        createConvexObstacle(obsId++, makeTrapezoidVerts(420, 330, 165, 95, 42, -0.3), 76, 'WEDGE'),
+        createConvexObstacle(obsId++, makeTrapezoidVerts(420, -330, 165, 95, 42, 0.3 + Math.PI), 76, 'WEDGE')
+      );
+    } else if (nonBossIdx === 4) {
+      // Twin Bastions: Full Rect with two massive irregular chamfered monolith hubs & figure-8 wedges
+      shape = 'RECTANGLE';
+      pillarDefs.push([0, 360, 40, 6], [0, -360, 40, 6]);
+      obstacles.push(
+        createConvexObstacle(obsId++, makeRegularPolyVerts(-340, 195, 145, 6, 0.25, 1.35, 0.9), 92, 'MONOLITH'),
+        createConvexObstacle(obsId++, makeRegularPolyVerts(340, -195, 145, 6, 0.25, 1.35, 0.9), 92, 'MONOLITH'),
+        createConvexObstacle(obsId++, makeTriangleVerts(360, 265, 108, -2.3, 1.35), 76, 'WEDGE'),
+        createConvexObstacle(obsId++, makeTriangleVerts(-360, -265, 108, 0.84, 1.35), 76, 'WEDGE')
+      );
+    } else {
+      // Shattered Spire: Octagon split by massive diagonal spine monolith + giant side triangles
+      shape = 'OCTAGON';
+      pillarDefs.push([-560, -210, 38, 8], [560, 210, 38, 8]);
+      obstacles.push(
+        createConvexObstacle(obsId++, makeRotatedRectVerts(0, 0, 210, 54, 0.48), 98, 'REACTOR'),
+        createConvexObstacle(obsId++, makeTriangleVerts(-360, 270, 118, -0.45, 1.45), 80, 'WEDGE'),
+        createConvexObstacle(obsId++, makeTriangleVerts(360, -270, 118, 2.69, 1.45), 80, 'WEDGE'),
+        createConvexObstacle(obsId++, makeRegularPolyVerts(290, 320, 74, 5, 0.6), 72, 'MONOLITH'),
+        createConvexObstacle(obsId++, makeRegularPolyVerts(-290, -320, 74, 5, 0.6), 72, 'MONOLITH')
+      );
+    }
   }
 
-  return coords.map(([x, y, radius, sides], i) => ({
+  const boundary = generateArenaBoundary(shape);
+  const pillars: ArenaPillar[] = pillarDefs.map(([x, y, radius, sides], i) => ({
     id: i + 1,
     x,
     y,
     radius,
     sides,
   }));
-}
-
-export function generateSectorBlocks(sector: number): ArenaBlock[] {
-  const layout = (sector - 1) % 5;
-  const defs: Array<[number, number, number, number, number]> = [];
-
-  if (layout === 0) {
-    // Cyber Vault: open center corridor (y=-110..110), upper & lower bunker rooms
-    defs.push(
-      [-280, 320, 170, 36, 68],
-      [260, 320, 170, 36, 68],
-      [-280, -320, 170, 36, 68],
-      [260, -320, 170, 36, 68],
-      [-520, 195, 36, 110, 62],
-      [-520, -195, 36, 110, 62],
-      [520, 210, 36, 110, 62],
-      [520, -210, 36, 110, 62]
-    );
-  } else if (layout === 1) {
-    // Reactor Foundry: split core + side bulkheads with bypass tunnels
-    defs.push(
-      [0, 190, 160, 42, 74],
-      [0, -190, 160, 42, 74],
-      [-430, 0, 44, 165, 70],
-      [430, 0, 44, 165, 70]
-    );
-  } else if (layout === 2) {
-    // Cryo Gauntlet: staggered S-curve chicane trench walls
-    defs.push(
-      [-360, 220, 40, 180, 70],
-      [-90, -220, 40, 180, 70],
-      [190, 220, 40, 180, 70],
-      [470, -220, 40, 180, 70]
-    );
-  } else if (layout === 3) {
-    // Bio-Core Compound: 4 corner bunker compounds + central hub monolith
-    defs.push(
-      [-360, 280, 150, 36, 68],
-      [-360, -280, 150, 36, 68],
-      [340, 280, 150, 36, 68],
-      [340, -280, 150, 36, 68],
-      [0, 0, 88, 88, 78]
-    );
-  } else {
-    // Void Sanctum Boss Colosseum
-    defs.push(
-      [-440, 280, 120, 38, 74],
-      [440, 280, 120, 38, 74],
-      [-440, -280, 120, 38, 74],
-      [440, -280, 120, 38, 74]
-    );
-  }
-
-  return defs.map(([x, y, halfW, halfH, height], i) => ({
+  const blocks: ArenaBlock[] = blockDefs.map(([x, y, halfW, halfH, height], i) => ({
     id: i + 1,
     x,
     y,
@@ -99,6 +138,16 @@ export function generateSectorBlocks(sector: number): ArenaBlock[] {
     halfH,
     height,
   }));
+
+  return { shape, boundary, pillars, blocks, obstacles };
+}
+
+export function generateSectorPillars(sector: number): ArenaPillar[] {
+  return generateSectorArena(sector).pillars;
+}
+
+export function generateSectorBlocks(sector: number): ArenaBlock[] {
+  return generateSectorArena(sector).blocks;
 }
 
 interface RiftWaveSpec {
@@ -113,12 +162,15 @@ export class WaveDirector {
   public score = 0;
   public multiplier = 1;
   public multiplierTimer = 0;
+  public arenaShape: ArenaShapeKind = 'OCTAGON';
+  public arenaBoundary: Vec2[] = generateArenaBoundary('OCTAGON');
   public pillars: ArenaPillar[] = [];
   public blocks: ArenaBlock[] = [];
+  public obstacles: ArenaObstacle[] = [];
   public rifts: SpawnRiftEntity[] = [];
   public gate: SectorGate = {
     open: false,
-    x: ARENA_HALF_W - 34,
+    x: 1100 - 36,
     y: 0,
     radius: 68,
   };
@@ -129,8 +181,11 @@ export class WaveDirector {
     this.score = 0;
     this.multiplier = 1;
     this.multiplierTimer = 0;
+    this.arenaShape = 'OCTAGON';
+    this.arenaBoundary = generateArenaBoundary('OCTAGON');
     this.pillars = [];
     this.blocks = [];
+    this.obstacles = [];
     this.rifts = [];
     this.gate.open = false;
     this.nextRiftId = 1;
@@ -138,19 +193,36 @@ export class WaveDirector {
 
   public startWave(sectorNum: number, events: SimEvent[]): void {
     this.wave = sectorNum;
-    this.pillars = generateSectorPillars(sectorNum);
-    this.blocks = generateSectorBlocks(sectorNum);
+    const layout = generateSectorArena(sectorNum);
+    this.arenaShape = layout.shape;
+    this.arenaBoundary = layout.boundary;
+    this.pillars = layout.pillars;
+    this.blocks = layout.blocks;
+    this.obstacles = layout.obstacles;
     this.rifts = [];
     this.gate.open = false;
+
+    const span = getArenaHorizontalSpanAtY0(this.arenaBoundary);
+    this.gate.x = span.maxX - 36;
+    this.gate.y = 0;
 
     const isBoss = sectorNum % 5 === 0;
     const specs = this.buildSectorSquads(sectorNum, isBoss);
 
     for (const spec of specs) {
+      const safePos = pushPointClearOfObstacles(
+        spec.x,
+        spec.y,
+        54,
+        this.arenaBoundary,
+        this.pillars,
+        this.blocks,
+        this.obstacles
+      );
       this.rifts.push({
         id: this.nextRiftId++,
-        x: spec.x,
-        y: spec.y,
+        x: safePos.x,
+        y: safePos.y,
         radius: 56,
         timer: spec.delay,
         maxTimer: spec.delay,
@@ -165,9 +237,9 @@ export class WaveDirector {
   private buildSectorSquads(sector: number, isBoss: boolean): RiftWaveSpec[] {
     if (isBoss) {
       return [
-        { x: 420, y: 0, delay: 2.0, archetypes: ['WARDEN', 'BASTION', 'PYRO_SPRAYER'] },
-        { x: 320, y: 390, delay: 2.0, archetypes: ['SWARMER', 'PYRO_SPRAYER', 'STALKER', 'WEAVER'] },
-        { x: 320, y: -390, delay: 8.5, archetypes: ['GEO_BOMBER', 'SWARMER', 'WEAVER', 'SPLITTER', 'STALKER'] },
+        { x: 430, y: 0, delay: 2.0, archetypes: ['WARDEN', 'BASTION', 'PYRO_SPRAYER'] },
+        { x: 300, y: 390, delay: 2.0, archetypes: ['SWARMER', 'PYRO_SPRAYER', 'STALKER', 'WEAVER'] },
+        { x: 300, y: -390, delay: 8.5, archetypes: ['GEO_BOMBER', 'SWARMER', 'WEAVER', 'SPLITTER', 'STALKER'] },
       ];
     }
     if (sector === 1) {
@@ -205,7 +277,6 @@ export class WaveDirector {
       ];
     }
 
-    // Sector 6+ scaling
     const extra = Math.min(6, Math.floor((sector - 4) / 2) + 1);
     const s1: EnemyArchetype[] = ['SWARMER', 'PYRO_SPRAYER', 'BASTION', 'WEAVER', 'STALKER'];
     const s2: EnemyArchetype[] = ['SWARMER', 'GEO_BOMBER', 'SPLITTER', 'WEAVER', 'STALKER'];
@@ -257,9 +328,16 @@ export class WaveDirector {
         for (let k = 0; k < count; k++) {
           const a = (k / Math.max(1, count)) * Math.PI * 2;
           const dist = count === 1 ? 0 : 44;
-          const sx = Math.max(-ARENA_HALF_W + 40, Math.min(ARENA_HALF_W - 40, r.x + Math.cos(a) * dist));
-          const sy = Math.max(-ARENA_HALF_H + 40, Math.min(ARENA_HALF_H - 40, r.y + Math.sin(a) * dist));
-          spawnEnemy(r.archetypes[k]!, sx, sy);
+          const safe = pushPointClearOfObstacles(
+            r.x + Math.cos(a) * dist,
+            r.y + Math.sin(a) * dist,
+            28,
+            this.arenaBoundary,
+            this.pillars,
+            this.blocks,
+            this.obstacles
+          );
+          spawnEnemy(r.archetypes[k]!, safe.x, safe.y);
         }
         events.push({ type: 'vfx_burst', x: r.x, y: r.y, colorHex: 0xb429ff, count: 24, radius: 70 });
         events.push({ type: 'vfx_ring', x: r.x, y: r.y, radius: 95, colorHex: 0x00f5ff });
@@ -276,7 +354,7 @@ export class WaveDirector {
     }
   }
 
-  public onEnemyKilled(archetype: EnemyArchetype): void {
+  public onEnemyKilled(archetype: EnemyArchetype, scoreMult = 1): void {
     const basePoints =
       archetype === 'WARDEN' ? 2500 :
       archetype === 'BASTION' ? 180 :
@@ -286,7 +364,7 @@ export class WaveDirector {
       archetype === 'PYRO_SPRAYER' ? 145 :
       archetype === 'STALKER' ? 130 : 60;
 
-    this.score += basePoints * this.multiplier;
+    this.score += Math.round(basePoints * this.multiplier * scoreMult);
     this.multiplier = Math.min(16, this.multiplier + 1);
     this.multiplierTimer = 4.0;
   }

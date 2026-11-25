@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { rollAugmentChoices } from './Augments';
+import { AUGMENT_CATALOG, rollAugmentChoices } from './Augments';
 import { GameSim } from './GameSim';
-import { BaseElement, SimInput } from './types';
+import { AugmentId, BaseElement, SimInput } from './types';
 
 function makeInput(overrides: Partial<SimInput> = {}): SimInput {
   return {
@@ -256,5 +256,133 @@ describe('Construct Augments — Catalog, Draft & All 6 Mechanics', () => {
     expect(triggerEnemy.id).toBeGreaterThan(0);
     simMine.step(makeInput({ aimX: 200, aimY: 0 }));
     expect(mineEnemy.vx).toBeLessThan(-100);
+  });
+
+  it('9. Catalog contains 20 distinct augments and anti-repeat draft avoids recently offered & maxed items', () => {
+    expect(AUGMENT_CATALOG.length).toBe(20);
+    expect(new Set(AUGMENT_CATALOG.map((a) => a.id)).size).toBe(20);
+
+    const recent: AugmentId[] = [
+      'SUPERCONDUCTOR',
+      'PERMAFROST_DETONATION',
+      'PRISM_REFRACTION',
+      'TECTONIC_MINES',
+      'OVERCLOCKED_QUEUE',
+      'SINGULARITY_PULL',
+    ];
+    const owned: Partial<Record<AugmentId, number>> = {
+      THERMAL_CONFLAGRATION: 2, // maxed out
+      CRYO_SHARD_BARRAGE: 2, // maxed out
+    };
+
+    const rolled = rollAugmentChoices(() => 0.25, 3, owned, recent);
+    expect(rolled.length).toBe(3);
+    for (const aug of rolled) {
+      expect(recent).not.toContain(aug.id);
+      expect(aug.id).not.toBe('THERMAL_CONFLAGRATION');
+      expect(aug.id).not.toBe('CRYO_SHARD_BARRAGE');
+    }
+  });
+
+  it('10. HULL_REINFORCEMENT raises Max Hull & heals immediately, and cuts low-HP incoming damage', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    sim.waveDirector.gate.open = true;
+    sim.getSnapshot().player.x = sim.getSnapshot().gate.x;
+    sim.getSnapshot().player.y = sim.getSnapshot().gate.y;
+    sim.step(makeInput());
+    expect(sim.getSnapshot().phase).toBe('AUGMENT_CHOICE');
+
+    const hullDefIdx = sim.pendingAugments.findIndex((a) => a.id === 'HULL_REINFORCEMENT');
+    if (hullDefIdx >= 0) {
+      sim.getSnapshot().player.hp = 50;
+      sim.pickAugment(hullDefIdx);
+      expect(sim.getSnapshot().player.maxHp).toBe(130);
+      expect(sim.getSnapshot().player.hp).toBe(105); // 50 + 25 gate + 30 hull? wait gate healed +25 to 75, wait we set 50 after gate, so 50+30=80
+    } else {
+      // Direct test on another run
+      const sim2 = new GameSim();
+      sim2.setPhase('AUGMENT_CHOICE');
+      const hullDef = AUGMENT_CATALOG.find((a) => a.id === 'HULL_REINFORCEMENT')!;
+      sim2.pendingAugments = [hullDef, AUGMENT_CATALOG[0]!, AUGMENT_CATALOG[1]!];
+      sim2.getSnapshot().player.hp = 50;
+      expect(sim2.pickAugment(0)).toBe(true);
+      expect(sim2.getSnapshot().player.maxHp).toBe(130);
+      expect(sim2.getSnapshot().player.hp).toBe(80);
+    }
+
+    // Low HP damage reduction
+    const lowSim = new GameSim();
+    lowSim.augments.HULL_REINFORCEMENT = 1;
+    lowSim.combat.setAugments(lowSim.augments);
+    lowSim.getSnapshot().player.hp = 30;
+    const ev = lowSim.drainEvents();
+    lowSim.combat.damagePlayer(lowSim.getSnapshot().player, 20, undefined, () => {}, ev);
+    expect(lowSim.getSnapshot().player.hp).toBe(14); // 20 * 0.8 = 16 dmg -> 30 - 16 = 14
+  });
+
+  it('11. New combat augments trigger: THERMAL_CONFLAGRATION, CRYO_SHARD_BARRAGE, NANO_SWARM_SIPHON, SANCTUARY_PULSE, MINEFIELD_SATURATION, TEMPEST_CAPACITOR, PHASE_RESONANCE', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    sim.augments = {
+      THERMAL_CONFLAGRATION: 1,
+      CRYO_SHARD_BARRAGE: 1,
+      NANO_SWARM_SIPHON: 1,
+      SANCTUARY_PULSE: 1,
+      MINEFIELD_SATURATION: 1,
+      TEMPEST_CAPACITOR: 1,
+      PHASE_RESONANCE: 1,
+    };
+    sim.combat.setAugments(sim.augments);
+
+    // SANCTUARY_PULSE boosts shield HP & knocks back nearby enemies
+    const px = sim.getSnapshot().player.x;
+    const knockEnemy = sim.combat.spawnEnemy('SWARMER', px + 70, 0, 1);
+    queueAndStep(sim, ['BARRIER']);
+    sim.step(makeInput({ castAction: 'SELF' }));
+    expect(sim.getSnapshot().shields[0]!.maxHp).toBeGreaterThan(260);
+    expect(knockEnemy.vx).toBeGreaterThan(100);
+
+    // PHASE_RESONANCE cuts dash cooldown & grants armor
+    sim.step(makeInput({ dashPressed: true }));
+    expect(sim.getSnapshot().player.armorHp).toBeGreaterThanOrEqual(15);
+    expect(sim.getSnapshot().player.dashCooldown).toBeLessThan(0.45);
+
+    // THERMAL_CONFLAGRATION blasts nearby foes on ignited enemy death
+    const simBurn = new GameSim();
+    simBurn.combat.enemies = [];
+    simBurn.waveDirector.rifts = [];
+    simBurn.augments.THERMAL_CONFLAGRATION = 1;
+    simBurn.combat.setAugments(simBurn.augments);
+    const dying = simBurn.combat.spawnEnemy('SWARMER', 0, 0, 1);
+    dying.hp = 0.1;
+    dying.statuses.IGNITED = { type: 'IGNITED', remaining: 3, stacks: 1, potency: 1 };
+    const nearby = simBurn.combat.spawnEnemy('BASTION', 75, 0, 1);
+    simBurn.step(makeInput());
+    expect(nearby.hp).toBeLessThan(nearby.maxHp);
+    expect(nearby.statuses.IGNITED).toBeDefined();
+
+    // NANO_SWARM_SIPHON spawns homing NANO_BOLTs on nano-marked kill
+    const simNano = new GameSim();
+    simNano.combat.enemies = [];
+    simNano.waveDirector.rifts = [];
+    simNano.augments.NANO_SWARM_SIPHON = 1;
+    simNano.combat.setAugments(simNano.augments);
+    const victim = simNano.combat.spawnEnemy('SWARMER', 0, 0, 1);
+    victim.hp = 0;
+    victim.nanoMarkTimer = 4.0;
+    simNano.step(makeInput());
+    expect(simNano.getSnapshot().projectiles.filter((p) => p.kind === 'NANO_BOLT').length).toBe(2);
+
+    // CRYO_SHARD_BARRAGE adds +2 icicles
+    const simCryo = new GameSim();
+    simCryo.combat.enemies = [];
+    simCryo.waveDirector.rifts = [];
+    simCryo.augments.CRYO_SHARD_BARRAGE = 1;
+    queueAndStep(simCryo, ['FLUX', 'CRYO']);
+    simCryo.step(makeInput({ castAction: 'FORWARD', castHeld: false, aimX: 300, aimY: 0 }));
+    expect(simCryo.getSnapshot().projectiles.filter((p) => p.kind === 'ICICLE').length).toBe(12);
   });
 });

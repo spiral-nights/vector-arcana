@@ -121,13 +121,81 @@ export type AugmentId =
   | 'PRISM_REFRACTION'
   | 'TECTONIC_MINES'
   | 'OVERCLOCKED_QUEUE'
-  | 'SINGULARITY_PULL';
+  | 'SINGULARITY_PULL'
+  | 'THERMAL_CONFLAGRATION'
+  | 'CRYO_SHARD_BARRAGE'
+  | 'KINETIC_AFTERSHOCK'
+  | 'NANO_SWARM_SIPHON'
+  | 'FLUX_TIDAL_SURGE'
+  | 'SANCTUARY_PULSE'
+  | 'MINEFIELD_SATURATION'
+  | 'TEMPEST_CAPACITOR'
+  | 'PHASE_RESONANCE'
+  | 'PLASMA_OVERDRIVE'
+  | 'WEAKPOINT_ANALYZER'
+  | 'ARCANE_CAPACITOR'
+  | 'HULL_REINFORCEMENT'
+  | 'CHAIN_REACTOR';
 
 export interface AugmentDef {
   id: AugmentId;
   name: string;
   tag: string;
   color: string;
+  description: string;
+  maxStacks: number;
+}
+
+export interface Vec2 {
+  x: number;
+  y: number;
+}
+
+export type ArenaShapeKind =
+  | 'RECTANGLE'
+  | 'OCTAGON'
+  | 'HEXAGON'
+  | 'DIAMOND_VAULT'
+  | 'TRAPEZOID_WEDGE'
+  | 'CITADEL_DECAGON';
+
+export type ArenaObstacleStyle = 'BUNKER' | 'MONOLITH' | 'REACTOR' | 'WEDGE';
+
+export interface ArenaObstacle {
+  id: number;
+  vertices: Vec2[];
+  cx: number;
+  cy: number;
+  boundRadius: number;
+  height: number;
+  style: ArenaObstacleStyle;
+}
+
+export type DifficultyId = 'RECRUIT' | 'VETERAN' | 'OVERLORD';
+
+export interface DifficultyConfig {
+  id: DifficultyId;
+  label: string;
+  enemyHpMult: number;
+  enemyDamageMult: number;
+  enemySpeedMult: number;
+  scoreMult: number;
+}
+
+export type ShipId = 'VANGUARD' | 'SPECTRE' | 'TITAN' | 'PRISM';
+
+export interface ShipDef {
+  id: ShipId;
+  name: string;
+  role: string;
+  color: string;
+  colorHex: number;
+  maxHp: number;
+  startArmor: number;
+  speedMult: number;
+  damageMult: number;
+  dashCooldownMult: number;
+  channelDurMult: number;
   description: string;
 }
 
@@ -454,10 +522,15 @@ export interface SimSnapshot {
   slashes: readonly SlashArcEntity[];
   pillars: readonly ArenaPillar[];
   blocks: readonly ArenaBlock[];
+  obstacles: readonly ArenaObstacle[];
+  arenaShape: ArenaShapeKind;
+  arenaBoundary: readonly Vec2[];
   rifts: readonly SpawnRiftEntity[];
   hazards: readonly HazardZoneEntity[];
   gate: SectorGate;
   augments: Partial<Record<AugmentId, number>>;
   pendingAugments: AugmentDef[];
   boss: { name: string; hp: number; maxHp: number } | null;
+  difficulty: DifficultyId;
+  shipId: ShipId;
 }

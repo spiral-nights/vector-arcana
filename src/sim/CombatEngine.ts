@@ -1,15 +1,24 @@
+import {
+  circleVsConvexPoly,
+  clampPointToConvexPoly,
+  DEFAULT_RECT_BOUNDARY,
+  pointInConvexPoly,
+  rayVsArenaBoundary,
+  rayVsConvexPoly,
+} from './ArenaGeometry';
 import { getAugmentStacks } from './Augments';
 import { createEnemy, normalizeAngle, stepEnemyAI } from './EnemyAI';
+import { getDifficultyConfig, getShipDef } from './Ships';
 import { computeComposition, ResolvedSelfCast, ResolvedSpell } from './SpellResolver';
 import {
-  ARENA_HALF_H,
-  ARENA_HALF_W,
   ArenaBlock,
+  ArenaObstacle,
   ArenaPillar,
   AugmentId,
   BeamEntity,
   ChannelState,
   ChargeState,
+  DifficultyConfig,
   ELEMENT_META,
   ElementComposition,
   EnemyArchetype,
@@ -21,10 +30,12 @@ import {
   ProjectileEntity,
   QueueElement,
   ShieldBarrierEntity,
+  ShipDef,
   SimEvent,
   SlashArcEntity,
   StatusType,
   StormEntity,
+  Vec2,
   WallPylonEntity,
 } from './types';
 
@@ -32,11 +43,13 @@ const MAX_STORMS = 1;
 const MAX_MINES = 8;
 const MAX_WALL_PYLONS = 16;
 
-function clampArena(x: number, y: number, pad = 24): { x: number; y: number } {
-  return {
-    x: Math.max(-ARENA_HALF_W + pad, Math.min(ARENA_HALF_W - pad, x)),
-    y: Math.max(-ARENA_HALF_H + pad, Math.min(ARENA_HALF_H - pad, y)),
-  };
+function clampArena(
+  x: number,
+  y: number,
+  pad = 24,
+  boundary: readonly Vec2[] = DEFAULT_RECT_BOUNDARY
+): { x: number; y: number } {
+  return clampPointToConvexPoly(x, y, pad, boundary);
 }
 
 function pointToRayDist(
@@ -187,9 +200,21 @@ export class CombatEngine {
   private splashCooldown = new Map<number, number>();
   private augments: Partial<Record<AugmentId, number>> = {};
   private refractedBeamIds = new Map<string, number[]>();
+  private shipDef: ShipDef = getShipDef('VANGUARD');
+  private difficulty: DifficultyConfig = getDifficultyConfig('VETERAN');
+  private currentBoundary: readonly Vec2[] = DEFAULT_RECT_BOUNDARY;
 
   public setAugments(augments: Partial<Record<AugmentId, number>>): void {
     this.augments = augments;
+  }
+
+  public setRunConfig(ship: ShipDef, difficulty: DifficultyConfig): void {
+    this.shipDef = ship;
+    this.difficulty = difficulty;
+  }
+
+  public setArenaBoundary(boundary: readonly Vec2[]): void {
+    this.currentBoundary = boundary;
   }
 
   private getSpellAccentColor(elements: readonly QueueElement[], comp: ElementComposition): number {
@@ -244,9 +269,18 @@ export class CombatEngine {
   }
 
   public spawnEnemy(archetype: EnemyArchetype, x: number, y: number, wave: number): EnemyEntity {
-    const enemy = createEnemy(this.nextId++, archetype, x, y, wave);
+    const enemy = createEnemy(this.nextId++, archetype, x, y, wave, this.difficulty);
     this.enemies.push(enemy);
     return enemy;
+  }
+
+  private emitSanctuaryPulse(x: number, y: number, stacks: number, events: SimEvent[]): void {
+    if (stacks <= 0) return;
+    const radius = 155;
+    this.applyAoEDamage(x, y, radius, 28 * stacks, ['BARRIER'], 260, events);
+    events.push({ type: 'vfx_ring', x, y, radius, colorHex: 0xe6f0ff, duration: 0.28 });
+    events.push({ type: 'grid_impulse', x, y, strength: 185, radius });
+    events.push({ type: 'damage_number', x, y: y - 24, text: 'SANCTUARY PULSE!', colorHex: 0xe6f0ff, big: true });
   }
 
   public castSelf(player: PlayerState, selfCast: ResolvedSelfCast, events: SimEvent[]): void {
@@ -259,6 +293,8 @@ export class CombatEngine {
         player.wardMaxDuration = 6;
         player.wardElement = selfCast.wardElement;
         if (!selfCast.wardElement) {
+          const sanctStacks = getAugmentStacks(this.augments, 'SANCTUARY_PULSE');
+          const domeHp = Math.round(260 * (1 + 0.45 * sanctStacks));
           this.shields.length = 0;
           this.shields.push({
             id: this.nextId++,
@@ -267,8 +303,8 @@ export class CombatEngine {
             angle: player.aimAngle,
             arc: Math.PI,
             radius: 118,
-            hp: 260,
-            maxHp: 260,
+            hp: domeHp,
+            maxHp: domeHp,
             life: 6.5,
             maxLife: 6.5,
             isNova: true,
@@ -276,6 +312,7 @@ export class CombatEngine {
             colorHex: selfCast.colorHex,
             colors: comp.colors,
           });
+          this.emitSanctuaryPulse(player.x, player.y, sanctStacks, events);
         }
         events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: selfCast.colorHex, count: 24, radius: 60 });
         events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 118, colorHex: selfCast.colorHex });
@@ -381,7 +418,9 @@ export class CombatEngine {
   }
 
   public startCharge(player: PlayerState, spell: ResolvedSpell): void {
-    const maxCharge = spell.delivery === 'CRYSTAL_SHARDS' ? 0.75 : 0.85;
+    const capStacks = getAugmentStacks(this.augments, 'ARCANE_CAPACITOR');
+    const baseCharge = spell.delivery === 'CRYSTAL_SHARDS' ? 0.75 : 0.85;
+    const maxCharge = baseCharge / (1 + 0.35 * capStacks);
     player.charge = {
       delivery: spell.delivery as ChargeState['delivery'],
       elements: spell.elements,
@@ -409,11 +448,12 @@ export class CombatEngine {
 
     if (ch.delivery === 'ROCK_THROW') {
       const kineticCount = counts.KINETIC ?? 1;
+      const aftershockStacks = getAugmentStacks(this.augments, 'KINETIC_AFTERSHOCK');
       const speed = (220 + kineticCount * 22) + r * (600 + kineticCount * 45);
       const range = 160 + r * (780 + kineticCount * 45);
       const life = range / speed;
       const radius = (16 + kineticCount * 7) + r * 7;
-      const damage = Math.round(75 * kineticCount * (0.5 + 0.7 * r));
+      const damage = Math.round(75 * kineticCount * (0.5 + 0.7 * r) * (1 + 0.25 * aftershockStacks));
       const pierce = 2 + kineticCount;
 
       this.spawnRock(player.x, player.y, angle, speed, radius, damage, pierce, life, color, comp, ch.elements);
@@ -422,8 +462,9 @@ export class CombatEngine {
       events.push({ type: 'sfx', sound: 'rock', elements: ch.elements });
     } else if (ch.delivery === 'CRYSTAL_SHARDS') {
       const crystalCount = counts.CRYSTAL ?? 1;
-      const count = 7 + crystalCount * 3;
-      const speed = 680 + r * 1120;
+      const barrageStacks = getAugmentStacks(this.augments, 'CRYO_SHARD_BARRAGE');
+      const count = 7 + crystalCount * 3 + 2 * barrageStacks;
+      const speed = (680 + r * 1120) * (1 + 0.25 * barrageStacks);
       const range = 240 + r * 920;
       const life = range / speed;
       const spread = 0.65 - r * 0.36;
@@ -459,7 +500,8 @@ export class CombatEngine {
   }
 
   public startChannel(player: PlayerState, spell: ResolvedSpell, events: SimEvent[]): void {
-    const maxDuration = 2.2 + spell.composition.totalPower * 0.4;
+    const capStacks = getAugmentStacks(this.augments, 'ARCANE_CAPACITOR');
+    const maxDuration = (2.2 + spell.composition.totalPower * 0.4) * this.shipDef.channelDurMult * (1 + 0.35 * capStacks);
     const delivery = spell.delivery as ChannelState['delivery'];
     let beamId: number | null = null;
 
@@ -687,7 +729,8 @@ export class CombatEngine {
       case 'SHIELD': {
         this.shields.length = 0;
         const isNova = spell.isNova;
-        const shieldHp = isNova ? 260 : 440;
+        const sanctStacks = getAugmentStacks(this.augments, 'SANCTUARY_PULSE');
+        const shieldHp = Math.round((isNova ? 260 : 440) * (1 + 0.45 * sanctStacks));
         const shieldLife = isNova ? 6.5 : 8.0;
         this.shields.push({
           id: this.nextId++,
@@ -705,6 +748,7 @@ export class CombatEngine {
           colorHex: color,
           colors: comp.colors,
         });
+        this.emitSanctuaryPulse(player.x, player.y, sanctStacks, events);
         events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 170, radius: 140 });
         events.push({ type: 'sfx', sound: 'shield', elements: spell.elements });
         break;
@@ -719,7 +763,7 @@ export class CombatEngine {
           const ringR = nonBarrierPower >= 2 ? 155 : 110;
           for (let i = 0; i < count; i++) {
             const a = (i / count) * Math.PI * 2;
-            const pos = clampArena(player.x + Math.cos(a) * ringR, player.y + Math.sin(a) * ringR);
+            const pos = clampArena(player.x + Math.cos(a) * ringR, player.y + Math.sin(a) * ringR, 24, this.currentBoundary);
             this.walls.push({
               id: this.nextId++,
               groupId,
@@ -745,7 +789,7 @@ export class CombatEngine {
           const arcR = 148;
           for (let i = 0; i < totalPylons; i++) {
             const a = angle - arcSpan * 0.5 + (i / (totalPylons - 1)) * arcSpan;
-            const pos = clampArena(player.x + Math.cos(a) * arcR, player.y + Math.sin(a) * arcR);
+            const pos = clampArena(player.x + Math.cos(a) * arcR, player.y + Math.sin(a) * arcR, 24, this.currentBoundary);
             this.walls.push({
               id: this.nextId++,
               groupId,
@@ -780,20 +824,20 @@ export class CombatEngine {
           const ringR = nonBarrierPower >= 2 ? 205 : 155;
           for (let i = 0; i < count; i++) {
             const a = (i / count) * Math.PI * 2;
-            const pos = clampArena(player.x + Math.cos(a) * ringR, player.y + Math.sin(a) * ringR);
+            const pos = clampArena(player.x + Math.cos(a) * ringR, player.y + Math.sin(a) * ringR, 24, this.currentBoundary);
             this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
           }
         } else if (nonBarrierPower >= 2) {
           for (let i = 0; i < 5; i++) {
             const a = angle + (i - 2) * 0.42;
             const dist = i % 2 === 0 ? 160 : 210;
-            const pos = clampArena(player.x + Math.cos(a) * dist, player.y + Math.sin(a) * dist);
+            const pos = clampArena(player.x + Math.cos(a) * dist, player.y + Math.sin(a) * dist, 24, this.currentBoundary);
             this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
           }
         } else {
           for (let i = 0; i < 3; i++) {
             const a = angle + (i - 1) * 0.52;
-            const pos = clampArena(player.x + Math.cos(a) * 165, player.y + Math.sin(a) * 165);
+            const pos = clampArena(player.x + Math.cos(a) * 165, player.y + Math.sin(a) * 165, 24, this.currentBoundary);
             this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
           }
         }
@@ -806,12 +850,14 @@ export class CombatEngine {
           while (this.storms.length >= MAX_STORMS) {
             this.storms.shift();
           }
-          const radius = 130 + nonBarrierPower * 18;
-          const life = 3.4 + nonBarrierPower * 0.45;
+          const tempStacks = getAugmentStacks(this.augments, 'TEMPEST_CAPACITOR');
+          const radius = (130 + nonBarrierPower * 18) * (1 + 0.25 * tempStacks);
+          const life = (3.4 + nonBarrierPower * 0.45) * (1 + 0.35 * tempStacks);
+          const pos = clampArena(player.x, player.y, 90, this.currentBoundary);
           this.storms.push({
             id: this.nextId++,
-            x: player.x,
-            y: player.y,
+            x: pos.x,
+            y: pos.y,
             radius,
             life,
             maxLife: life,
@@ -821,8 +867,8 @@ export class CombatEngine {
             elements: spell.elements,
             composition: comp,
           });
-          events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius, colorHex: color });
-          events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 185, radius });
+          events.push({ type: 'vfx_ring', x: pos.x, y: pos.y, radius, colorHex: color });
+          events.push({ type: 'grid_impulse', x: pos.x, y: pos.y, strength: 185, radius });
           events.push({ type: 'sfx', sound: 'storm', elements: spell.elements });
         } else {
           // Launch an unstable morphing storm-bomb projectile that detonates into a Storm on impact
@@ -872,8 +918,9 @@ export class CombatEngine {
       }
 
       case 'CRYSTAL_SHARDS': {
-        const count = 6 + comp.totalPower * 5;
-        const speed = 1250;
+        const barrageStacks = getAugmentStacks(this.augments, 'CRYO_SHARD_BARRAGE');
+        const count = 6 + comp.totalPower * 5 + 2 * barrageStacks;
+        const speed = 1250 * (1 + 0.25 * barrageStacks);
         const shardColor = comp.colors.find((c) => c !== ELEMENT_META.CRYSTAL.colorHex) ?? color;
         for (let i = 0; i < count; i++) {
           const a = angle + (i / count) * Math.PI * 2;
@@ -976,7 +1023,8 @@ export class CombatEngine {
       }
 
       case 'PHASE_SLASH': {
-        const radius = 125 + comp.totalPower * 18;
+        const phaseStacks = getAugmentStacks(this.augments, 'PHASE_RESONANCE');
+        const radius = (125 + comp.totalPower * 18) * (1 + 0.35 * phaseStacks);
         this.applyConeDamage(player.x, player.y, angle, 2.7, radius, 55 * comp.totalPower, spell.elements, events, 340);
         this.slashes.push({
           id: this.nextId++,
@@ -1007,7 +1055,7 @@ export class CombatEngine {
         });
         if (spell.hasBarrierTrail) {
           for (let i = 1; i <= 4; i++) {
-            const pos = clampArena(player.x + Math.cos(angle) * i * 42, player.y + Math.sin(angle) * i * 42);
+            const pos = clampArena(player.x + Math.cos(angle) * i * 42, player.y + Math.sin(angle) * i * 42, 24, this.currentBoundary);
             this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
           }
         }
@@ -1024,7 +1072,9 @@ export class CombatEngine {
     composition: ElementComposition,
     elements: QueueElement[]
   ): void {
-    while (this.mines.length >= MAX_MINES) {
+    const mineStacks = getAugmentStacks(this.augments, 'MINEFIELD_SATURATION');
+    const maxMines = MAX_MINES + 4 * mineStacks;
+    while (this.mines.length >= maxMines) {
       this.mines.shift();
     }
     this.mines.push({
@@ -1033,9 +1083,9 @@ export class CombatEngine {
       y,
       radius: 16,
       triggerRadius: 46,
-      blastRadius: 135 + composition.totalPower * 30,
+      blastRadius: (135 + composition.totalPower * 30) * (1 + 0.25 * mineStacks),
       damage: 65,
-      armTimer: 0.35,
+      armTimer: 0.35 / (1 + 0.4 * mineStacks),
       life: 10,
       colorHex,
       colors: composition.colors,
@@ -1083,12 +1133,23 @@ export class CombatEngine {
     const counts = p.composition.counts;
     const kineticCount = counts.KINETIC ?? 1;
     const singStacks = p.elements.includes('VOID') ? getAugmentStacks(this.augments, 'SINGULARITY_PULL') : 0;
-    const blastRadius = (95 + kineticCount * 38) * (singStacks > 0 ? 1.3 : 1);
+    const aftershockStacks = getAugmentStacks(this.augments, 'KINETIC_AFTERSHOCK');
+    const blastRadius = (95 + kineticCount * 38) * (singStacks > 0 ? 1.3 : 1) * (1 + 0.3 * aftershockStacks);
 
     const rockAccent = this.getSpellAccentColor(p.elements, p.composition);
     const rockShardCols = this.getSpellParticleColors(p.elements, p.colors);
     const knockback = p.elements.includes('VOID') ? -240 - singStacks * 150 : 320;
     const hits = this.applyAoEDamage(p.x, p.y, blastRadius, p.damage, p.elements, knockback, events);
+    if (aftershockStacks > 0) {
+      for (const e of this.enemies) {
+        if (e.hasFrontShield && e.shieldHp > 0 && Math.hypot(e.x - p.x, e.y - p.y) <= blastRadius + e.radius) {
+          e.shieldHp = 0;
+          e.hasFrontShield = false;
+          events.push({ type: 'damage_number', x: e.x, y: e.y - e.radius - 10, text: 'AFTERSHOCK!', colorHex: ELEMENT_META.KINETIC.colorHex, big: true });
+        }
+      }
+      events.push({ type: 'vfx_ring', x: p.x, y: p.y, radius: blastRadius * 1.15, colorHex: ELEMENT_META.KINETIC.colorHex, duration: 0.32 });
+    }
     events.push({ type: 'grid_impulse', x: p.x, y: p.y, strength: 220 + kineticCount * 90, radius: blastRadius + 50 });
     events.push({
       type: 'vfx_element_explosion',
@@ -1149,9 +1210,10 @@ export class CombatEngine {
     }
     const counts = p.composition.counts;
     const nonBarrierPower = Math.max(1, p.composition.totalPower - (counts.BARRIER ?? 0));
-    const radius = 118 + nonBarrierPower * 18;
-    const life = 3.4 + nonBarrierPower * 0.45;
-    const pos = clampArena(p.x, p.y, 90);
+    const tempStacks = getAugmentStacks(this.augments, 'TEMPEST_CAPACITOR');
+    const radius = (118 + nonBarrierPower * 18) * (1 + 0.25 * tempStacks);
+    const life = (3.4 + nonBarrierPower * 0.45) * (1 + 0.35 * tempStacks);
+    const pos = clampArena(p.x, p.y, 90, this.currentBoundary);
     this.storms.push({
       id: this.nextId++,
       x: pos.x,
@@ -1183,9 +1245,12 @@ export class CombatEngine {
     if (sourceId !== undefined && this.splashCooldown.has(sourceId)) return;
     if (sourceId !== undefined) this.splashCooldown.set(sourceId, 0.25);
 
+    const fluxStacks = getAugmentStacks(this.augments, 'FLUX_TIDAL_SURGE');
+    const effectiveRadius = radius * (1 + 0.45 * fluxStacks);
+
     for (const other of this.enemies) {
       if (other.hp <= 0) continue;
-      if (Math.hypot(other.x - x, other.y - y) <= radius + other.radius) {
+      if (Math.hypot(other.x - x, other.y - y) <= effectiveRadius + other.radius) {
         this.setStatus(other, 'PRIMED', 5, 1);
       }
     }
@@ -1193,12 +1258,12 @@ export class CombatEngine {
       type: 'vfx_element_explosion',
       x,
       y,
-      radius: radius * 0.85,
+      radius: effectiveRadius * 0.85,
       elements: ['FLUX'],
       colors: [ELEMENT_META.FLUX.colorHex],
       power: 1,
     });
-    events.push({ type: 'vfx_ring', x, y, radius, colorHex: ELEMENT_META.FLUX.colorHex, duration: 0.22 });
+    events.push({ type: 'vfx_ring', x, y, radius: effectiveRadius, colorHex: ELEMENT_META.FLUX.colorHex, duration: 0.22 });
   }
 
   public applyElementalHit(
@@ -1256,9 +1321,24 @@ export class CombatEngine {
       }
     }
 
-    let dmg = effectiveDamage;
+    let dmg = effectiveDamage * this.shipDef.damageMult;
     if (elements.includes('VOID') && !elements.includes('NANO')) {
       dmg *= 1.35;
+    }
+
+    const plasmaOverStacks = getAugmentStacks(this.augments, 'PLASMA_OVERDRIVE');
+    if (plasmaOverStacks > 0 && elements.includes('PLASMA')) {
+      dmg *= 1 + 0.3 * plasmaOverStacks;
+    }
+
+    const fluxSurgeStacks = getAugmentStacks(this.augments, 'FLUX_TIDAL_SURGE');
+    if (fluxSurgeStacks > 0 && e.statuses.PRIMED) {
+      dmg *= 1 + 0.15 * fluxSurgeStacks;
+    }
+
+    const weakAnalyzerStacks = getAugmentStacks(this.augments, 'WEAKPOINT_ANALYZER');
+    if (weakAnalyzerStacks > 0 && e.archetype === 'WARDEN') {
+      dmg *= 1 + 0.12 * weakAnalyzerStacks;
     }
 
     // Elemental affinity weakness / resistance
@@ -1269,7 +1349,7 @@ export class CombatEngine {
           (e.weakness === 'THERMAL' && elements.includes('PLASMA')))
     );
     if (hitsWeakness) {
-      dmg *= 1.75;
+      dmg *= 1.75 + 0.4 * weakAnalyzerStacks;
       if (rawDamage >= 6 && !this.comboTextCooldown.has(e.id)) {
         this.comboTextCooldown.set(e.id, 0.45);
         events.push({
@@ -1289,7 +1369,7 @@ export class CombatEngine {
     if (elements.includes('FLUX') && rawDamage >= 6) {
       const dLen = Math.hypot(dirX, dirY);
       if (dLen > 0.01) {
-        const pushForce = isAoE ? 135 : 175;
+        const pushForce = (isAoE ? 135 : 175) * (1 + 0.4 * fluxSurgeStacks);
         e.vx += (dirX / dLen) * pushForce;
         e.vy += (dirY / dLen) * pushForce;
       }
@@ -1302,17 +1382,20 @@ export class CombatEngine {
     }
 
     // Primer combos
+    const chainStacks = getAugmentStacks(this.augments, 'CHAIN_REACTOR');
     let overloadFired = false;
     if (e.statuses.PRIMED && elements.includes('VOLT')) {
       overloadFired = true;
       dmg *= 2.0;
       if (!this.comboTextCooldown.has(e.id)) {
+        const ovRadius = 105 * (1 + 0.45 * chainStacks);
+        const ovDmg = 24 * (1 + 0.5 * chainStacks);
         this.comboTextCooldown.set(e.id, 0.35);
         events.push({ type: 'damage_number', x: e.x, y: e.y - e.radius - 10, text: 'OVERLOAD!', colorHex: 0xfff733, big: true });
-        events.push({ type: 'vfx_ring', x: e.x, y: e.y, radius: 105, colorHex: 0xfff733, duration: 0.25 });
+        events.push({ type: 'vfx_ring', x: e.x, y: e.y, radius: ovRadius, colorHex: 0xfff733, duration: 0.25 });
         for (const other of this.enemies) {
-          if (other.id !== e.id && other.hp > 0 && Math.hypot(other.x - e.x, other.y - e.y) <= 105 + other.radius) {
-            other.hp -= 24 / (1 + other.baseArmor);
+          if (other.id !== e.id && other.hp > 0 && Math.hypot(other.x - e.x, other.y - e.y) <= ovRadius + other.radius) {
+            other.hp -= ovDmg / (1 + other.baseArmor);
             other.hitFlash = 0.08;
             this.applyElementalStatuses(other, elements, events, true);
           }
@@ -1336,10 +1419,11 @@ export class CombatEngine {
       events.push({ type: 'screen_shake', intensity: 7 });
       events.push({ type: 'sfx', sound: 'shatter' });
 
-      // Fire 6 piercing ice shards radially
+      // Fire piercing ice shards radially (Chain Reactor adds +4 per stack)
       const comp = computeComposition(['CRYSTAL']);
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
+      const radialCount = 6 + 4 * chainStacks;
+      for (let i = 0; i < radialCount; i++) {
+        const a = (i / radialCount) * Math.PI * 2;
         this.projectiles.push({
           id: this.nextId++,
           owner: 'PLAYER',
@@ -1388,9 +1472,12 @@ export class CombatEngine {
       }
     }
 
-    // Apply armor mitigation (IGNITED shreds 50%)
+    // Apply armor mitigation (IGNITED shreds 50%; Plasma Overdrive shreds another 50%/75%)
     if (dmg > 0) {
-      const effectiveArmor = e.statuses.IGNITED ? e.baseArmor * 0.5 : e.baseArmor;
+      let effectiveArmor = e.statuses.IGNITED ? e.baseArmor * 0.5 : e.baseArmor;
+      if (e.statuses.IGNITED && plasmaOverStacks > 0) {
+        effectiveArmor *= plasmaOverStacks >= 2 ? 0.25 : 0.5;
+      }
       dmg = dmg / (1 + effectiveArmor);
       e.hp -= dmg;
     }
@@ -1555,6 +1642,10 @@ export class CombatEngine {
     if (player.invulnTimer > 0 || player.hp <= 0) return false;
 
     let dmg = amount;
+    const hullStacks = getAugmentStacks(this.augments, 'HULL_REINFORCEMENT');
+    if (hullStacks > 0 && player.hp / Math.max(1, player.maxHp) <= 0.4) {
+      dmg *= Math.max(0.55, 1 - 0.2 * hullStacks);
+    }
     if (player.wardRemaining > 0) {
       dmg *= 0.25;
       if (sourceEnemy && player.wardElement) {
@@ -1602,8 +1693,11 @@ export class CombatEngine {
     onKill: (archetype: EnemyArchetype) => void,
     onPlayerDamaged: () => void,
     events: SimEvent[],
-    blocks: readonly ArenaBlock[] = []
+    blocks: readonly ArenaBlock[] = [],
+    obstacles: readonly ArenaObstacle[] = [],
+    arenaBoundary: readonly Vec2[] = DEFAULT_RECT_BOUNDARY
   ): void {
+    this.currentBoundary = arenaBoundary;
     // Update active charge
     for (const [eid, cd] of this.comboTextCooldown.entries()) {
       const next = cd - dt;
@@ -1840,21 +1934,22 @@ export class CombatEngine {
         }
       }
 
-      const hitWall = Math.abs(p.x) > ARENA_HALF_W - p.radius || Math.abs(p.y) > ARENA_HALF_H - p.radius;
+      const hitWall = !pointInConvexPoly(p.x, p.y, arenaBoundary, p.radius);
       const hitPillar = pillars.some((pil) => Math.hypot(p.x - pil.x, p.y - pil.y) <= pil.radius + p.radius);
       const hitBlock = blocks.some((blk) => circleVsAABB(p.x, p.y, p.radius, blk).hit);
-      if (p.life <= 0 || hitWall || hitPillar || hitBlock) {
+      const hitObstacle = obstacles.some((obs) => circleVsConvexPoly(p.x, p.y, p.radius, obs).hit);
+      if (p.life <= 0 || hitWall || hitPillar || hitBlock || hitObstacle) {
         if (p.kind === 'STORM_BOMB') {
           this.detonateStormBomb(p, events);
         } else if (p.kind === 'ROCK') {
-          this.detonateRock(p, events, hitWall || hitPillar || hitBlock);
+          this.detonateRock(p, events, hitWall || hitPillar || hitBlock || hitObstacle);
         } else if (p.kind === 'ENEMY_ROCK') {
           events.push({ type: 'vfx_ring', x: p.x, y: p.y, radius: 68, colorHex: 0xa86b3e, duration: 0.28 });
           events.push({ type: 'vfx_shards', x: p.x, y: p.y, colors: [0xa86b3e, 0xffaa44], count: 10, speedScale: 1.0 });
           if (Math.hypot(p.x - player.x, p.y - player.y) <= 68 + 16) {
             this.damagePlayer(player, p.damage, undefined, onPlayerDamaged, events);
           }
-        } else if (hitPillar || hitBlock) {
+        } else if (hitPillar || hitBlock || hitObstacle) {
           events.push({ type: 'vfx_burst', x: p.x, y: p.y, colorHex: p.colorHex, count: 6, radius: 22 });
           if (p.owner === 'PLAYER' && p.elements.includes('FLUX')) {
             this.applyWaterSplash(p.x, p.y, 95, events);
@@ -1884,8 +1979,8 @@ export class CombatEngine {
       const cos = Math.cos(b.angle);
       const sin = Math.sin(b.angle);
 
-      // Truncate beam at nearest ArenaPillar or ArenaBlock
-      let pillarLimit = b.length;
+      // Truncate beam at nearest ArenaPillar, ArenaBlock, ArenaObstacle, or ArenaBoundary
+      let pillarLimit = rayVsArenaBoundary(b.x, b.y, cos, sin, b.length, arenaBoundary);
       for (const pil of pillars) {
         const { perpDist, along } = pointToRayDist(pil.x, pil.y, b.x, b.y, cos, sin, pillarLimit);
         if (perpDist <= pil.radius + 4 && along > 8) {
@@ -1894,6 +1989,12 @@ export class CombatEngine {
       }
       for (const blk of blocks) {
         const hitT = rayAABBIntersect(b.x, b.y, cos, sin, pillarLimit, blk);
+        if (hitT !== null && hitT < pillarLimit) {
+          pillarLimit = hitT;
+        }
+      }
+      for (const obs of obstacles) {
+        const hitT = rayVsConvexPoly(b.x, b.y, cos, sin, pillarLimit, obs);
         if (hitT !== null && hitT < pillarLimit) {
           pillarLimit = hitT;
         }
@@ -2101,6 +2202,7 @@ export class CombatEngine {
     }
 
     // Update shields (only personal self-cast shields follow player)
+    const sanctStacks = getAugmentStacks(this.augments, 'SANCTUARY_PULSE');
     for (let i = this.shields.length - 1; i >= 0; i--) {
       const s = this.shields[i]!;
       s.life -= dt;
@@ -2110,6 +2212,7 @@ export class CombatEngine {
         s.angle = player.aimAngle;
       }
       if (s.life <= 0 || s.hp <= 0) {
+        this.emitSanctuaryPulse(s.x, s.y, sanctStacks, events);
         this.shields.splice(i, 1);
       }
     }
@@ -2292,6 +2395,7 @@ export class CombatEngine {
     }
 
     // Update storms (compact rapid pulses with very low direct damage)
+    const tempCapStacks = getAugmentStacks(this.augments, 'TEMPEST_CAPACITOR');
     for (let i = this.storms.length - 1; i >= 0; i--) {
       const s = this.storms[i]!;
       s.life -= dt;
@@ -2299,7 +2403,7 @@ export class CombatEngine {
       if (s.tickTimer <= 0) {
         const counts = s.composition.counts;
         const nonBarrierPower = Math.max(1, s.composition.totalPower - (counts.BARRIER ?? 0));
-        s.tickTimer = 0.14;
+        s.tickTimer = 0.14 / (1 + 0.25 * tempCapStacks);
 
         const a = Math.random() * Math.PI * 2;
         const d = Math.random() * s.radius * 0.78;
@@ -2400,12 +2504,13 @@ export class CombatEngine {
       if (e.hp <= 0) continue;
 
       // Status DoTs & timers
+      const conflagStacks = getAugmentStacks(this.augments, 'THERMAL_CONFLAGRATION');
       for (const stKey of Object.keys(e.statuses) as StatusType[]) {
         const st = e.statuses[stKey];
         if (!st) continue;
         st.remaining -= dt;
         if (stKey === 'IGNITED') {
-          e.hp -= 14 * st.stacks * dt;
+          e.hp -= 14 * st.stacks * (1 + 0.45 * conflagStacks) * dt;
         }
         if (st.remaining <= 0) {
           if (stKey === 'FROZEN') {
@@ -2511,7 +2616,7 @@ export class CombatEngine {
               beamOffset: offsetAngle,
               length: 1900,
               width: enemy.archetype === 'WARDEN' ? 16 : 14,
-              damagePerSec: enemy.archetype === 'WARDEN' ? 34 : 28,
+              damagePerSec: Math.round((enemy.archetype === 'WARDEN' ? 34 : 28) * this.difficulty.enemyDamageMult),
               life: enemy.archetype === 'WARDEN' ? 2.8 : 1.8,
               maxLife: enemy.archetype === 'WARDEN' ? 2.8 : 1.8,
               colorHex: 0xb429ff,
@@ -2541,10 +2646,12 @@ export class CombatEngine {
             this.damagePlayer(player, amount, sourceEnemy, onPlayerDamaged, events);
           },
         },
-        events
+        events,
+        this.difficulty,
+        arenaBoundary
       );
 
-      // Push enemy outside ArenaPillars & ArenaBlocks
+      // Push enemy outside ArenaPillars, ArenaBlocks & ArenaObstacles, then clamp to ArenaBoundary
       for (const pil of pillars) {
         const pdx = e.x - pil.x;
         const pdy = e.y - pil.y;
@@ -2562,6 +2669,16 @@ export class CombatEngine {
           e.y += hit.pushY;
         }
       }
+      for (const obs of obstacles) {
+        const hit = circleVsConvexPoly(e.x, e.y, e.radius, obs);
+        if (hit.hit) {
+          e.x += hit.pushX;
+          e.y += hit.pushY;
+        }
+      }
+      const clampedE = clampPointToConvexPoly(e.x, e.y, e.radius + 6, arenaBoundary);
+      e.x = clampedE.x;
+      e.y = clampedE.y;
     }
 
     // Update telegraphed hazard zones
@@ -2626,12 +2743,65 @@ export class CombatEngine {
             : e.archetype === 'SPLITTER'
             ? 0xffaa22
             : 0xff88cc;
-        if (e.nanoMarkTimer > 0 && player.hp < player.maxHp) {
-          const healAmt = e.archetype === 'WARDEN' ? 18 : 6;
-          player.hp = Math.min(player.maxHp, player.hp + healAmt);
-          events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: ELEMENT_META.NANO.colorHex, count: 8, radius: 34 });
-          events.push({ type: 'damage_number', x: player.x, y: player.y - 20, text: `+${healAmt} HP`, colorHex: ELEMENT_META.NANO.colorHex });
-          events.push({ type: 'sfx', sound: 'heal', elements: ['NANO'] });
+        if (e.nanoMarkTimer > 0) {
+          const nanoSiphonStacks = getAugmentStacks(this.augments, 'NANO_SWARM_SIPHON');
+          const healAmt = (e.archetype === 'WARDEN' ? 18 + 10 * nanoSiphonStacks : 6 + 5 * nanoSiphonStacks);
+          if (player.hp < player.maxHp) {
+            player.hp = Math.min(player.maxHp, player.hp + healAmt);
+            events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: ELEMENT_META.NANO.colorHex, count: 8, radius: 34 });
+            events.push({ type: 'damage_number', x: player.x, y: player.y - 20, text: `+${healAmt} HP`, colorHex: ELEMENT_META.NANO.colorHex });
+            events.push({ type: 'sfx', sound: 'heal', elements: ['NANO'] });
+          }
+          if (nanoSiphonStacks > 0) {
+            const boltCount = 2 * nanoSiphonStacks;
+            const nanoComp = computeComposition(['NANO']);
+            for (let k = 0; k < boltCount; k++) {
+              const ba = (k / boltCount) * Math.PI * 2 + Math.random() * 0.4;
+              this.projectiles.push({
+                id: this.nextId++,
+                owner: 'PLAYER',
+                kind: 'NANO_BOLT',
+                x: e.x + Math.cos(ba) * 14,
+                y: e.y + Math.sin(ba) * 14,
+                vx: Math.cos(ba) * 540,
+                vy: Math.sin(ba) * 540,
+                radius: 9,
+                damage: 26,
+                pierce: 1,
+                life: 1.4,
+                maxLife: 1.4,
+                colorHex: ELEMENT_META.NANO.colorHex,
+                colors: [ELEMENT_META.NANO.colorHex],
+                elements: ['NANO'],
+                composition: nanoComp,
+                hitIds: [e.id],
+                spin: 0,
+              });
+            }
+          }
+        }
+        const conflagDeathStacks = getAugmentStacks(this.augments, 'THERMAL_CONFLAGRATION');
+        if (conflagDeathStacks > 0 && e.statuses.IGNITED) {
+          const cRadius = 125;
+          const cDmg = 45 * conflagDeathStacks;
+          for (const other of this.enemies) {
+            if (other.id !== e.id && other.hp > 0 && Math.hypot(other.x - e.x, other.y - e.y) <= cRadius + other.radius) {
+              other.hp -= cDmg / (1 + other.baseArmor);
+              other.hitFlash = 0.1;
+              this.setStatus(other, 'IGNITED', 3.5, 1);
+            }
+          }
+          events.push({
+            type: 'vfx_element_explosion',
+            x: e.x,
+            y: e.y,
+            radius: cRadius,
+            elements: ['THERMAL'],
+            colors: [ELEMENT_META.THERMAL.colorHex, 0xffaa22],
+            power: conflagDeathStacks + 1,
+          });
+          events.push({ type: 'vfx_ring', x: e.x, y: e.y, radius: cRadius, colorHex: ELEMENT_META.THERMAL.colorHex, duration: 0.28 });
+          events.push({ type: 'damage_number', x: e.x, y: e.y - e.radius - 20, text: 'CONFLAGRATION!', colorHex: ELEMENT_META.THERMAL.colorHex, big: true });
         }
         const deathStatuses = Object.keys(e.statuses) as StatusType[];
         events.push({

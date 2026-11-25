@@ -1,7 +1,8 @@
 import * as THREE from 'three';
+import { getShipDef } from '../sim/Ships';
+import { ELEMENT_META, EnemyEntity, QueueElement, ShipId, SimSnapshot } from '../sim/types';
 import { createGlowSprite } from './GlowUtil';
 import { buildRibbonGeometry, createNeonRibbonMaterial, setShaderUniform } from './NeonShaders';
-import { ELEMENT_META, EnemyEntity, QueueElement, SimSnapshot } from '../sim/types';
 
 function createArcPts(radius: number, span: number, segs = 26): Array<{ x: number; y: number }> {
   const pts: Array<{ x: number; y: number }> = [];
@@ -34,11 +35,13 @@ function setRibbonColor(mesh: THREE.Mesh, colorHex: number): void {
 export class EntityRenderer {
   private readonly scene: THREE.Scene;
   private readonly playerGroup = new THREE.Group();
-  private readonly shipChevrons: THREE.Mesh[] = [];
-  private readonly noseTipMesh: THREE.Mesh;
+  private readonly playerHullGroup = new THREE.Group();
+  private currentShipId: ShipId | null = null;
+  private shipChevrons: THREE.Mesh[] = [];
+  private noseTipMesh!: THREE.Mesh;
   private readonly shipGlow: THREE.Sprite;
   private readonly muzzleSparkle: THREE.Group;
-  private readonly thrusterMesh: THREE.Mesh;
+  private thrusterMesh!: THREE.Mesh;
   private readonly rearHaloMesh: THREE.Mesh;
   private readonly hullArcMesh: THREE.Mesh;
   private lastHullRatio = -1;
@@ -68,60 +71,8 @@ export class EntityRenderer {
     );
     this.playerGroup.add(groundRing);
 
-    // Solid opaque dark-metallic 3D delta fuselage body
-    const shape = new THREE.Shape();
-    shape.moveTo(25, 0);
-    shape.lineTo(-15, 16.5);
-    shape.lineTo(-9, 0);
-    shape.lineTo(-15, -16.5);
-    shape.closePath();
-    const hullGeo = new THREE.ExtrudeGeometry(shape, { depth: 7, bevelEnabled: false });
-    hullGeo.translate(0, 0, -6.5);
-    this.playerGroup.add(
-      new THREE.Mesh(
-        hullGeo,
-        new THREE.MeshStandardMaterial({
-          color: 0x0f2038,
-          emissive: 0x004466,
-          emissiveIntensity: 0.4,
-          roughness: 0.38,
-          metalness: 0.45,
-        })
-      )
-    );
-
-    // 3 Nested Concentric Chevrons sitting cleanly atop solid 3D hull
-    const chevronDefs: Array<{ pts: Array<{ x: number; y: number }>; width: number; z: number; boost: number }> = [
-      { pts: [{ x: 25, y: 0 }, { x: -15, y: 16.5 }, { x: -9, y: 0 }, { x: -15, y: -16.5 }], width: 2.8, z: 1.0, boost: 1.2 },
-      { pts: [{ x: 16.5, y: 0 }, { x: -11, y: 11 }, { x: -6, y: 0 }, { x: -11, y: -11 }], width: 2.2, z: 2.4, boost: 1.1 },
-      { pts: [{ x: 9.5, y: 0 }, { x: -7, y: 6.5 }, { x: -3, y: 0 }, { x: -7, y: -6.5 }], width: 1.8, z: 3.8, boost: 1.0 },
-    ];
-    for (const def of chevronDefs) {
-      const ribbon = new THREE.Mesh(
-        buildRibbonGeometry(def.pts, def.width, true, def.z),
-        createNeonRibbonMaterial(0x00f5ff, def.boost, 1.0)
-      );
-      this.shipChevrons.push(ribbon);
-      this.playerGroup.add(ribbon);
-    }
-
-    // Glowing Nose Tip
-    const tipGeo = new THREE.BufferGeometry();
-    tipGeo.setAttribute(
-      'position',
-      new THREE.Float32BufferAttribute([26, 0, 4.0, 11, 5.2, 3.5, 11, -5.2, 3.5], 3)
-    );
-    this.noseTipMesh = new THREE.Mesh(
-      tipGeo,
-      new THREE.MeshBasicMaterial({
-        color: new THREE.Color(0x00f5ff).multiplyScalar(1.05),
-        transparent: true,
-        opacity: 0.55,
-        blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide,
-      })
-    );
-    this.playerGroup.add(this.noseTipMesh);
+    this.playerGroup.add(this.playerHullGroup);
+    this.rebuildPlayerHull('VANGUARD');
 
     this.shipGlow = createGlowSprite(0x00f5ff, 38, 0.16);
     this.playerGroup.add(this.shipGlow);
@@ -141,18 +92,6 @@ export class EntityRenderer {
     this.muzzleSparkle.position.set(26, 0, 0);
     this.muzzleSparkle.visible = false;
     this.playerGroup.add(this.muzzleSparkle);
-
-    // Vivid Thruster Wake
-    const thrustPts = [
-      { x: -12, y: 4.5 },
-      { x: -28, y: 0 },
-      { x: -12, y: -4.5 },
-    ];
-    this.thrusterMesh = new THREE.Mesh(
-      buildRibbonGeometry(thrustPts, 2.6, false, 0.5),
-      createNeonRibbonMaterial(0x00f5ff, 1.2, 0.95)
-    );
-    this.playerGroup.add(this.thrusterMesh);
 
     // Diegetic Rear Double Halo
     this.rearHaloMesh = new THREE.Mesh(
@@ -279,6 +218,222 @@ export class EntityRenderer {
     this.scene.add(this.gatePointer);
   }
 
+  private rebuildPlayerHull(shipId: ShipId): void {
+    this.currentShipId = shipId;
+    while (this.playerHullGroup.children.length > 0) {
+      const child = this.playerHullGroup.children[0]!;
+      this.playerHullGroup.remove(child);
+      this.disposeGroup(child);
+    }
+    this.shipChevrons = [];
+
+    const shipDef = getShipDef(shipId);
+    const baseHex = shipDef.colorHex;
+    const hullMat = new THREE.MeshStandardMaterial({
+      color: 0x0f2038,
+      emissive: baseHex,
+      emissiveIntensity: 0.28,
+      roughness: 0.36,
+      metalness: 0.48,
+    });
+
+    if (shipId === 'SPECTRE') {
+      // Twin-prong high-speed swept needle interceptor
+      const shape = new THREE.Shape();
+      shape.moveTo(27, 3.2);
+      shape.lineTo(8, 5.2);
+      shape.lineTo(-16, 20);
+      shape.lineTo(-10, 4);
+      shape.lineTo(-15, 0);
+      shape.lineTo(-10, -4);
+      shape.lineTo(-16, -20);
+      shape.lineTo(8, -5.2);
+      shape.lineTo(27, -3.2);
+      shape.lineTo(14, 0);
+      shape.closePath();
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: 6.5, bevelEnabled: false });
+      geo.translate(0, 0, -6.2);
+      this.playerHullGroup.add(new THREE.Mesh(geo, hullMat));
+
+      const outerPts = [
+        { x: 27, y: 3.2 },
+        { x: -16, y: 20 },
+        { x: -11, y: 0 },
+        { x: -16, y: -20 },
+        { x: 27, y: -3.2 },
+        { x: 14, y: 0 },
+      ];
+      const innerPts = [
+        { x: 16, y: 0 },
+        { x: -9, y: 11.5 },
+        { x: -5, y: 0 },
+        { x: -9, y: -11.5 },
+      ];
+      for (const def of [
+        { pts: outerPts, w: 2.6, z: 1.0 },
+        { pts: innerPts, w: 2.0, z: 2.8 },
+      ]) {
+        const ribbon = new THREE.Mesh(buildRibbonGeometry(def.pts, def.w, true, def.z), createNeonRibbonMaterial(baseHex, 1.2, 1.0));
+        this.shipChevrons.push(ribbon);
+        this.playerHullGroup.add(ribbon);
+      }
+      const tipGeo = new THREE.BufferGeometry();
+      tipGeo.setAttribute('position', new THREE.Float32BufferAttribute([27, 0, 3.6, 13, 4.5, 3.2, 13, -4.5, 3.2], 3));
+      this.noseTipMesh = new THREE.Mesh(
+        tipGeo,
+        new THREE.MeshBasicMaterial({ color: baseHex, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+      );
+      this.playerHullGroup.add(this.noseTipMesh);
+      this.thrusterMesh = new THREE.Mesh(
+        buildRibbonGeometry([{ x: -13, y: 6.5 }, { x: -30, y: 2.5 }, { x: -16, y: 0 }, { x: -30, y: -2.5 }, { x: -13, y: -6.5 }], 2.4, false, 0.5),
+        createNeonRibbonMaterial(baseHex, 1.2, 0.95)
+      );
+      this.playerHullGroup.add(this.thrusterMesh);
+    } else if (shipId === 'TITAN') {
+      // Heavy armored hexagonal juggernaut with wide shield sponsons
+      const shape = new THREE.Shape();
+      shape.moveTo(22, 7.5);
+      shape.lineTo(10, 18.5);
+      shape.lineTo(-14, 18.5);
+      shape.lineTo(-18, 9);
+      shape.lineTo(-18, -9);
+      shape.lineTo(-14, -18.5);
+      shape.lineTo(10, -18.5);
+      shape.lineTo(22, -7.5);
+      shape.closePath();
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: 9.5, bevelEnabled: false });
+      geo.translate(0, 0, -7.5);
+      this.playerHullGroup.add(new THREE.Mesh(geo, hullMat));
+
+      const outerPts = [
+        { x: 22, y: 7.5 },
+        { x: 10, y: 18.5 },
+        { x: -14, y: 18.5 },
+        { x: -18, y: 9 },
+        { x: -18, y: -9 },
+        { x: -14, y: -18.5 },
+        { x: 10, y: -18.5 },
+        { x: 22, y: -7.5 },
+      ];
+      const innerPts = [
+        { x: 14, y: 5 },
+        { x: 4, y: 11.5 },
+        { x: -10, y: 11.5 },
+        { x: -10, y: -11.5 },
+        { x: 4, y: -11.5 },
+        { x: 14, y: -5 },
+      ];
+      for (const def of [
+        { pts: outerPts, w: 3.2, z: 2.2 },
+        { pts: innerPts, w: 2.4, z: 3.6 },
+      ]) {
+        const ribbon = new THREE.Mesh(buildRibbonGeometry(def.pts, def.w, true, def.z), createNeonRibbonMaterial(baseHex, 1.2, 1.0));
+        this.shipChevrons.push(ribbon);
+        this.playerHullGroup.add(ribbon);
+      }
+      const tipGeo = new THREE.BufferGeometry();
+      tipGeo.setAttribute('position', new THREE.Float32BufferAttribute([23, 0, 4.0, 12, 7.2, 3.6, 12, -7.2, 3.6], 3));
+      this.noseTipMesh = new THREE.Mesh(
+        tipGeo,
+        new THREE.MeshBasicMaterial({ color: baseHex, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+      );
+      this.playerHullGroup.add(this.noseTipMesh);
+      this.thrusterMesh = new THREE.Mesh(
+        buildRibbonGeometry([{ x: -16, y: 8 }, { x: -30, y: 4 }, { x: -24, y: 0 }, { x: -30, y: -4 }, { x: -16, y: -8 }], 3.0, false, 0.8),
+        createNeonRibbonMaterial(baseHex, 1.25, 0.95)
+      );
+      this.playerHullGroup.add(this.thrusterMesh);
+    } else if (shipId === 'PRISM') {
+      // Crystalline diamond-wing conduit with floating central hex resonator
+      const shape = new THREE.Shape();
+      shape.moveTo(26, 0);
+      shape.lineTo(2, 17);
+      shape.lineTo(-16, 10);
+      shape.lineTo(-12, 0);
+      shape.lineTo(-16, -10);
+      shape.lineTo(2, -17);
+      shape.closePath();
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: 7, bevelEnabled: false });
+      geo.translate(0, 0, -6.5);
+      this.playerHullGroup.add(new THREE.Mesh(geo, hullMat));
+
+      const outerPts = [
+        { x: 26, y: 0 },
+        { x: 2, y: 17 },
+        { x: -16, y: 10 },
+        { x: -12, y: 0 },
+        { x: -16, y: -10 },
+        { x: 2, y: -17 },
+      ];
+      const hexPts = createPolygonPts(6, 7.5, 0);
+      for (const def of [
+        { pts: outerPts, w: 2.8, z: 1.2 },
+        { pts: hexPts, w: 2.2, z: 3.8 },
+      ]) {
+        const ribbon = new THREE.Mesh(buildRibbonGeometry(def.pts, def.w, true, def.z), createNeonRibbonMaterial(baseHex, 1.2, 1.0));
+        this.shipChevrons.push(ribbon);
+        this.playerHullGroup.add(ribbon);
+      }
+      const tipGeo = new THREE.BufferGeometry();
+      tipGeo.setAttribute('position', new THREE.Float32BufferAttribute([26, 0, 3.8, 10, 6.2, 3.2, 10, -6.2, 3.2], 3));
+      this.noseTipMesh = new THREE.Mesh(
+        tipGeo,
+        new THREE.MeshBasicMaterial({ color: baseHex, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+      );
+      this.playerHullGroup.add(this.noseTipMesh);
+      this.thrusterMesh = new THREE.Mesh(
+        buildRibbonGeometry([{ x: -12, y: 5 }, { x: -29, y: 0 }, { x: -12, y: -5 }], 2.6, false, 0.5),
+        createNeonRibbonMaterial(baseHex, 1.2, 0.95)
+      );
+      this.playerHullGroup.add(this.thrusterMesh);
+    } else {
+      // VANGUARD: Triple-chevron delta interceptor
+      const shape = new THREE.Shape();
+      shape.moveTo(25, 0);
+      shape.lineTo(-15, 16.5);
+      shape.lineTo(-9, 0);
+      shape.lineTo(-15, -16.5);
+      shape.closePath();
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: 7, bevelEnabled: false });
+      geo.translate(0, 0, -6.5);
+      this.playerHullGroup.add(new THREE.Mesh(geo, hullMat));
+
+      const chevronDefs: Array<{ pts: Array<{ x: number; y: number }>; width: number; z: number; boost: number }> = [
+        { pts: [{ x: 25, y: 0 }, { x: -15, y: 16.5 }, { x: -9, y: 0 }, { x: -15, y: -16.5 }], width: 2.8, z: 1.0, boost: 1.2 },
+        { pts: [{ x: 16.5, y: 0 }, { x: -11, y: 11 }, { x: -6, y: 0 }, { x: -11, y: -11 }], width: 2.2, z: 2.4, boost: 1.1 },
+        { pts: [{ x: 9.5, y: 0 }, { x: -7, y: 6.5 }, { x: -3, y: 0 }, { x: -7, y: -6.5 }], width: 1.8, z: 3.8, boost: 1.0 },
+      ];
+      for (const def of chevronDefs) {
+        const ribbon = new THREE.Mesh(
+          buildRibbonGeometry(def.pts, def.width, true, def.z),
+          createNeonRibbonMaterial(baseHex, def.boost, 1.0)
+        );
+        this.shipChevrons.push(ribbon);
+        this.playerHullGroup.add(ribbon);
+      }
+
+      const tipGeo = new THREE.BufferGeometry();
+      tipGeo.setAttribute('position', new THREE.Float32BufferAttribute([26, 0, 4.0, 11, 5.2, 3.5, 11, -5.2, 3.5], 3));
+      this.noseTipMesh = new THREE.Mesh(
+        tipGeo,
+        new THREE.MeshBasicMaterial({
+          color: new THREE.Color(baseHex).multiplyScalar(1.05),
+          transparent: true,
+          opacity: 0.55,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+        })
+      );
+      this.playerHullGroup.add(this.noseTipMesh);
+
+      this.thrusterMesh = new THREE.Mesh(
+        buildRibbonGeometry([{ x: -12, y: 4.5 }, { x: -28, y: 0 }, { x: -12, y: -4.5 }], 2.6, false, 0.5),
+        createNeonRibbonMaterial(baseHex, 1.2, 0.95)
+      );
+      this.playerHullGroup.add(this.thrusterMesh);
+    }
+  }
+
   private replaceArcRibbon(mesh: THREE.Mesh, radius: number, ratio: number, maxSpan: number, width: number, z: number): void {
     const clamped = Math.max(0.02, Math.min(1, ratio));
     const span = maxSpan * clamped;
@@ -329,17 +484,21 @@ export class EntityRenderer {
   }
 
   public update(snapshot: SimSnapshot, aimWorld: { x: number; y: number }, timeSec: number): void {
+    if (snapshot.shipId !== this.currentShipId) {
+      this.rebuildPlayerHull(snapshot.shipId);
+    }
     const p = snapshot.player;
     this.playerGroup.position.set(p.x, p.y, 14);
     this.playerGroup.rotation.z = p.aimAngle;
 
+    const shipDef = getShipDef(snapshot.shipId);
     const activeColor = p.channel
       ? p.channel.composition.primaryColorHex
       : p.charge
       ? p.charge.composition.primaryColorHex
       : p.queue[0]
       ? ELEMENT_META[p.queue[0]].colorHex
-      : 0x00f5ff;
+      : shipDef.colorHex;
 
     for (const ch of this.shipChevrons) {
       setRibbonColor(ch, activeColor);

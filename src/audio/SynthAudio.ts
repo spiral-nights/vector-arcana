@@ -15,7 +15,19 @@ export class SynthAudio {
   private masterGain: GainNode | null = null;
   private noiseBuffer: AudioBuffer | null = null;
   private muted = false;
+  private masterVolume = 0.85;
+  private sfxVolume = 0.85;
   private readonly lastPlayed = new Map<SfxId, number>();
+
+  private getEffectiveGain(): number {
+    return this.muted ? 0 : 0.36 * this.masterVolume * this.sfxVolume;
+  }
+
+  private applyMasterGain(): void {
+    if (this.ctx && this.masterGain) {
+      this.masterGain.gain.setTargetAtTime(this.getEffectiveGain(), this.ctx.currentTime, 0.015);
+    }
+  }
 
   private ensureContext(): AudioContext | null {
     if (this.ctx) return this.ctx;
@@ -28,7 +40,7 @@ export class SynthAudio {
     compressor.ratio.setValueAtTime(6, ctx.currentTime);
 
     const master = ctx.createGain();
-    master.gain.setValueAtTime(this.muted ? 0 : 0.32, ctx.currentTime);
+    master.gain.setValueAtTime(this.getEffectiveGain(), ctx.currentTime);
     master.connect(compressor);
     compressor.connect(ctx.destination);
 
@@ -54,9 +66,13 @@ export class SynthAudio {
 
   public setMuted(muted: boolean): void {
     this.muted = muted;
-    if (this.ctx && this.masterGain) {
-      this.masterGain.gain.setTargetAtTime(muted ? 0 : 0.32, this.ctx.currentTime, 0.015);
-    }
+    this.applyMasterGain();
+  }
+
+  public setVolumes(master: number, sfx: number): void {
+    this.masterVolume = Math.max(0, Math.min(1, master));
+    this.sfxVolume = Math.max(0, Math.min(1, sfx));
+    this.applyMasterGain();
   }
 
   private playTone(

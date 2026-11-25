@@ -3,7 +3,8 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { ARENA_HALF_H, ARENA_HALF_W } from '../sim/types';
+import { DEFAULT_RECT_BOUNDARY } from '../sim/ArenaGeometry';
+import { ARENA_HALF_H, ARENA_HALF_W, Vec2 } from '../sim/types';
 
 const SECTOR_BORDER_COLORS = [0x00d8ff, 0xff5522, 0x44f5ff, 0x39ff88, 0xb429ff] as const;
 
@@ -18,12 +19,17 @@ export class SceneManager {
   private readonly ndcVec = new THREE.Vector2();
   private readonly hitVec = new THREE.Vector3();
 
+  private borderLoop!: THREE.LineLoop;
+  private outerBorderLoop!: THREE.LineLoop;
   private borderMat!: THREE.LineBasicMaterial;
   private outerBorderMat!: THREE.LineBasicMaterial;
   private currentThemeWave = -1;
+  private lastBoundaryKey = '';
 
   private tiltEnabled = true;
   private shakeIntensity = 0;
+  private shakeScale = 1.0;
+  private pixelRatioCap: 1 | 2 = 2;
   private camX = 0;
   private camY = 0;
   private readonly camDist = 1160;
@@ -43,7 +49,7 @@ export class SceneManager {
     this.applyCameraTransform(0, 0);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.pixelRatioCap));
     this.renderer.setSize(width, height);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -69,27 +75,57 @@ export class SceneManager {
   }
 
   private createArenaBorder(): void {
-    const pts = [
-      new THREE.Vector3(-ARENA_HALF_W, -ARENA_HALF_H, 0.5),
-      new THREE.Vector3(ARENA_HALF_W, -ARENA_HALF_H, 0.5),
-      new THREE.Vector3(ARENA_HALF_W, ARENA_HALF_H, 0.5),
-      new THREE.Vector3(-ARENA_HALF_W, ARENA_HALF_H, 0.5),
-    ];
-    const geo = new THREE.BufferGeometry().setFromPoints(pts);
     this.borderMat = new THREE.LineBasicMaterial({ color: 0x00d8ff, transparent: true, opacity: 0.82 });
-    const loop = new THREE.LineLoop(geo, this.borderMat);
-    this.scene.add(loop);
-
-    const pad = 12;
-    const outerPts = [
-      new THREE.Vector3(-ARENA_HALF_W - pad, -ARENA_HALF_H - pad, 0),
-      new THREE.Vector3(ARENA_HALF_W + pad, -ARENA_HALF_H - pad, 0),
-      new THREE.Vector3(ARENA_HALF_W + pad, ARENA_HALF_H + pad, 0),
-      new THREE.Vector3(-ARENA_HALF_W - pad, ARENA_HALF_H + pad, 0),
-    ];
-    const outerGeo = new THREE.BufferGeometry().setFromPoints(outerPts);
     this.outerBorderMat = new THREE.LineBasicMaterial({ color: 0x1a3366, transparent: true, opacity: 0.55 });
-    this.scene.add(new THREE.LineLoop(outerGeo, this.outerBorderMat));
+    this.borderLoop = new THREE.LineLoop(new THREE.BufferGeometry(), this.borderMat);
+    this.outerBorderLoop = new THREE.LineLoop(new THREE.BufferGeometry(), this.outerBorderMat);
+    this.scene.add(this.borderLoop);
+    this.scene.add(this.outerBorderLoop);
+    this.setArenaBoundary(DEFAULT_RECT_BOUNDARY, 1);
+  }
+
+  public setArenaBoundary(boundary: readonly Vec2[], wave: number): void {
+    this.setSectorTheme(wave);
+    const key = boundary.map((v) => `${v.x},${v.y}`).join(';');
+    if (key === this.lastBoundaryKey) return;
+    this.lastBoundaryKey = key;
+
+    const innerPts = boundary.map((v) => new THREE.Vector3(v.x, v.y, 0.5));
+    let cx = 0;
+    let cy = 0;
+    for (const v of boundary) {
+      cx += v.x;
+      cy += v.y;
+    }
+    cx /= Math.max(1, boundary.length);
+    cy /= Math.max(1, boundary.length);
+
+    const outerPts = boundary.map((v) => {
+      const dx = v.x - cx;
+      const dy = v.y - cy;
+      const len = Math.max(1, Math.hypot(dx, dy));
+      return new THREE.Vector3(v.x + (dx / len) * 14, v.y + (dy / len) * 14, 0);
+    });
+
+    this.borderLoop.geometry.dispose();
+    this.borderLoop.geometry = new THREE.BufferGeometry().setFromPoints(innerPts);
+    this.outerBorderLoop.geometry.dispose();
+    this.outerBorderLoop.geometry = new THREE.BufferGeometry().setFromPoints(outerPts);
+  }
+
+  public setBloomIntensity(intensity: number): void {
+    const clamped = Math.max(0, Math.min(1.5, intensity));
+    this.bloomPass.enabled = clamped > 0.01;
+    this.bloomPass.strength = 0.56 * clamped;
+  }
+
+  public setScreenShakeScale(scale: number): void {
+    this.shakeScale = Math.max(0, Math.min(1.5, scale));
+  }
+
+  public setPixelRatioCap(cap: 1 | 2): void {
+    this.pixelRatioCap = cap;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, cap));
   }
 
   public setSectorTheme(wave: number): void {
@@ -159,7 +195,9 @@ export class SceneManager {
   }
 
   public addScreenShake(intensity: number): void {
-    this.shakeIntensity = Math.min(24, Math.max(this.shakeIntensity, intensity));
+    if (this.shakeScale <= 0.01) return;
+    const scaled = intensity * this.shakeScale;
+    this.shakeIntensity = Math.min(24, Math.max(this.shakeIntensity, scaled));
   }
 
   public screenToWorld(clientX: number, clientY: number): { x: number; y: number } {
@@ -205,7 +243,7 @@ export class SceneManager {
     const width = window.innerWidth;
     const height = window.innerHeight;
     this.updateCameraFrustum(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.pixelRatioCap));
     this.renderer.setSize(width, height);
     this.composer.setSize(width, height);
     this.bloomPass.resolution.set(width, height);

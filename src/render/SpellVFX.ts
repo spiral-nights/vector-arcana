@@ -16,8 +16,10 @@ import {
   createStormVortexMaterial,
   setShaderUniform,
 } from './NeonShaders';
+import { ParticleQuality } from '../settings';
 import {
   ArenaBlock,
+  ArenaObstacle,
   ArenaPillar,
   BeamEntity,
   ELEMENT_META,
@@ -531,8 +533,10 @@ export class SpellVFX {
   private readonly slashMeshes = new Map<number, THREE.Group>();
   private readonly pillarMeshes = new Map<string, THREE.Group>();
   private readonly blockMeshes = new Map<string, THREE.Group>();
+  private readonly obstacleMeshes = new Map<string, THREE.Group>();
   private readonly riftMeshes = new Map<number, THREE.Group>();
   private readonly hazardMeshes = new Map<number, THREE.Group>();
+  private particleScale = 1.0;
   private gateGroup: THREE.Group | null = null;
   private gateLastOpen = false;
 
@@ -564,11 +568,26 @@ export class SpellVFX {
     this.sparkPool = new ParticlePool(scene, 1200, 24, this.starTexture, 0.94);
   }
 
+  public setParticleQuality(quality: ParticleQuality): void {
+    this.particleScale =
+      quality === 'LOW' ? 0.25 :
+      quality === 'MEDIUM' ? 0.6 :
+      quality === 'HIGH' ? 1.0 : 1.5;
+  }
+
+  private scaleCount(n: number): number {
+    if (n <= 0) return 0;
+    const raw = n * this.particleScale;
+    const base = Math.floor(raw);
+    return base + (Math.random() < raw - base ? 1 : 0);
+  }
+
   private addElementParticle(
     el: QueueElement,
     pos: { x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; maxLife: number },
     overrideColor?: number
   ): void {
+    if (this.particleScale < 1 && Math.random() > this.particleScale) return;
     const colHex =
       overrideColor ??
       (el === 'THERMAL'
@@ -756,7 +775,7 @@ export class SpellVFX {
     const flowEls = elements.filter((e) => e !== 'BARRIER' && !(e === 'VOID' && hasNonVoid));
 
     // Dense shaped elemental particles streaming along the beam
-    const perElCount = Math.round(4 * lenFactor);
+    const perElCount = this.scaleCount(Math.round(4 * lenFactor));
     for (const el of flowEls) {
       for (let k = 0; k < perElCount; k++) {
         const dist = Math.random() * len;
@@ -783,7 +802,8 @@ export class SpellVFX {
     }
 
     // Soft colored background stream glints
-    for (let k = 0; k < 3; k++) {
+    const glintCount = this.scaleCount(3);
+    for (let k = 0; k < glintCount; k++) {
       const dist = Math.random() * len;
       const lat = (Math.random() - 0.5) * width * 0.95;
       const cHex = palette[Math.floor(Math.random() * palette.length)]!;
@@ -815,7 +835,7 @@ export class SpellVFX {
     const vp = this.getVoidPalette(elements, colors);
     const hasNonVoid = elements.some((e) => e !== 'VOID' && e !== 'BARRIER');
     const burstEls = elements.filter((e) => e !== 'BARRIER' && !(e === 'VOID' && hasNonVoid));
-    const perElCount = Math.round(18 + power * 6);
+    const perElCount = this.scaleCount(Math.round(18 + power * 6));
 
     for (const el of burstEls) {
       for (let i = 0; i < perElCount; i++) {
@@ -874,9 +894,9 @@ export class SpellVFX {
     isBoss: boolean,
     statuses: readonly StatusType[]
   ): void {
-    const orbCount = isBoss ? 85 : 36;
-    const sparkCount = isBoss ? 50 : 22;
-    const shardCount = isBoss ? 34 : 14;
+    const orbCount = this.scaleCount(isBoss ? 85 : 36);
+    const sparkCount = this.scaleCount(isBoss ? 50 : 22);
+    const shardCount = this.scaleCount(isBoss ? 34 : 14);
     const c1 = new THREE.Color(colorHex);
     const c2 = new THREE.Color(secondaryColorHex);
     const white = new THREE.Color(0xffffff);
@@ -952,7 +972,8 @@ export class SpellVFX {
 
   public spawnBurst(x: number, y: number, colorHex: number, count: number, speedScale = 1): void {
     const base = new THREE.Color(colorHex);
-    for (let i = 0; i < count; i++) {
+    const scaledCount = this.scaleCount(count);
+    for (let i = 0; i < scaledCount; i++) {
       const a = Math.random() * Math.PI * 2;
       const spd = (80 + Math.random() * 250) * speedScale;
       const maxLife = 0.24 + Math.random() * 0.3;
@@ -973,7 +994,8 @@ export class SpellVFX {
 
   public spawnShards(x: number, y: number, colors: number[], count: number, speedScale = 1, dirAngle?: number): void {
     const palette = colors.length > 0 ? colors : [ELEMENT_META.KINETIC.colorHex];
-    for (let i = 0; i < count; i++) {
+    const scaledCount = this.scaleCount(count);
+    for (let i = 0; i < scaledCount; i++) {
       if (this.shards.length >= this.maxShards) {
         const oldest = this.shards.shift()!;
         this.scene.remove(oldest.obj);
@@ -1088,7 +1110,7 @@ export class SpellVFX {
     elements: readonly QueueElement[] = []
   ): void {
     const palette = colors.length > 0 ? colors : [0x00f5ff];
-    const count = isNova ? 76 : 36;
+    const count = this.scaleCount(isNova ? 76 : 36);
     const sprayEls = elements.filter((e) => e !== 'BARRIER');
 
     for (let i = 0; i < count; i++) {
@@ -1209,6 +1231,7 @@ export class SpellVFX {
     this.syncSlashes(snapshot.slashes);
     this.syncPillars(snapshot.pillars);
     this.syncBlocks(snapshot.blocks);
+    this.syncObstacles(snapshot.obstacles);
     this.syncRifts(snapshot.rifts, timeSec);
     this.syncHazards(snapshot.hazards);
     this.syncGate(snapshot.gate, timeSec);
@@ -2311,6 +2334,79 @@ export class SpellVFX {
         this.scene.remove(obj);
         this.disposeObject(obj);
         this.blockMeshes.delete(k);
+      }
+    }
+  }
+
+  private syncObstacles(items: readonly ArenaObstacle[]): void {
+    const alive = new Set<string>();
+    const colHex = SECTOR_PILLAR_COLORS[this.currentThemeIdx]!;
+    for (const obs of items) {
+      const key = `${obs.id}:${obs.cx.toFixed(1)}:${obs.cy.toFixed(1)}:${obs.vertices.length}:${this.currentThemeIdx}`;
+      alive.add(key);
+      if (!this.obstacleMeshes.has(key) && obs.vertices.length >= 3) {
+        const g = new THREE.Group();
+        const shape = new THREE.Shape();
+        const v0 = obs.vertices[0]!;
+        shape.moveTo(v0.x, v0.y);
+        for (let i = 1; i < obs.vertices.length; i++) {
+          const v = obs.vertices[i]!;
+          shape.lineTo(v.x, v.y);
+        }
+        shape.closePath();
+
+        const bodyGeo = new THREE.ExtrudeGeometry(shape, {
+          depth: obs.height,
+          bevelEnabled: true,
+          bevelThickness: 2.5,
+          bevelSize: 2.2,
+          bevelSegments: 1,
+        });
+        g.add(
+          new THREE.Mesh(
+            bodyGeo,
+            new THREE.MeshStandardMaterial({
+              color: obs.style === 'REACTOR' ? 0x162440 : 0x111a2e,
+              emissive: colHex,
+              emissiveIntensity: obs.style === 'REACTOR' ? 0.28 : 0.16,
+              roughness: 0.5,
+              metalness: 0.38,
+            })
+          )
+        );
+        g.add(
+          new THREE.Mesh(
+            buildRibbonGeometry(obs.vertices, 3.4, true, obs.height + 2.8),
+            createNeonRibbonMaterial(colHex, 1.2, 0.92)
+          ),
+          new THREE.Mesh(
+            buildRibbonGeometry(obs.vertices, 3.2, true, 1.4),
+            createNeonRibbonMaterial(colHex, 1.05, 0.65)
+          )
+        );
+
+        if (obs.style === 'REACTOR') {
+          const corePts = createPolygonPoints(8, Math.max(24, obs.boundRadius * 0.42)).map((p) => ({
+            x: obs.cx + p.x,
+            y: obs.cy + p.y,
+          }));
+          g.add(
+            new THREE.Mesh(
+              buildRibbonGeometry(corePts, 4.2, true, obs.height + 5.0),
+              createNeonRibbonMaterial(colHex, 1.35, 0.95)
+            )
+          );
+        }
+
+        this.obstacleMeshes.set(key, g);
+        this.scene.add(g);
+      }
+    }
+    for (const [k, obj] of this.obstacleMeshes.entries()) {
+      if (!alive.has(k)) {
+        this.scene.remove(obj);
+        this.disposeObject(obj);
+        this.obstacleMeshes.delete(k);
       }
     }
   }

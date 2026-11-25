@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { ARENA_HALF_H, ARENA_HALF_W } from '../sim/types';
+import { DEFAULT_RECT_BOUNDARY, pointInConvexPoly } from '../sim/ArenaGeometry';
+import { ARENA_HALF_H, ARENA_HALF_W, Vec2 } from '../sim/types';
 
 export class WarpingGrid {
   private readonly cols = 56;
@@ -18,6 +19,9 @@ export class WarpingGrid {
   private readonly geometry: THREE.BufferGeometry;
   public readonly mesh: THREE.LineSegments;
   private themeIdx = -1;
+  private warpEnabled = true;
+  private boundary: readonly Vec2[] = DEFAULT_RECT_BOUNDARY;
+  private lastBoundaryKey = '';
   private baseRgb: [number, number, number] = [0.08, 0.14, 0.48];
   private warpRgb: [number, number, number] = [0.55, 0.80, 0.62];
 
@@ -71,7 +75,29 @@ export class WarpingGrid {
     this.syncBuffers();
   }
 
+  public setWarpEnabled(enabled: boolean): void {
+    this.warpEnabled = enabled;
+    if (!enabled) {
+      for (let i = 0; i < this.count; i++) {
+        this.posX[i] = this.restX[i]!;
+        this.posY[i] = this.restY[i]!;
+        this.velX[i] = 0;
+        this.velY[i] = 0;
+      }
+      this.syncBuffers();
+    }
+  }
+
+  public setArenaBoundary(boundary: readonly Vec2[]): void {
+    const key = boundary.map((v) => `${v.x},${v.y}`).join(';');
+    if (key === this.lastBoundaryKey) return;
+    this.lastBoundaryKey = key;
+    this.boundary = boundary;
+    this.syncBuffers();
+  }
+
   public applyRadialImpulse(wx: number, wy: number, strength: number, radius: number): void {
+    if (!this.warpEnabled) return;
     const r2 = radius * radius;
     for (let i = 0; i < this.count; i++) {
       const dx = this.posX[i]! - wx;
@@ -88,6 +114,7 @@ export class WarpingGrid {
   }
 
   public applyGravityWell(wx: number, wy: number, strength: number, radius: number): void {
+    if (!this.warpEnabled) return;
     const r2 = radius * radius;
     for (let i = 0; i < this.count; i++) {
       const dx = wx - this.posX[i]!;
@@ -171,6 +198,23 @@ export class WarpingGrid {
     let ptr = 0;
     const [br, bg, bb] = this.baseRgb;
     const [wr, wg, wb] = this.warpRgb;
+    const insideFlags = new Uint8Array(this.count);
+    for (let i = 0; i < this.count; i++) {
+      insideFlags[i] = pointInConvexPoly(this.restX[i]!, this.restY[i]!, this.boundary, -16) ? 1 : 0;
+    }
+
+    const writeHiddenSeg = (): void => {
+      for (let k = 0; k < 2; k++) {
+        this.linePositions[ptr] = 0;
+        this.linePositions[ptr + 1] = 0;
+        this.linePositions[ptr + 2] = -9999;
+        this.lineColors[ptr] = 0;
+        this.lineColors[ptr + 1] = 0;
+        this.lineColors[ptr + 2] = 0;
+        ptr += 3;
+      }
+    };
+
     const writeVertex = (idx: number): void => {
       const x = this.posX[idx]!;
       const y = this.posY[idx]!;
@@ -191,16 +235,24 @@ export class WarpingGrid {
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols - 1; c++) {
         const idx = r * this.cols + c;
-        writeVertex(idx);
-        writeVertex(idx + 1);
+        if (!insideFlags[idx] && !insideFlags[idx + 1]) {
+          writeHiddenSeg();
+        } else {
+          writeVertex(idx);
+          writeVertex(idx + 1);
+        }
       }
     }
 
     for (let r = 0; r < this.rows - 1; r++) {
       for (let c = 0; c < this.cols; c++) {
         const idx = r * this.cols + c;
-        writeVertex(idx);
-        writeVertex(idx + this.cols);
+        if (!insideFlags[idx] && !insideFlags[idx + this.cols]) {
+          writeHiddenSeg();
+        } else {
+          writeVertex(idx);
+          writeVertex(idx + this.cols);
+        }
       }
     }
 

@@ -1,6 +1,19 @@
+import { GameSettings, ParticleQuality } from '../settings';
 import { getAugmentDef } from '../sim/Augments';
+import { SHIP_CATALOG } from '../sim/Ships';
 import { formatSpellPreview } from '../sim/SpellResolver';
-import { ARENA_HALF_H, ARENA_HALF_W, AugmentId, BASE_ELEMENTS, ControlPreset, ELEMENT_META, QueueElement, SimSnapshot } from '../sim/types';
+import {
+  ARENA_HALF_H,
+  ARENA_HALF_W,
+  AugmentId,
+  BASE_ELEMENTS,
+  ControlPreset,
+  DifficultyId,
+  ELEMENT_META,
+  QueueElement,
+  ShipId,
+  SimSnapshot,
+} from '../sim/types';
 
 export interface HUDCallbacks {
   onToggleTilt: () => void;
@@ -9,6 +22,9 @@ export interface HUDCallbacks {
   onTogglePause: () => void;
   onStartGame: () => void;
   onPickAugment: (index: number) => void;
+  onSettingsChange: (patch: Partial<GameSettings>) => void;
+  onResetSettings: () => void;
+  onRestartRun: () => void;
 }
 
 function getElementSvg(id: QueueElement, color: string): string {
@@ -55,6 +71,19 @@ function getElementSvg(id: QueueElement, color: string): string {
   }
 }
 
+function renderShipCardsHtml(selectedShip: ShipId): string {
+  return SHIP_CATALOG.map((ship) => {
+    const sel = ship.id === selectedShip;
+    return `
+      <div class="ship-card${sel ? ' selected' : ''}" data-ship-id="${ship.id}"
+           style="border-color:${sel ? ship.color : 'rgba(255,255,255,0.16)'};box-shadow:${sel ? `0 0 18px ${ship.color}44` : 'none'}">
+        <span class="ship-role" style="color:${ship.color}">${ship.role}</span>
+        <span class="ship-name">${ship.name}</span>
+        <span class="ship-desc">${ship.description}</span>
+      </div>`;
+  }).join('');
+}
+
 export class HUD {
   private readonly root: HTMLElement;
   private readonly waveEl: HTMLElement;
@@ -83,12 +112,28 @@ export class HUD {
   private readonly augmentsStrip: HTMLElement;
 
   private readonly startModal: HTMLElement;
+  private readonly titleShipGrid: HTMLElement;
   private readonly pauseModal: HTMLElement;
+  private readonly pauseShipGrid: HTMLElement;
   private readonly augmentModal: HTMLElement;
   private readonly augmentGrid: HTMLElement;
   private readonly gameOverModal: HTMLElement;
   private readonly gameOverSub: HTMLElement;
   private readonly highscoresEl: HTMLElement;
+
+  private readonly masterVolSlider: HTMLInputElement;
+  private readonly musicVolSlider: HTMLInputElement;
+  private readonly sfxVolSlider: HTMLInputElement;
+  private readonly bloomSlider: HTMLInputElement;
+  private readonly masterVolVal: HTMLElement;
+  private readonly musicVolVal: HTMLElement;
+  private readonly sfxVolVal: HTMLElement;
+  private readonly bloomVal: HTMLElement;
+  private readonly muteSettingBtn: HTMLButtonElement;
+  private readonly dmgNumsBtn: HTMLButtonElement;
+  private readonly gridWarpBtn: HTMLButtonElement;
+  private readonly camTiltBtn: HTMLButtonElement;
+
   private lastAugmentKey = '';
   private lastActiveAugKey = '';
 
@@ -156,21 +201,114 @@ export class HUD {
       </div>
 
       <div class="modal-backdrop" id="modal-start">
-        <div class="modal-card">
+        <div class="modal-card wide">
           <div class="modal-title">Vector Arcana</div>
           <div class="modal-sub">
             Queue up to 3 elements with <strong>Q W E R</strong> / <strong>A S D F</strong>.<br/>
             Hold <strong>LMB</strong> or <strong>Arrows</strong> to move · <strong>RMB</strong> Forward Cast · <strong>Space</strong> / <strong>Shift+RMB</strong> Nova · <strong>MMB/C</strong> Self · <strong>Shift+LMB</strong> Phase Dash.
           </div>
+          <div class="hangar-label">Select Construct Vessel</div>
+          <div class="ship-grid" id="title-ship-grid"></div>
           <button class="primary-btn" id="btn-start">Launch Construct</button>
         </div>
       </div>
 
       <div class="modal-backdrop" id="modal-pause">
-        <div class="modal-card">
-          <div class="modal-title">System Paused</div>
-          <div class="modal-sub">Press <strong>Esc</strong> or click below to resume defense protocols.</div>
-          <button class="primary-btn" id="btn-resume">Resume Construct</button>
+        <div class="modal-card wide">
+          <div class="modal-title">System Paused · Settings</div>
+          <div class="settings-grid">
+            <div class="settings-section">
+              <div class="settings-heading">Audio</div>
+              <div class="setting-row">
+                <div class="setting-label"><span>Master Volume</span><span class="setting-val" id="val-master-vol">85%</span></div>
+                <input class="setting-slider" id="set-master-vol" type="range" min="0" max="100" value="85" />
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>Music Volume</span><span class="setting-val" id="val-music-vol">65%</span></div>
+                <input class="setting-slider" id="set-music-vol" type="range" min="0" max="100" value="65" />
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>SFX Volume</span><span class="setting-val" id="val-sfx-vol">85%</span></div>
+                <input class="setting-slider" id="set-sfx-vol" type="range" min="0" max="100" value="85" />
+              </div>
+              <div class="setting-row inline">
+                <span class="setting-label">Audio Output</span>
+                <button class="seg-btn active" id="set-mute">ENABLED</button>
+              </div>
+            </div>
+
+            <div class="settings-section">
+              <div class="settings-heading">Gameplay</div>
+              <div class="setting-row">
+                <div class="setting-label"><span>Difficulty</span></div>
+                <div class="seg-group">
+                  <button class="seg-btn" data-diff="RECRUIT">Recruit</button>
+                  <button class="seg-btn active" data-diff="VETERAN">Veteran</button>
+                  <button class="seg-btn" data-diff="OVERLORD">Overlord</button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>Controls</span></div>
+                <div class="seg-group">
+                  <button class="seg-btn active" data-ctrl="CLASSIC">Classic</button>
+                  <button class="seg-btn" data-ctrl="ARROWS_LMB">Arrows+LMB</button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>Screen Shake</span></div>
+                <div class="seg-group">
+                  <button class="seg-btn" data-shake="0">Off</button>
+                  <button class="seg-btn" data-shake="0.5">Low</button>
+                  <button class="seg-btn active" data-shake="1">Full</button>
+                </div>
+              </div>
+              <div class="setting-row inline">
+                <span class="setting-label">Combat Text</span>
+                <button class="seg-btn active" id="set-dmg-nums">ON</button>
+              </div>
+            </div>
+
+            <div class="settings-section">
+              <div class="settings-heading">Graphics</div>
+              <div class="setting-row">
+                <div class="setting-label"><span>Bloom Glow</span><span class="setting-val" id="val-bloom">100%</span></div>
+                <input class="setting-slider" id="set-bloom" type="range" min="0" max="150" value="100" />
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>Particles</span></div>
+                <div class="seg-group">
+                  <button class="seg-btn" data-particles="LOW">Low</button>
+                  <button class="seg-btn" data-particles="MEDIUM">Med</button>
+                  <button class="seg-btn active" data-particles="HIGH">High</button>
+                  <button class="seg-btn" data-particles="ULTRA">Ultra</button>
+                </div>
+              </div>
+              <div class="setting-row inline">
+                <span class="setting-label">Grid Warp</span>
+                <button class="seg-btn active" id="set-grid-warp">ON</button>
+              </div>
+              <div class="setting-row inline">
+                <span class="setting-label">Camera Tilt</span>
+                <button class="seg-btn active" id="set-cam-tilt">26°</button>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>Render Scale</span></div>
+                <div class="seg-group">
+                  <button class="seg-btn" data-pixel-ratio="1">1x</button>
+                  <button class="seg-btn active" data-pixel-ratio="2">2x</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="hangar-label">Construct Hangar (Persists Across Runs)</div>
+          <div class="ship-grid" id="pause-ship-grid"></div>
+
+          <div class="modal-actions">
+            <button class="primary-btn" id="btn-resume">Resume Construct</button>
+            <button class="secondary-btn" id="btn-pause-restart">Restart Run</button>
+            <button class="secondary-btn" id="btn-reset-settings">Reset Defaults</button>
+          </div>
         </div>
       </div>
 
@@ -216,12 +354,27 @@ export class HUD {
     this.augmentsStrip = this.root.querySelector('#hud-augments')!;
 
     this.startModal = this.root.querySelector('#modal-start')!;
+    this.titleShipGrid = this.root.querySelector('#title-ship-grid')!;
     this.pauseModal = this.root.querySelector('#modal-pause')!;
+    this.pauseShipGrid = this.root.querySelector('#pause-ship-grid')!;
     this.augmentModal = this.root.querySelector('#modal-augment')!;
     this.augmentGrid = this.root.querySelector('#augment-grid')!;
     this.gameOverModal = this.root.querySelector('#modal-gameover')!;
     this.gameOverSub = this.root.querySelector('#gameover-sub')!;
     this.highscoresEl = this.root.querySelector('#highscores-list')!;
+
+    this.masterVolSlider = this.root.querySelector('#set-master-vol')!;
+    this.musicVolSlider = this.root.querySelector('#set-music-vol')!;
+    this.sfxVolSlider = this.root.querySelector('#set-sfx-vol')!;
+    this.bloomSlider = this.root.querySelector('#set-bloom')!;
+    this.masterVolVal = this.root.querySelector('#val-master-vol')!;
+    this.musicVolVal = this.root.querySelector('#val-music-vol')!;
+    this.sfxVolVal = this.root.querySelector('#val-sfx-vol')!;
+    this.bloomVal = this.root.querySelector('#val-bloom')!;
+    this.muteSettingBtn = this.root.querySelector('#set-mute')!;
+    this.dmgNumsBtn = this.root.querySelector('#set-dmg-nums')!;
+    this.gridWarpBtn = this.root.querySelector('#set-grid-warp')!;
+    this.camTiltBtn = this.root.querySelector('#set-cam-tilt')!;
 
     const hotbar = this.root.querySelector('#hud-hotbar')!;
     for (const el of BASE_ELEMENTS) {
@@ -245,6 +398,73 @@ export class HUD {
     this.root.querySelector('#btn-resume')!.addEventListener('click', callbacks.onTogglePause);
     this.root.querySelector('#btn-start')!.addEventListener('click', callbacks.onStartGame);
     this.root.querySelector('#btn-restart')!.addEventListener('click', callbacks.onStartGame);
+    this.root.querySelector('#btn-pause-restart')!.addEventListener('click', callbacks.onRestartRun);
+    this.root.querySelector('#btn-reset-settings')!.addEventListener('click', callbacks.onResetSettings);
+
+    this.masterVolSlider.addEventListener('input', () => {
+      callbacks.onSettingsChange({ masterVolume: Number(this.masterVolSlider.value) / 100 });
+    });
+    this.musicVolSlider.addEventListener('input', () => {
+      callbacks.onSettingsChange({ musicVolume: Number(this.musicVolSlider.value) / 100 });
+    });
+    this.sfxVolSlider.addEventListener('input', () => {
+      callbacks.onSettingsChange({ sfxVolume: Number(this.sfxVolSlider.value) / 100 });
+    });
+    this.bloomSlider.addEventListener('input', () => {
+      callbacks.onSettingsChange({ bloomIntensity: Number(this.bloomSlider.value) / 100 });
+    });
+
+    this.muteSettingBtn.addEventListener('click', callbacks.onToggleMute);
+    this.camTiltBtn.addEventListener('click', callbacks.onToggleTilt);
+    this.dmgNumsBtn.addEventListener('click', () => {
+      const next = this.dmgNumsBtn.textContent !== 'ON';
+      callbacks.onSettingsChange({ damageNumbers: next });
+    });
+    this.gridWarpBtn.addEventListener('click', () => {
+      const next = this.gridWarpBtn.textContent !== 'ON';
+      callbacks.onSettingsChange({ gridWarp: next });
+    });
+
+    this.pauseModal.addEventListener('click', (ev) => {
+      const target = ev.target as HTMLElement;
+      const diffBtn = target.closest<HTMLElement>('[data-diff]');
+      if (diffBtn) {
+        callbacks.onSettingsChange({ difficulty: diffBtn.dataset.diff as DifficultyId });
+        return;
+      }
+      const ctrlBtn = target.closest<HTMLElement>('[data-ctrl]');
+      if (ctrlBtn) {
+        callbacks.onSettingsChange({ controlPreset: ctrlBtn.dataset.ctrl as ControlPreset });
+        return;
+      }
+      const shakeBtn = target.closest<HTMLElement>('[data-shake]');
+      if (shakeBtn) {
+        callbacks.onSettingsChange({ screenShake: Number(shakeBtn.dataset.shake) });
+        return;
+      }
+      const partBtn = target.closest<HTMLElement>('[data-particles]');
+      if (partBtn) {
+        callbacks.onSettingsChange({ particleQuality: partBtn.dataset.particles as ParticleQuality });
+        return;
+      }
+      const ratioBtn = target.closest<HTMLElement>('[data-pixel-ratio]');
+      if (ratioBtn) {
+        callbacks.onSettingsChange({ pixelRatioCap: Number(ratioBtn.dataset.pixelRatio) === 1 ? 1 : 2 });
+        return;
+      }
+      const shipCard = target.closest<HTMLElement>('[data-ship-id]');
+      if (shipCard) {
+        callbacks.onSettingsChange({ selectedShip: shipCard.dataset.shipId as ShipId });
+      }
+    });
+
+    this.titleShipGrid.addEventListener('click', (ev) => {
+      const shipCard = (ev.target as HTMLElement).closest<HTMLElement>('[data-ship-id]');
+      if (shipCard) {
+        callbacks.onSettingsChange({ selectedShip: shipCard.dataset.shipId as ShipId });
+      }
+    });
+
     this.setPreset('CLASSIC');
     this.augmentGrid.addEventListener('click', (ev) => {
       const card = (ev.target as HTMLElement).closest<HTMLElement>('[data-aug-index]');
@@ -252,6 +472,54 @@ export class HUD {
         callbacks.onPickAugment(Number(card.dataset.augIndex));
       }
     });
+  }
+
+  public applySettings(s: GameSettings): void {
+    this.setTilt(s.cameraTilt);
+    this.setPreset(s.controlPreset);
+    this.setMuted(s.muted);
+
+    const mv = Math.round(s.masterVolume * 100);
+    const muv = Math.round(s.musicVolume * 100);
+    const sv = Math.round(s.sfxVolume * 100);
+    const bv = Math.round(s.bloomIntensity * 100);
+    this.masterVolSlider.value = String(mv);
+    this.musicVolSlider.value = String(muv);
+    this.sfxVolSlider.value = String(sv);
+    this.bloomSlider.value = String(bv);
+    this.masterVolVal.textContent = `${mv}%`;
+    this.musicVolVal.textContent = `${muv}%`;
+    this.sfxVolVal.textContent = `${sv}%`;
+    this.bloomVal.textContent = `${bv}%`;
+
+    this.muteSettingBtn.textContent = s.muted ? 'MUTED' : 'ENABLED';
+    this.muteSettingBtn.classList.toggle('active', !s.muted);
+    this.dmgNumsBtn.textContent = s.damageNumbers ? 'ON' : 'OFF';
+    this.dmgNumsBtn.classList.toggle('active', s.damageNumbers);
+    this.gridWarpBtn.textContent = s.gridWarp ? 'ON' : 'OFF';
+    this.gridWarpBtn.classList.toggle('active', s.gridWarp);
+    this.camTiltBtn.textContent = s.cameraTilt ? '26°' : '0°';
+    this.camTiltBtn.classList.toggle('active', s.cameraTilt);
+
+    for (const el of this.pauseModal.querySelectorAll<HTMLElement>('[data-diff]')) {
+      el.classList.toggle('active', el.dataset.diff === s.difficulty);
+    }
+    for (const el of this.pauseModal.querySelectorAll<HTMLElement>('[data-ctrl]')) {
+      el.classList.toggle('active', el.dataset.ctrl === s.controlPreset);
+    }
+    for (const el of this.pauseModal.querySelectorAll<HTMLElement>('[data-shake]')) {
+      el.classList.toggle('active', Math.abs(Number(el.dataset.shake) - s.screenShake) < 0.05);
+    }
+    for (const el of this.pauseModal.querySelectorAll<HTMLElement>('[data-particles]')) {
+      el.classList.toggle('active', el.dataset.particles === s.particleQuality);
+    }
+    for (const el of this.pauseModal.querySelectorAll<HTMLElement>('[data-pixel-ratio]')) {
+      el.classList.toggle('active', Number(el.dataset.pixelRatio) === s.pixelRatioCap);
+    }
+
+    const shipsHtml = renderShipCardsHtml(s.selectedShip);
+    this.titleShipGrid.innerHTML = shipsHtml;
+    this.pauseShipGrid.innerHTML = shipsHtml;
   }
 
   public setTilt(enabled: boolean): void {
@@ -320,11 +588,28 @@ export class HUD {
     const scale = w / (ARENA_HALF_W * 2);
 
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = 'rgba(5, 8, 18, 0.92)';
+    ctx.fillStyle = 'rgba(3, 5, 12, 0.94)';
     ctx.fillRect(0, 0, w, h);
 
+    // Arena floor polygon shape
+    if (snapshot.arenaBoundary.length >= 3) {
+      ctx.beginPath();
+      const v0 = snapshot.arenaBoundary[0]!;
+      ctx.moveTo(toX(v0.x), toY(v0.y));
+      for (let i = 1; i < snapshot.arenaBoundary.length; i++) {
+        const v = snapshot.arenaBoundary[i]!;
+        ctx.lineTo(toX(v.x), toY(v.y));
+      }
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(9, 16, 36, 0.95)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.55)';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    }
+
     // Subtle grid
-    ctx.strokeStyle = 'rgba(26, 107, 255, 0.16)';
+    ctx.strokeStyle = 'rgba(26, 107, 255, 0.14)';
     ctx.lineWidth = 1;
     for (let gx = 1; gx < 6; gx++) {
       const px = (gx / 6) * w;
@@ -341,10 +626,25 @@ export class HUD {
       ctx.stroke();
     }
 
-    // Architectural Arena Blocks & Cover Pillars
-    ctx.fillStyle = 'rgba(0, 216, 255, 0.35)';
-    ctx.strokeStyle = 'rgba(0, 229, 255, 0.72)';
+    // Irregular / Massive Arena Obstacles
+    ctx.fillStyle = 'rgba(0, 216, 255, 0.36)';
+    ctx.strokeStyle = 'rgba(0, 229, 255, 0.78)';
     ctx.lineWidth = 1;
+    for (const obs of snapshot.obstacles) {
+      if (obs.vertices.length < 3) continue;
+      ctx.beginPath();
+      const v0 = obs.vertices[0]!;
+      ctx.moveTo(toX(v0.x), toY(v0.y));
+      for (let i = 1; i < obs.vertices.length; i++) {
+        const v = obs.vertices[i]!;
+        ctx.lineTo(toX(v.x), toY(v.y));
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // Legacy Blocks & Cover Pillars
     for (const blk of snapshot.blocks) {
       const bx = toX(blk.x - blk.halfW);
       const by = toY(blk.y + blk.halfH);
@@ -460,7 +760,6 @@ export class HUD {
       this.bossWrap.classList.remove('visible');
     }
 
-    // Channel or Charge meter
     const ch = snapshot.player.channel;
     const charge = snapshot.player.charge;
     if (ch) {
@@ -482,7 +781,6 @@ export class HUD {
       this.channelWrap.style.display = 'none';
     }
 
-    // Queue preview
     const q = snapshot.player.queue;
     if (q.length === 0) {
       this.queueEl.textContent = 'QUEUE: EMPTY';
@@ -503,7 +801,6 @@ export class HUD {
 
     this.drawMinimap(snapshot);
 
-    // Active augments strip (rebuild only when changed)
     const activeAugEntries = (Object.entries(snapshot.augments) as Array<[AugmentId, number]>).filter(([, n]) => n > 0);
     const activeAugKey = activeAugEntries.map(([id, n]) => `${id}:${n}`).join('|');
     if (activeAugKey !== this.lastActiveAugKey) {
@@ -523,18 +820,20 @@ export class HUD {
     this.gameOverModal.classList.toggle('open', snapshot.phase === 'GAME_OVER');
 
     if (snapshot.phase === 'AUGMENT_CHOICE' && snapshot.pendingAugments.length > 0) {
-      const augKey = snapshot.pendingAugments.map((a) => a.id).join('|');
+      const augKey = snapshot.pendingAugments.map((a) => `${a.id}:${snapshot.augments[a.id] ?? 0}`).join('|');
       if (augKey !== this.lastAugmentKey) {
         this.lastAugmentKey = augKey;
         this.augmentGrid.innerHTML = snapshot.pendingAugments
-          .map(
-            (aug, idx) => `
+          .map((aug, idx) => {
+            const owned = snapshot.augments[aug.id] ?? 0;
+            const rankBadge = owned > 0 ? `RANK ${owned + 1}` : 'NEW';
+            return `
             <div class="augment-card" data-aug-index="${idx}" style="border-color:${aug.color}88">
-              <span class="augment-tag" style="color:${aug.color}">[${idx + 1}] ${aug.tag}</span>
+              <span class="augment-tag" style="color:${aug.color}">[${idx + 1}] ${aug.tag} · ${rankBadge}</span>
               <span class="augment-name">${aug.name}</span>
               <span class="augment-desc">${aug.description}</span>
-            </div>`
-          )
+            </div>`;
+          })
           .join('');
       }
     } else if (this.lastAugmentKey !== '') {

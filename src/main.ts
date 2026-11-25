@@ -1,10 +1,13 @@
+import { MusicPlayer } from './audio/MusicPlayer';
 import { SynthAudio } from './audio/SynthAudio';
+import { DEFAULT_SETTINGS, GameSettings, loadSettings, saveSettings } from './settings';
 import { SceneManager } from './render/SceneManager';
 import { WarpingGrid } from './render/WarpingGrid';
 import { EntityRenderer } from './render/EntityRenderer';
 import { SpellVFX } from './render/SpellVFX';
 import { GameSim } from './sim/GameSim';
-import { BaseElement, CastMode, ControlPreset, ELEMENT_META, FIXED_DT } from './sim/types';
+import { getShipDef } from './sim/Ships';
+import { BaseElement, CastMode, ELEMENT_META, FIXED_DT } from './sim/types';
 import { HUD } from './ui/HUD';
 
 const HIGHSCORE_KEY = 'vector-arcana-highscores-v1';
@@ -59,10 +62,10 @@ const warpingGrid = new WarpingGrid(sceneManager.scene);
 const entityRenderer = new EntityRenderer(sceneManager.scene);
 const spellVFX = new SpellVFX(sceneManager.scene);
 const synthAudio = new SynthAudio();
+const musicPlayer = new MusicPlayer();
 const sim = new GameSim('TITLE');
 
-let preset: ControlPreset = 'CLASSIC';
-let muted = false;
+let settings: GameSettings = loadSettings();
 let hitStopTimer = 0;
 let highScores = loadHighScores();
 
@@ -91,20 +94,38 @@ function syncShiftFromMouse(e: MouseEvent): void {
   }
 }
 
-const hud = new HUD(hudEl, {
+let hud: HUD;
+
+function applyAllSettings(next: GameSettings): void {
+  settings = { ...next };
+  saveSettings(settings);
+  synthAudio.setMuted(settings.muted);
+  synthAudio.setVolumes(settings.masterVolume, settings.sfxVolume);
+  musicPlayer.setMuted(settings.muted);
+  musicPlayer.setVolumes(settings.masterVolume, settings.musicVolume);
+  sceneManager.setTilt(settings.cameraTilt);
+  sceneManager.setBloomIntensity(settings.bloomIntensity);
+  sceneManager.setScreenShakeScale(settings.screenShake);
+  sceneManager.setPixelRatioCap(settings.pixelRatioCap);
+  warpingGrid.setWarpEnabled(settings.gridWarp);
+  spellVFX.setParticleQuality(settings.particleQuality);
+  sim.setDifficulty(settings.difficulty);
+  sim.setShip(settings.selectedShip);
+  hud?.applySettings(settings);
+}
+
+hud = new HUD(hudEl, {
   onToggleTilt: () => {
-    const next = !sceneManager.isTiltEnabled();
-    sceneManager.setTilt(next);
-    hud.setTilt(next);
+    applyAllSettings({ ...settings, cameraTilt: !settings.cameraTilt });
   },
   onToggleControls: () => {
-    preset = preset === 'CLASSIC' ? 'ARROWS_LMB' : 'CLASSIC';
-    hud.setPreset(preset);
+    applyAllSettings({
+      ...settings,
+      controlPreset: settings.controlPreset === 'CLASSIC' ? 'ARROWS_LMB' : 'CLASSIC',
+    });
   },
   onToggleMute: () => {
-    muted = !muted;
-    synthAudio.setMuted(muted);
-    hud.setMuted(muted);
+    applyAllSettings({ ...settings, muted: !settings.muted });
   },
   onTogglePause: () => {
     const snap = sim.getSnapshot();
@@ -113,15 +134,33 @@ const hud = new HUD(hudEl, {
   },
   onStartGame: () => {
     synthAudio.unlock();
+    musicPlayer.unlock();
     clearHeldInputs();
     sim.startNewRun();
+    musicPlayer.restart();
   },
   onPickAugment: (index: number) => {
     synthAudio.unlock();
+    musicPlayer.unlock();
     clearHeldInputs();
     sim.pickAugment(index);
   },
+  onSettingsChange: (patch: Partial<GameSettings>) => {
+    applyAllSettings({ ...settings, ...patch });
+  },
+  onResetSettings: () => {
+    applyAllSettings({ ...DEFAULT_SETTINGS });
+  },
+  onRestartRun: () => {
+    synthAudio.unlock();
+    musicPlayer.unlock();
+    clearHeldInputs();
+    sim.startNewRun();
+    musicPlayer.restart();
+  },
 });
+
+applyAllSettings(settings);
 
 const stopContextMenu = (e: Event): void => {
   e.preventDefault();
@@ -147,6 +186,7 @@ window.addEventListener('mousemove', (e) => {
 
 window.addEventListener('mousedown', (e) => {
   synthAudio.unlock();
+  musicPlayer.unlock();
   syncShiftFromMouse(e);
   if ((e.target as HTMLElement | null)?.closest('#hud') || sim.getSnapshot().phase !== 'PLAYING') {
     return;
@@ -159,7 +199,7 @@ window.addEventListener('mousedown', (e) => {
   }
   if (e.button === 0) {
     lmbDown = true;
-    if (preset === 'CLASSIC') {
+    if (settings.controlPreset === 'CLASSIC') {
       if (e.shiftKey) {
         pendingDash = true;
       } else {
@@ -171,7 +211,7 @@ window.addEventListener('mousedown', (e) => {
   } else if (e.button === 2) {
     e.preventDefault();
     rmbDown = true;
-    if (preset === 'CLASSIC') {
+    if (settings.controlPreset === 'CLASSIC') {
       pendingCast = e.shiftKey ? 'NOVA' : 'FORWARD';
     } else {
       pendingCast = 'NOVA';
@@ -192,6 +232,7 @@ window.addEventListener('mouseup', (e) => {
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
   synthAudio.unlock();
+  musicPlayer.unlock();
   keysDown.add(e.code);
 
   const curPhase = sim.getSnapshot().phase;
@@ -204,6 +245,23 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
+  if (e.code === 'Escape') {
+    if (curPhase === 'PLAYING') sim.setPhase('PAUSED');
+    else if (curPhase === 'PAUSED') sim.setPhase('PLAYING');
+    return;
+  }
+
+  if (e.code === 'Enter') {
+    if (curPhase === 'TITLE' || curPhase === 'GAME_OVER') {
+      clearHeldInputs();
+      sim.startNewRun();
+      musicPlayer.restart();
+    }
+    return;
+  }
+
+  if (curPhase !== 'PLAYING') return;
+
   const el = KEY_TO_ELEMENT[e.code];
   if (el) {
     pendingQueue.push(el);
@@ -215,17 +273,9 @@ window.addEventListener('keydown', (e) => {
   } else if (e.code === 'KeyC') {
     pendingCast = 'SELF';
   } else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
-    if (preset === 'ARROWS_LMB') {
+    if (settings.controlPreset === 'ARROWS_LMB') {
       pendingDash = true;
     }
-  } else if (e.code === 'Enter') {
-    if (curPhase === 'TITLE' || curPhase === 'GAME_OVER') {
-      clearHeldInputs();
-      sim.startNewRun();
-    }
-  } else if (e.code === 'Escape') {
-    if (curPhase === 'PLAYING') sim.setPhase('PAUSED');
-    else if (curPhase === 'PAUSED') sim.setPhase('PLAYING');
   }
 });
 
@@ -243,6 +293,7 @@ function frame(now: number): void {
 
   if (hitStopTimer > 0) {
     hitStopTimer = Math.max(0, hitStopTimer - rawDt);
+    musicPlayer.update(rawDt);
     sceneManager.render(rawDt);
     requestAnimationFrame(frame);
     return;
@@ -255,9 +306,9 @@ function frame(now: number): void {
     const shiftHeld = keysDown.has('ShiftLeft') || keysDown.has('ShiftRight');
     const moveX = (keysDown.has('ArrowRight') ? 1 : 0) - (keysDown.has('ArrowLeft') ? 1 : 0);
     const moveY = (keysDown.has('ArrowUp') ? 1 : 0) - (keysDown.has('ArrowDown') ? 1 : 0);
-    const castHeld = preset === 'CLASSIC' ? rmbDown && !shiftHeld : lmbDown;
+    const castHeld = settings.controlPreset === 'CLASSIC' ? rmbDown && !shiftHeld : lmbDown;
     const selfHeld = mmbDown || keysDown.has('KeyC');
-    const moveToCursor = preset === 'CLASSIC' && lmbDown;
+    const moveToCursor = settings.controlPreset === 'CLASSIC' && lmbDown;
 
     sim.step({
       moveX,
@@ -314,9 +365,11 @@ function frame(now: number): void {
       );
       sceneManager.addScreenShake(ev.isBoss ? 12 : 3.5);
     } else if (ev.type === 'damage_number') {
-      const pt = sceneManager.worldToScreen(ev.x, ev.y, 28);
-      if (pt.visible) {
-        hud.spawnFloatingText(pt.x, pt.y, ev.text, ev.colorHex, ev.big);
+      if (settings.damageNumbers) {
+        const pt = sceneManager.worldToScreen(ev.x, ev.y, 28);
+        if (pt.visible) {
+          hud.spawnFloatingText(pt.x, pt.y, ev.text, ev.colorHex, ev.big);
+        }
       }
     } else if (ev.type === 'vfx_shatter') {
       spellVFX.spawnBurst(ev.x, ev.y, ev.colorHex, 24, 1.4);
@@ -337,13 +390,16 @@ function frame(now: number): void {
 
   warpingGrid.update(rawDt);
   const snapshot = sim.getSnapshot();
-  sceneManager.setSectorTheme(snapshot.wave);
+  musicPlayer.setPhase(snapshot.phase);
+  musicPlayer.update(rawDt);
+  sceneManager.setArenaBoundary(snapshot.arenaBoundary, snapshot.wave);
+  warpingGrid.setArenaBoundary(snapshot.arenaBoundary);
   warpingGrid.setSectorTheme(snapshot.wave);
   sceneManager.setCameraTarget(snapshot.player.x, snapshot.player.y, aimWorld.x, aimWorld.y, rawDt);
   if (snapshot.player.moving || snapshot.player.dashTimer > 0) {
     const thrustColor = snapshot.player.queue[0]
       ? ELEMENT_META[snapshot.player.queue[0]].colorHex
-      : 0x00f5ff;
+      : getShipDef(snapshot.shipId).colorHex;
     spellVFX.spawnThruster(snapshot.player.x, snapshot.player.y, snapshot.player.aimAngle, thrustColor);
   }
   const timeSec = now / 1000;
@@ -354,7 +410,7 @@ function frame(now: number): void {
   if (hudTimer >= 0.05) {
     hudTimer = 0;
     const shiftHeld = keysDown.has('ShiftLeft') || keysDown.has('ShiftRight');
-    hud.update(snapshot, highScores, preset === 'CLASSIC' && shiftHeld);
+    hud.update(snapshot, highScores, settings.controlPreset === 'CLASSIC' && shiftHeld);
   }
 
   sceneManager.render(rawDt);

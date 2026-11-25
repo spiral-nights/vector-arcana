@@ -1,30 +1,37 @@
+import {
+  circleVsConvexPoly,
+  clampPointToConvexPoly,
+  getArenaHorizontalSpanAtY0,
+} from './ArenaGeometry';
 import { getAugmentStacks, rollAugmentChoices } from './Augments';
 import { CombatEngine } from './CombatEngine';
+import { getDifficultyConfig, getShipDef } from './Ships';
 import { enqueueElement, resolveSelfCast, resolveSpell } from './SpellResolver';
 import { WaveDirector } from './WaveDirector';
 import {
-  ARENA_HALF_H,
-  ARENA_HALF_W,
   AugmentDef,
   AugmentId,
+  DifficultyId,
   FIXED_DT,
   PlayerState,
+  ShipDef,
+  ShipId,
   SimEvent,
   SimInput,
   SimSnapshot,
 } from './types';
 
-function createInitialPlayer(): PlayerState {
+function createInitialPlayer(shipDef: ShipDef, spawnX = -955): PlayerState {
   return {
-    x: -ARENA_HALF_W + 140,
+    x: spawnX,
     y: 0,
     vx: 0,
     vy: 0,
     aimAngle: 0,
-    hp: 100,
-    maxHp: 100,
-    armorHp: 0,
-    maxArmorHp: 105,
+    hp: shipDef.maxHp,
+    maxHp: shipDef.maxHp,
+    armorHp: shipDef.startArmor,
+    maxArmorHp: 140,
     wardRemaining: 0,
     wardMaxDuration: 6,
     wardElement: null,
@@ -48,29 +55,65 @@ function createInitialPlayer(): PlayerState {
 export class GameSim {
   private phase: SimSnapshot['phase'] = 'PLAYING';
   private tick = 0;
-  private player: PlayerState = createInitialPlayer();
+  private difficulty: DifficultyId = 'VETERAN';
+  private shipId: ShipId = 'VANGUARD';
+  private player: PlayerState = createInitialPlayer(getShipDef('VANGUARD'));
   public readonly combat = new CombatEngine();
   public readonly waveDirector = new WaveDirector();
   public augments: Partial<Record<AugmentId, number>> = {};
   public pendingAugments: AugmentDef[] = [];
+  private recentAugmentOffers: AugmentId[] = [];
   private events: SimEvent[] = [];
 
   constructor(initialPhase: SimSnapshot['phase'] = 'PLAYING') {
     this.phase = initialPhase;
+    this.combat.setRunConfig(getShipDef(this.shipId), getDifficultyConfig(this.difficulty));
     this.waveDirector.startWave(1, this.events);
+    const span = getArenaHorizontalSpanAtY0(this.waveDirector.arenaBoundary);
+    this.player.x = span.minX + 145;
+  }
+
+  public setDifficulty(diff: DifficultyId): void {
+    this.difficulty = diff;
+    this.combat.setRunConfig(getShipDef(this.shipId), getDifficultyConfig(diff));
+  }
+
+  public setShip(shipId: ShipId): void {
+    this.shipId = shipId;
+    const shipDef = getShipDef(shipId);
+    this.combat.setRunConfig(shipDef, getDifficultyConfig(this.difficulty));
+    if (this.phase === 'TITLE') {
+      const spawnX = getArenaHorizontalSpanAtY0(this.waveDirector.arenaBoundary).minX + 145;
+      this.player = createInitialPlayer(shipDef, spawnX);
+    } else {
+      const hullStacks = getAugmentStacks(this.augments, 'HULL_REINFORCEMENT');
+      const newMaxHp = shipDef.maxHp + hullStacks * 30;
+      const ratio = this.player.hp / Math.max(1, this.player.maxHp);
+      this.player.maxHp = newMaxHp;
+      this.player.hp = Math.max(1, Math.min(newMaxHp, Math.round(ratio * newMaxHp)));
+      if (shipDef.startArmor > 0 && this.player.armorHp < shipDef.startArmor) {
+        this.player.armorHp = shipDef.startArmor;
+      }
+    }
   }
 
   public startNewRun(): void {
+    const shipDef = getShipDef(this.shipId);
+    const diffCfg = getDifficultyConfig(this.difficulty);
     this.phase = 'PLAYING';
     this.tick = 0;
-    this.player = createInitialPlayer();
     this.augments = {};
     this.pendingAugments = [];
+    this.recentAugmentOffers = [];
     this.combat.reset();
     this.combat.setAugments(this.augments);
+    this.combat.setRunConfig(shipDef, diffCfg);
     this.waveDirector.reset();
     this.events.length = 0;
     this.waveDirector.startWave(1, this.events);
+    this.combat.setArenaBoundary(this.waveDirector.arenaBoundary);
+    const span = getArenaHorizontalSpanAtY0(this.waveDirector.arenaBoundary);
+    this.player = createInitialPlayer(shipDef, span.minX + 145);
   }
 
   public pickAugment(index: number): boolean {
@@ -78,6 +121,10 @@ export class GameSim {
     const chosen = this.pendingAugments[index];
     if (!chosen) return false;
     this.augments[chosen.id] = (this.augments[chosen.id] ?? 0) + 1;
+    if (chosen.id === 'HULL_REINFORCEMENT') {
+      this.player.maxHp += 30;
+      this.player.hp = Math.min(this.player.maxHp, this.player.hp + 30);
+    }
     this.combat.setAugments(this.augments);
     this.pendingAugments = [];
     this.phase = 'PLAYING';
@@ -100,7 +147,11 @@ export class GameSim {
   public step(input: SimInput): void {
     if (this.phase !== 'PLAYING') return;
     this.tick++;
+    const shipDef = getShipDef(this.shipId);
+    const diffCfg = getDifficultyConfig(this.difficulty);
     this.combat.setAugments(this.augments);
+    this.combat.setRunConfig(shipDef, diffCfg);
+    this.combat.setArenaBoundary(this.waveDirector.arenaBoundary);
 
     const p = this.player;
     const dxAim = input.aimX - p.x;
@@ -144,14 +195,18 @@ export class GameSim {
     }
 
     if (input.dashPressed && p.dashCooldown <= 0 && p.dashTimer <= 0) {
+      const phaseStacks = getAugmentStacks(this.augments, 'PHASE_RESONANCE');
       this.combat.stopChannel(p);
       this.combat.cancelCharge(p);
       p.moveTarget = null;
       p.dashTimer = 0.19;
-      p.dashCooldown = 0.55;
+      p.dashCooldown = 0.55 * shipDef.dashCooldownMult * Math.pow(0.72, phaseStacks);
       p.invulnTimer = 0.28;
       p.dashDirX = Math.cos(p.aimAngle);
       p.dashDirY = Math.sin(p.aimAngle);
+      if (phaseStacks > 0) {
+        p.armorHp = Math.min(p.maxArmorHp, p.armorHp + 15 * phaseStacks);
+      }
       this.events.push({ type: 'grid_impulse', x: p.x, y: p.y, strength: 180, radius: 130 });
       this.events.push({ type: 'sfx', sound: 'dash' });
 
@@ -198,12 +253,10 @@ export class GameSim {
       }
     }
 
+    const boundary = this.waveDirector.arenaBoundary;
+    const margin = 18;
     if (input.moveClickTarget && p.dashTimer <= 0) {
-      const margin = 18;
-      p.moveTarget = {
-        x: Math.max(-ARENA_HALF_W + margin, Math.min(ARENA_HALF_W - margin, input.moveClickTarget.x)),
-        y: Math.max(-ARENA_HALF_H + margin, Math.min(ARENA_HALF_H - margin, input.moveClickTarget.y)),
-      };
+      p.moveTarget = clampPointToConvexPoly(input.moveClickTarget.x, input.moveClickTarget.y, margin, boundary);
     }
 
     if (p.dashTimer > 0) {
@@ -243,7 +296,7 @@ export class GameSim {
         }
       }
 
-      const baseSpeed = 165 * getOcMoveMult();
+      const baseSpeed = 165 * shipDef.speedMult * getOcMoveMult();
       const maxSpeed = p.channel ? baseSpeed * 0.68 : p.charge ? baseSpeed * 0.65 : baseSpeed;
       const accel = 13;
       p.vx += (mx * maxSpeed - p.vx) * Math.min(1, accel * FIXED_DT);
@@ -254,9 +307,9 @@ export class GameSim {
     p.x += p.vx * FIXED_DT;
     p.y += p.vy * FIXED_DT;
 
-    const margin = 18;
-    p.x = Math.max(-ARENA_HALF_W + margin, Math.min(ARENA_HALF_W - margin, p.x));
-    p.y = Math.max(-ARENA_HALF_H + margin, Math.min(ARENA_HALF_H - margin, p.y));
+    const clampedP = clampPointToConvexPoly(p.x, p.y, margin, boundary);
+    p.x = clampedP.x;
+    p.y = clampedP.y;
 
     for (const pil of this.waveDirector.pillars) {
       const pdx = p.x - pil.x;
@@ -291,6 +344,18 @@ export class GameSim {
       }
     }
 
+    for (const obs of this.waveDirector.obstacles) {
+      const hit = circleVsConvexPoly(p.x, p.y, 16, obs);
+      if (hit.hit) {
+        p.x += hit.pushX;
+        p.y += hit.pushY;
+      }
+    }
+
+    const postObsClamp = clampPointToConvexPoly(p.x, p.y, margin, boundary);
+    p.x = postObsClamp.x;
+    p.y = postObsClamp.y;
+
     this.waveDirector.step(
       FIXED_DT,
       this.combat.enemies.length,
@@ -306,25 +371,33 @@ export class GameSim {
       input.selfHeld,
       this.waveDirector.wave,
       this.waveDirector.pillars,
-      (arch) => this.waveDirector.onEnemyKilled(arch),
+      (arch) => this.waveDirector.onEnemyKilled(arch, diffCfg.scoreMult),
       () => this.waveDirector.onPlayerDamaged(),
       this.events,
-      this.waveDirector.blocks
+      this.waveDirector.blocks,
+      this.waveDirector.obstacles,
+      this.waveDirector.arenaBoundary
     );
 
     // Connected Sector Gate Transition
     const gate = this.waveDirector.gate;
     if (gate.open && Math.hypot(p.x - gate.x, p.y - gate.y) <= gate.radius) {
       const nextSector = this.waveDirector.wave + 1;
-      p.x = -ARENA_HALF_W + 140;
-      p.y = 0;
       p.vx = 0;
       p.vy = 0;
       p.moveTarget = null;
       p.hp = Math.min(p.maxHp, p.hp + 25);
+      if (shipDef.startArmor > 0) {
+        p.armorHp = Math.max(p.armorHp, shipDef.startArmor);
+      }
       this.combat.clearTransientForSector();
       this.waveDirector.startWave(nextSector, this.events);
-      this.pendingAugments = rollAugmentChoices();
+      this.combat.setArenaBoundary(this.waveDirector.arenaBoundary);
+      p.x = getArenaHorizontalSpanAtY0(this.waveDirector.arenaBoundary).minX + 145;
+      p.y = 0;
+
+      this.pendingAugments = rollAugmentChoices(Math.random, 3, this.augments, this.recentAugmentOffers);
+      this.recentAugmentOffers = [...this.recentAugmentOffers, ...this.pendingAugments.map((a) => a.id)].slice(-6);
       this.phase = 'AUGMENT_CHOICE';
       this.events.push({ type: 'augment_offer', choices: this.pendingAugments });
     }
@@ -364,12 +437,17 @@ export class GameSim {
       slashes: this.combat.slashes,
       pillars: this.waveDirector.pillars,
       blocks: this.waveDirector.blocks,
+      obstacles: this.waveDirector.obstacles,
+      arenaShape: this.waveDirector.arenaShape,
+      arenaBoundary: this.waveDirector.arenaBoundary,
       rifts: this.waveDirector.rifts,
       hazards: this.combat.hazards,
       gate: this.waveDirector.gate,
       augments: { ...this.augments },
       pendingAugments: [...this.pendingAugments],
       boss: warden ? { name: 'SECTOR WARDEN', hp: warden.hp, maxHp: warden.maxHp } : null,
+      difficulty: this.difficulty,
+      shipId: this.shipId,
     };
   }
 }
