@@ -9,6 +9,7 @@ import {
   buildInkOutlineGeometry,
   createDropShadowMaterial,
   createSumiInkMaterial,
+  createWatercolorRibbonMaterial,
   createWatercolorWashMaterial,
   getPolygonWashTexture,
   setWatercolorWashColor,
@@ -280,7 +281,84 @@ export class EntityRenderer {
       pip.visible = false;
     }
 
+    this.rebuildHudRibbonsForStyle();
     this.rebuildPlayerHull(this.currentShipId ?? 'VANGUARD');
+  }
+
+  private swapMeshMaterial(mesh: THREE.Mesh, nextMat: THREE.Material, order: number): void {
+    if (mesh.material instanceof THREE.Material) mesh.material.dispose();
+    mesh.material = nextMat;
+    mesh.renderOrder = order;
+  }
+
+  private rebuildHudRibbonsForStyle(): void {
+    const isWc = this.artStyle === 'WATERCOLOR_INK';
+    const makeMat = (hex: number, boost: number, op: number, ink = 0.34): THREE.ShaderMaterial =>
+      isWc ? createWatercolorRibbonMaterial(hex, op, ink) : createNeonRibbonMaterial(hex, boost, op);
+
+    while (this.muzzleSparkle.children.length > 0) {
+      const child = this.muzzleSparkle.children[0]!;
+      this.muzzleSparkle.remove(child);
+      this.disposeGroup(child);
+    }
+    if (isWc) {
+      const rays = [
+        [{ x: -9, y: 0 }, { x: 9, y: 0 }],
+        [{ x: 0, y: -9 }, { x: 0, y: 9 }],
+        [{ x: -6, y: -6 }, { x: 6, y: 6 }],
+        [{ x: -6, y: 6 }, { x: 6, y: -6 }],
+      ];
+      for (const pts of rays) {
+        const m = new THREE.Mesh(
+          buildRibbonGeometry(pts, 3.0, false, 4.4),
+          createWatercolorRibbonMaterial(0xffffff, 0.94, 0.35)
+        );
+        m.renderOrder = 16;
+        this.muzzleSparkle.add(m);
+      }
+    } else {
+      this.muzzleSparkle.add(
+        new THREE.Mesh(
+          buildRibbonGeometry([{ x: -7, y: 0 }, { x: 7, y: 0 }], 1.6, false, 4.4),
+          createNeonRibbonMaterial(0xffffff, 1.35, 0.9)
+        ),
+        new THREE.Mesh(
+          buildRibbonGeometry([{ x: 0, y: -7 }, { x: 0, y: 7 }], 1.6, false, 4.4),
+          createNeonRibbonMaterial(0xffffff, 1.35, 0.9)
+        )
+      );
+    }
+
+    for (const child of this.reticleGroup.children) {
+      if (child instanceof THREE.Mesh) {
+        this.swapMeshMaterial(child, makeMat(0x00e5ff, 1.1, 0.9, 0.35), isWc ? 16 : 0);
+      }
+    }
+    this.swapMeshMaterial(this.rearHaloMesh, makeMat(0x00f5ff, 1.0, 0.65, 0.3), isWc ? 11 : 0);
+    this.swapMeshMaterial(this.hullArcMesh, makeMat(0x39ff14, 1.15, 0.95, 0.34), isWc ? 12 : 0);
+    this.swapMeshMaterial(this.wardArcMesh, makeMat(0xe6f0ff, 1.2, 0.92, 0.34), isWc ? 12 : 0);
+    this.swapMeshMaterial(this.wardInnerArcMesh, makeMat(0x00f5ff, 1.15, 0.92, 0.34), isWc ? 12 : 0);
+    this.swapMeshMaterial(this.channelArcMesh, makeMat(0xffffff, 1.2, 0.92, 0.34), isWc ? 12 : 0);
+    this.swapMeshMaterial(
+      this.chargeCore,
+      makeMat(ELEMENT_META.KINETIC.colorHex, 1.2, 0.95, 0.36),
+      isWc ? 13 : 0
+    );
+    this.swapMeshMaterial(this.chargeRing, makeMat(0xffffff, 1.05, 0.8, 0.3), isWc ? 12 : 0);
+    this.swapMeshMaterial(
+      this.armorCage,
+      makeMat(ELEMENT_META.KINETIC.colorHex, 1.1, 0.9, 0.36),
+      isWc ? 12 : 0
+    );
+    this.swapMeshMaterial(this.gatePointer, makeMat(0x39ff14, 1.25, 0.95, 0.38), isWc ? 16 : 0);
+
+    const wpChildren = this.waypointGroup.children;
+    if (wpChildren[0] instanceof THREE.Mesh) {
+      this.swapMeshMaterial(wpChildren[0], makeMat(0x00f5ff, 1.15, 0.9, 0.35), isWc ? 12 : 0);
+    }
+    if (wpChildren[1] instanceof THREE.Mesh) {
+      this.swapMeshMaterial(wpChildren[1], makeMat(0x1a6bff, 1.0, 0.65, 0.3), isWc ? 11 : 0);
+    }
   }
 
   private createWatercolorEntityVisual(
@@ -302,7 +380,7 @@ export class EntityRenderer {
     shadowMesh.scale.set(0.92, 0.92, 1);
     shadowMesh.renderOrder = 5;
 
-    const glow = createGlowSprite(baseColor, stamp.size * 1.15, 0.24);
+    const glow = createGlowSprite(baseColor, stamp.size * 1.2, 0.3);
     glow.position.set(0, 0, 0.8);
     glow.renderOrder = 8;
 
@@ -310,14 +388,14 @@ export class EntityRenderer {
     washGeo.translate(stamp.centerX, stamp.centerY, 0);
     const washMesh = new THREE.Mesh(
       washGeo,
-      createWatercolorWashMaterial(stamp.texture, baseColor, highlightColor, poolColor, 0.92)
+      createWatercolorWashMaterial(stamp.texture, baseColor, highlightColor, poolColor, 0.94)
     );
     washMesh.position.set(2.8, -2.4, 1.5);
     washMesh.renderOrder = 10;
 
     const inkGroup = new THREE.Group();
     const outerInk = new THREE.Mesh(
-      buildInkOutlineGeometry(outerPts, inkWidth, true, 5.0, 2.2, 0.52),
+      buildInkOutlineGeometry(outerPts, inkWidth * 1.15, true, 5.0, 2.2, 0.52),
       createSumiInkMaterial(0.98, 0.58)
     );
     outerInk.renderOrder = 15;
@@ -476,10 +554,16 @@ export class EntityRenderer {
       this.playerHullGroup.add(vis.glow, vis.washMesh, vis.inkGroup);
 
       this.thrusterMesh = new THREE.Mesh(
-        buildRibbonGeometry(thrusterPts, 3.2, false, 1.2),
-        createNeonRibbonMaterial(baseHex, 1.15, 0.92)
+        buildRibbonGeometry(thrusterPts, 4.4, false, 1.2),
+        createWatercolorRibbonMaterial(baseHex, 0.9, 0.35)
       );
       this.thrusterMesh.renderOrder = 9;
+      const thrusterInk = new THREE.Mesh(
+        buildInkOutlineGeometry(thrusterPts, 2.0, false, 1.6, 1.2, 0.4),
+        createSumiInkMaterial(0.88, 0.45)
+      );
+      thrusterInk.renderOrder = 14;
+      this.thrusterMesh.add(thrusterInk);
       this.playerHullGroup.add(this.thrusterMesh);
       return;
     }
@@ -945,8 +1029,8 @@ export class EntityRenderer {
     const g = new THREE.Group();
     if (this.artStyle === 'WATERCOLOR_INK') {
       const wash = new THREE.Mesh(
-        buildRibbonGeometry([{ x: 0, y: 0 }, { x: 1, y: 0 }], width * 1.9, false, 0.8),
-        createNeonRibbonMaterial(colorHex, 1.15, 0.68)
+        buildRibbonGeometry([{ x: 0, y: 0 }, { x: 1, y: 0 }], width * 2.2, false, 0.8),
+        createWatercolorRibbonMaterial(colorHex, 0.72, 0.25)
       );
       wash.renderOrder = 8;
       const ink = new THREE.Mesh(
@@ -1659,12 +1743,12 @@ export class EntityRenderer {
       }
       const frontShield = new THREE.Group();
       const sWash = new THREE.Mesh(
-        buildRibbonGeometry(arcPts, 6.4, false, 3.8),
-        createNeonRibbonMaterial(0x00f5ff, 1.15, 0.85)
+        buildRibbonGeometry(arcPts, 7.2, false, 3.8),
+        createWatercolorRibbonMaterial(0x00f5ff, 0.88, 0.35)
       );
       sWash.renderOrder = 11;
       const sInk = new THREE.Mesh(
-        buildInkOutlineGeometry(arcPts, 3.0, false, 4.8, 1.8, 0.4),
+        buildInkOutlineGeometry(arcPts, 3.2, false, 4.8, 1.8, 0.4),
         createSumiInkMaterial(0.96, 0.5)
       );
       sInk.renderOrder = 15;
@@ -1685,8 +1769,8 @@ export class EntityRenderer {
         }
         const plate = new THREE.Group();
         const pWash = new THREE.Mesh(
-          buildRibbonGeometry(platePts, 6.8, false, 5.5),
-          createNeonRibbonMaterial(0x70e4ff, 1.2, 0.92)
+          buildRibbonGeometry(platePts, 7.6, false, 5.5),
+          createWatercolorRibbonMaterial(0x70e4ff, 0.92, 0.35)
         );
         pWash.renderOrder = 11;
         const pInk = new THREE.Mesh(
@@ -1776,31 +1860,31 @@ export class EntityRenderer {
 
     const ignitedAura = new THREE.Mesh(
       isWc ? buildInkOutlineGeometry(createPolygonPts(14, r * 1.25), 3.4, true, 3) : buildRibbonGeometry(createPolygonPts(14, r * 1.25), 3.0, true, 3),
-      createNeonRibbonMaterial(0xff4518, 1.25, 0.9)
+      isWc ? createWatercolorRibbonMaterial(0xff4518, 0.9, 0.3) : createNeonRibbonMaterial(0xff4518, 1.25, 0.9)
     );
     ignitedAura.visible = false;
     root.add(ignitedAura);
     root.userData.ignitedAura = ignitedAura;
 
     const primedRing = new THREE.Mesh(
-      buildRibbonGeometry(createPolygonPts(20, r * 1.3), 2.4, true, -zHeight + 1.2),
-      createNeonRibbonMaterial(0x1a88ff, 1.2, 0.85)
+      buildRibbonGeometry(createPolygonPts(20, r * 1.3), isWc ? 3.2 : 2.4, true, -zHeight + 1.2),
+      isWc ? createWatercolorRibbonMaterial(0x1a88ff, 0.85, 0.35) : createNeonRibbonMaterial(0x1a88ff, 1.2, 0.85)
     );
     primedRing.visible = false;
     root.add(primedRing);
     root.userData.primedRing = primedRing;
 
     const chilledRing = new THREE.Mesh(
-      buildRibbonGeometry(createPolygonPts(12, r * 1.25), 2.0, true, -zHeight + 1.4),
-      createNeonRibbonMaterial(0x66ffff, 1.05, 0.78)
+      buildRibbonGeometry(createPolygonPts(12, r * 1.25), isWc ? 2.8 : 2.0, true, -zHeight + 1.4),
+      isWc ? createWatercolorRibbonMaterial(0x66ffff, 0.82, 0.35) : createNeonRibbonMaterial(0x66ffff, 1.05, 0.78)
     );
     chilledRing.visible = false;
     root.add(chilledRing);
     root.userData.chilledRing = chilledRing;
 
     const corruptRing = new THREE.Mesh(
-      buildRibbonGeometry(createPolygonPts(6, r * 1.28), 2.4, true, 2),
-      createNeonRibbonMaterial(0x39ff14, 1.2, 0.88)
+      buildRibbonGeometry(createPolygonPts(6, r * 1.28), isWc ? 3.2 : 2.4, true, 2),
+      isWc ? createWatercolorRibbonMaterial(0x39ff14, 0.88, 0.35) : createNeonRibbonMaterial(0x39ff14, 1.2, 0.88)
     );
     corruptRing.visible = false;
     root.add(corruptRing);

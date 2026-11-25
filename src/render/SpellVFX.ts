@@ -25,6 +25,7 @@ import {
   createSumiInkMaterial,
   createWatercolorBeamMaterial,
   createWatercolorPoolMaterial,
+  createWatercolorRibbonMaterial,
   createWatercolorShieldMaterial,
   createWatercolorSlashMaterial,
   createWatercolorSprayConeMaterial,
@@ -75,6 +76,11 @@ class ParticlePool {
   private readonly positions: Float32Array;
   private readonly colors: Float32Array;
   private readonly geometry: THREE.BufferGeometry;
+  private readonly material: THREE.PointsMaterial;
+  private readonly points: THREE.Points;
+  private readonly neonTexture: THREE.Texture;
+  private readonly baseSize: number;
+  private readonly baseOpacity: number;
 
   constructor(
     scene: THREE.Scene,
@@ -84,12 +90,15 @@ class ParticlePool {
     opacity = 0.9
   ) {
     this.maxCount = maxCount;
+    this.neonTexture = texture;
+    this.baseSize = size;
+    this.baseOpacity = opacity;
     this.positions = new Float32Array(maxCount * 3);
     this.colors = new Float32Array(maxCount * 3);
     this.geometry = new THREE.BufferGeometry();
     this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
     this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
-    const mat = new THREE.PointsMaterial({
+    this.material = new THREE.PointsMaterial({
       size,
       map: texture,
       vertexColors: true,
@@ -98,9 +107,19 @@ class ParticlePool {
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    const pts = new THREE.Points(this.geometry, mat);
-    pts.frustumCulled = false;
-    scene.add(pts);
+    this.points = new THREE.Points(this.geometry, this.material);
+    this.points.frustumCulled = false;
+    scene.add(this.points);
+  }
+
+  public setArtStyle(style: ArtStyle, wcTex: THREE.Texture, wcSizeMult = 1.15): void {
+    const isWc = style === 'WATERCOLOR_INK';
+    this.material.map = isWc ? wcTex : this.neonTexture;
+    this.material.blending = isWc ? THREE.NormalBlending : THREE.AdditiveBlending;
+    this.material.size = isWc ? this.baseSize * wcSizeMult : this.baseSize;
+    this.material.opacity = isWc ? Math.min(0.96, this.baseOpacity + 0.04) : this.baseOpacity;
+    this.material.needsUpdate = true;
+    this.points.renderOrder = isWc ? 20 : 0;
   }
 
   public add(p: Particle): void {
@@ -310,33 +329,87 @@ class StreakPool {
   private readonly positions: Float32Array;
   private readonly colors: Float32Array;
   private readonly geometry: THREE.BufferGeometry;
+  private readonly mesh: THREE.Mesh;
+  private readonly neonMaterial: THREE.MeshBasicMaterial;
+  private wcMaterial: THREE.ShaderMaterial | null = null;
 
   constructor(scene: THREE.Scene) {
     this.positions = new Float32Array(this.maxCount * 4 * 3);
     this.colors = new Float32Array(this.maxCount * 4 * 3);
+    const uvs = new Float32Array(this.maxCount * 4 * 2);
     const indices: number[] = [];
     for (let i = 0; i < this.maxCount; i++) {
       const v0 = i * 4;
       indices.push(v0, v0 + 1, v0 + 2, v0 + 2, v0 + 1, v0 + 3);
+      const uBase = i * 8;
+      uvs[uBase] = 0;
+      uvs[uBase + 1] = 0;
+      uvs[uBase + 2] = 0;
+      uvs[uBase + 3] = 1;
+      uvs[uBase + 4] = 1;
+      uvs[uBase + 5] = 0;
+      uvs[uBase + 6] = 1;
+      uvs[uBase + 7] = 1;
     }
     this.geometry = new THREE.BufferGeometry();
     this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
     this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
+    this.geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     this.geometry.setIndex(indices);
 
-    const mesh = new THREE.Mesh(
-      this.geometry,
-      new THREE.MeshBasicMaterial({
-        vertexColors: true,
+    this.neonMaterial = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.96,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this.mesh = new THREE.Mesh(this.geometry, this.neonMaterial);
+    this.mesh.frustumCulled = false;
+    scene.add(this.mesh);
+  }
+
+  public setArtStyle(style: ArtStyle): void {
+    const isWc = style === 'WATERCOLOR_INK';
+    if (isWc && !this.wcMaterial) {
+      this.wcMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uMap: { value: getWatercolorAssets().brushStrokeTex },
+        },
+        vertexShader: /* glsl */ `
+          attribute vec3 color;
+          varying vec2 vUv;
+          varying vec3 vColor;
+          void main() {
+            vUv = uv;
+            vColor = color;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          uniform sampler2D uMap;
+          varying vec2 vUv;
+          varying vec3 vColor;
+          void main() {
+            float lum = max(vColor.r, max(vColor.g, vColor.b));
+            if (lum < 0.01) discard;
+            float stroke = texture2D(uMap, vUv).a;
+            if (stroke < 0.05) discard;
+            float edge = abs(vUv.y - 0.5) * 2.0;
+            float inkRim = smoothstep(0.62, 0.92, edge) * 0.7;
+            vec3 col = mix(vColor / max(lum, 0.001), vec3(0.031, 0.035, 0.051), inkRim);
+            gl_FragColor = vec4(col, clamp(stroke * min(1.0, lum * 1.15), 0.0, 0.94));
+          }
+        `,
         transparent: true,
-        opacity: 0.96,
-        blending: THREE.AdditiveBlending,
+        blending: THREE.NormalBlending,
         depthWrite: false,
         side: THREE.DoubleSide,
-      })
-    );
-    mesh.frustumCulled = false;
-    scene.add(mesh);
+      });
+    }
+    this.mesh.material = isWc ? this.wcMaterial! : this.neonMaterial;
+    this.mesh.renderOrder = isWc ? 19 : 0;
   }
 
   public add(p: StreakParticle): void {
@@ -864,10 +937,27 @@ export class SpellVFX {
   public setArtStyle(style: ArtStyle): void {
     if (this.artStyle === style) return;
     this.artStyle = style;
-    if (style === 'WATERCOLOR_INK' && !this.inkDropletPool) {
-      this.inkDropletPool = new InkDropletPool(this.scene);
-    } else if (style === 'VECTOR_NEON' && this.inkDropletPool) {
-      this.inkDropletPool.clear();
+    if (style === 'WATERCOLOR_INK') {
+      if (!this.inkDropletPool) this.inkDropletPool = new InkDropletPool(this.scene);
+      const wc = getWatercolorAssets().particles;
+      this.orbPool.setArtStyle(style, wc.orb, 1.15);
+      this.firePool.setArtStyle(style, wc.fire, 1.18);
+      this.waterPool.setArtStyle(style, wc.water, 1.15);
+      this.plasmaPool.setArtStyle(style, wc.plasma, 1.15);
+      this.snowPool.setArtStyle(style, wc.snow, 1.15);
+      this.crossPool.setArtStyle(style, wc.cross, 1.15);
+      this.sparkPool.setArtStyle(style, wc.spark, 1.2);
+      this.streakPool.setArtStyle(style);
+    } else {
+      this.inkDropletPool?.clear();
+      this.orbPool.setArtStyle(style, this.orbTexture);
+      this.firePool.setArtStyle(style, this.fireTexture);
+      this.waterPool.setArtStyle(style, this.waterTexture);
+      this.plasmaPool.setArtStyle(style, this.plasmaTexture);
+      this.snowPool.setArtStyle(style, this.snowflakeTexture);
+      this.crossPool.setArtStyle(style, this.crossTexture);
+      this.sparkPool.setArtStyle(style, this.starTexture);
+      this.streakPool.setArtStyle(style);
     }
 
     const empty = new Set<never>();
@@ -938,47 +1028,48 @@ export class SpellVFX {
     coreHex: number,
     midHex: number,
     outerHex: number,
-    duration = 0.44,
-    withUnderSplash = true
+    duration = 0.48,
+    withUnderSplash = true,
+    withCompanion = false
   ): void {
     const assets = getWatercolorAssets();
     const idx = Math.floor(Math.random() * assets.starburstWashTextures.length);
     const washTex = assets.starburstWashTextures[idx]!;
     const inkTex = assets.starburstInkTextures[idx]!;
     const rot = Math.random() * Math.PI * 2;
-    const size = Math.max(54, radius * 2.2);
+    const size = Math.max(58, radius * 2.25);
 
     let underMesh: THREE.Mesh | null = null;
     if (withUnderSplash) {
       const sTex = assets.splatterWashTextures[Math.floor(Math.random() * assets.splatterWashTextures.length)]!;
       underMesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(size * 1.15, size * 1.15),
-        createWatercolorStarburstMaterial(sTex, midHex, outerHex, outerHex, 0.7)
+        new THREE.PlaneGeometry(size * 1.58, size * 1.58),
+        createWatercolorStarburstMaterial(sTex, midHex, outerHex, outerHex, 0.84)
       );
-      underMesh.position.set(x, y, 11);
-      underMesh.rotation.z = rot + 0.5;
-      underMesh.scale.set(0.4, 0.4, 1);
+      underMesh.position.set(x + (Math.random() - 0.5) * size * 0.14, y + (Math.random() - 0.5) * size * 0.14, 11);
+      underMesh.rotation.z = rot + 0.55;
+      underMesh.scale.set(0.45, 0.45, 1);
       underMesh.renderOrder = 17;
       this.scene.add(underMesh);
     }
 
     const washMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(size, size),
-      createWatercolorStarburstMaterial(washTex, coreHex, midHex, outerHex, 0.94)
+      new THREE.PlaneGeometry(size * 1.04, size * 1.04),
+      createWatercolorStarburstMaterial(washTex, coreHex, midHex, outerHex, 0.96)
     );
     washMesh.position.set(x, y, 13.5);
     washMesh.rotation.z = rot;
-    washMesh.scale.set(0.3, 0.3, 1);
+    washMesh.scale.set(0.22, 0.22, 1);
     washMesh.renderOrder = 19;
     this.scene.add(washMesh);
 
     const inkMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(size, size),
-      createInkStampMaterial(inkTex, 0.96)
+      createInkStampMaterial(inkTex, 0.98)
     );
     inkMesh.position.set(x - 3.2, y + 2.8, 15.2);
     inkMesh.rotation.z = rot;
-    inkMesh.scale.set(0.3, 0.3, 1);
+    inkMesh.scale.set(0.22, 0.22, 1);
     inkMesh.renderOrder = 22;
     this.scene.add(inkMesh);
 
@@ -988,8 +1079,24 @@ export class SpellVFX {
       inkMesh,
       life: duration,
       maxLife: duration,
-      targetScale: 1.16,
+      targetScale: 1.18,
     });
+
+    if (withCompanion) {
+      const ca = Math.random() * Math.PI * 2;
+      const dist = radius * 0.82;
+      this.spawnWatercolorStarburst(
+        x + Math.cos(ca) * dist,
+        y + Math.sin(ca) * dist,
+        radius * 0.42,
+        coreHex,
+        midHex,
+        outerHex,
+        duration * 0.82,
+        false,
+        false
+      );
+    }
   }
 
   private getBurstGradientStops(
@@ -1292,19 +1399,22 @@ export class SpellVFX {
     weightedColors: number[],
     elements: readonly QueueElement[]
   ): void {
+    const isWc = this.artStyle === 'WATERCOLOR_INK';
     const palette = weightedColors.length > 0 ? weightedColors : [0xf59e0b];
     const lenFactor = Math.max(1, Math.min(2.0, len / 380));
     const hasNonVoid = elements.some((e) => e !== 'VOID' && e !== 'BARRIER');
     const flowEls = elements.filter((e) => e !== 'BARRIER' && !(e === 'VOID' && hasNonVoid));
 
-    // Dense shaped elemental particles streaming along the beam
-    const perElCount = this.scaleCount(Math.round(4 * lenFactor));
+    // Dense shaped elemental particles streaming along the beam (halved + mist specks in watercolor)
+    const perElCount = this.scaleCount(Math.max(1, Math.round((isWc ? 2 : 4) * lenFactor)));
     for (const el of flowEls) {
       for (let k = 0; k < perElCount; k++) {
         const dist = Math.random() * len;
-        const edgeSide = el === 'VOID' ? (Math.random() < 0.5 ? -1 : 1) * width * 0.42 : (Math.random() - 0.5) * width * 1.1;
-        const spd = 460 + Math.random() * 340;
-        const flutter = (Math.random() - 0.5) * 65;
+        const edgeSide = el === 'VOID'
+          ? (Math.random() < 0.5 ? -1 : 1) * width * 0.42
+          : (Math.random() - 0.5) * width * (isWc ? 1.55 : 1.1);
+        const spd = (isWc ? 260 : 460) + Math.random() * 280;
+        const flutter = (Math.random() - 0.5) * (isWc ? 110 : 65);
         const maxLife = 0.24 + Math.random() * 0.16;
         const overrideCol = el === 'VOID' ? palette[k % palette.length] : undefined;
         this.addElementParticle(
@@ -1322,6 +1432,26 @@ export class SpellVFX {
           overrideCol
         );
       }
+    }
+
+    if (isWc) {
+      if (Math.random() < 0.45) {
+        const dist = Math.random() * len;
+        const lat = (Math.random() - 0.5) * width * 1.4;
+        if (!this.inkDropletPool) this.inkDropletPool = new InkDropletPool(this.scene);
+        this.inkDropletPool.add({
+          x: bx + cos * dist + nx * lat,
+          y: by + sin * dist + ny * lat,
+          z: 15,
+          vx: cos * 120 + (Math.random() - 0.5) * 70,
+          vy: sin * 120 + (Math.random() - 0.5) * 70,
+          vz: 15,
+          life: 0.26,
+          maxLife: 0.26,
+          size: 8 + Math.random() * 7,
+        });
+      }
+      return;
     }
 
     // Soft colored background stream glints
@@ -1355,10 +1485,12 @@ export class SpellVFX {
     colors: number[],
     power: number
   ): void {
+    const isWc = this.artStyle === 'WATERCOLOR_INK';
     const vp = this.getVoidPalette(elements, colors);
     const hasNonVoid = elements.some((e) => e !== 'VOID' && e !== 'BARRIER');
     const burstEls = elements.filter((e) => e !== 'BARRIER' && !(e === 'VOID' && hasNonVoid));
-    const perElCount = this.scaleCount(Math.round(18 + power * 6));
+    const baseCount = Math.round(18 + power * 6);
+    const perElCount = this.scaleCount(isWc ? Math.round(baseCount * 0.45) : baseCount);
 
     for (const el of burstEls) {
       for (let i = 0; i < perElCount; i++) {
@@ -1381,13 +1513,14 @@ export class SpellVFX {
           overrideCol
         );
       }
-      if (el !== 'KINETIC') {
+      if (!isWc && el !== 'KINETIC') {
         this.spawnRing(x, y, radius * 0.88, ELEMENT_META[el].colorHex, 0.28);
       }
     }
 
     if (vp.isVoid && hasNonVoid) {
-      for (let i = 0; i < 12; i++) {
+      const vCount = isWc ? 5 : 12;
+      for (let i = 0; i < vCount; i++) {
         const a = Math.random() * Math.PI * 2;
         const spd = radius * (1.0 + Math.random() * 1.4);
         this.addElementParticle(
@@ -1406,12 +1539,22 @@ export class SpellVFX {
         );
       }
     }
-    this.spawnStreaks(x, y, vp.particleColors, Math.round(16 + power * 6), 1.15);
+    this.spawnStreaks(x, y, vp.particleColors, Math.round((16 + power * 6) * (isWc ? 0.45 : 1)), 1.15);
     this.spawnFloorDecal(x, y, Math.max(48, radius * 0.72), vp.outlineA, 4.8);
-    if (this.artStyle === 'WATERCOLOR_INK') {
+    if (isWc) {
       const stops = this.getBurstGradientStops(elements, vp.particleColors);
-      this.spawnWatercolorStarburst(x, y, Math.max(46, radius * 0.92), stops.core, stops.mid, stops.outer, 0.42, true);
-      this.spawnInkDroplets(x, y, Math.round(14 + power * 4), 1.05);
+      this.spawnWatercolorStarburst(
+        x,
+        y,
+        Math.max(64, radius * 1.15),
+        stops.core,
+        stops.mid,
+        stops.outer,
+        0.52,
+        true,
+        power >= 1.15
+      );
+      this.spawnInkDroplets(x, y, Math.round(18 + Math.min(14, power * 4)), 1.15);
     }
   }
 
@@ -1424,15 +1567,18 @@ export class SpellVFX {
     isBoss: boolean,
     statuses: readonly StatusType[]
   ): void {
-    if (this.artStyle === 'WATERCOLOR_INK') {
+    const isWc = this.artStyle === 'WATERCOLOR_INK';
+    if (isWc) {
+      const accentOuter = new THREE.Color(0xff2266).lerp(new THREE.Color(colorHex), 0.45).getHex();
       this.spawnWatercolorStarburst(
         x,
         y,
-        radius * (isBoss ? 3.3 : 2.55),
-        0xfff380,
-        0xff6a00,
-        isBoss ? 0xff1e6e : colorHex === 0xe6f0ff ? 0x00c8ff : colorHex,
-        isBoss ? 0.68 : 0.44,
+        radius * (isBoss ? 3.8 : 2.95),
+        0xfff899,
+        0xff7b00,
+        isBoss ? 0xff2266 : accentOuter,
+        isBoss ? 0.78 : 0.54,
+        true,
         true
       );
       if (isBoss) {
@@ -1441,19 +1587,20 @@ export class SpellVFX {
           this.spawnWatercolorStarburst(
             x + Math.cos(oa) * radius * 0.9,
             y + Math.sin(oa) * radius * 0.9,
-            radius * 2.1,
-            0xfff380,
-            0xff6a00,
-            0xff1e6e,
-            0.54,
+            radius * 2.2,
+            0xfff899,
+            0xff7b00,
+            0xff2266,
+            0.58,
+            false,
             false
           );
         }
       }
-      this.spawnInkDroplets(x, y, isBoss ? 38 : 18, isBoss ? 1.45 : 1.05);
+      this.spawnInkDroplets(x, y, isBoss ? 55 : 28, isBoss ? 1.5 : 1.15);
     }
-    const orbCount = this.scaleCount(isBoss ? 85 : 36);
-    const sparkCount = this.scaleCount(isBoss ? 50 : 22);
+    const orbCount = this.scaleCount(Math.round((isBoss ? 85 : 36) * (isWc ? 0.25 : 1)));
+    const sparkCount = this.scaleCount(Math.round((isBoss ? 50 : 22) * (isWc ? 0.25 : 1)));
     const shardCount = this.scaleCount(isBoss ? 34 : 14);
     const c1 = new THREE.Color(colorHex);
     const c2 = new THREE.Color(secondaryColorHex);
@@ -1495,10 +1642,18 @@ export class SpellVFX {
     }
 
     this.spawnShards(x, y, [colorHex, secondaryColorHex, 0xffffff], shardCount, isBoss ? 1.55 : 1.18);
-    this.spawnStreaks(x, y, [colorHex, secondaryColorHex], isBoss ? 92 : 38, isBoss ? 1.55 : 1.15);
+    this.spawnStreaks(
+      x,
+      y,
+      [colorHex, secondaryColorHex],
+      Math.round((isBoss ? 92 : 38) * (isWc ? 0.35 : 1)),
+      isBoss ? 1.55 : 1.15
+    );
     this.spawnFloorDecal(x, y, radius * (isBoss ? 2.8 : 1.9), colorHex, isBoss ? 8.0 : 4.5);
-    this.spawnRing(x, y, radius * (isBoss ? 2.4 : 1.9), 0xffffff, 0.22);
-    this.spawnRing(x, y, radius * (isBoss ? 3.5 : 2.7), colorHex, 0.34);
+    if (!isWc) {
+      this.spawnRing(x, y, radius * (isBoss ? 2.4 : 1.9), 0xffffff, 0.22);
+      this.spawnRing(x, y, radius * (isBoss ? 3.5 : 2.7), colorHex, 0.34);
+    }
 
     for (const st of statuses) {
       const el: QueueElement | null =
@@ -1531,8 +1686,13 @@ export class SpellVFX {
   }
 
   public spawnBurst(x: number, y: number, colorHex: number, count: number, speedScale = 1): void {
+    const isWc = this.artStyle === 'WATERCOLOR_INK';
+    if (isWc && count >= 12) {
+      this.spawnWatercolorStarburst(x, y, 22 + count * 0.9, 0xffffff, colorHex, colorHex, 0.24, false, false);
+      this.spawnInkDroplets(x, y, Math.min(6, Math.max(3, Math.round(count * 0.25))), 0.85);
+    }
     const base = new THREE.Color(colorHex);
-    const scaledCount = this.scaleCount(count);
+    const scaledCount = this.scaleCount(isWc ? Math.max(3, Math.round(count * 0.55)) : count);
     for (let i = 0; i < scaledCount; i++) {
       const a = Math.random() * Math.PI * 2;
       const spd = (80 + Math.random() * 250) * speedScale;
@@ -1550,7 +1710,7 @@ export class SpellVFX {
         color: col,
       });
     }
-    this.spawnStreaks(x, y, [colorHex], Math.ceil(count * 0.45), speedScale);
+    this.spawnStreaks(x, y, [colorHex], Math.ceil(count * (isWc ? 0.25 : 0.45)), speedScale);
   }
 
   public spawnShards(x: number, y: number, colors: number[], count: number, speedScale = 1, dirAngle?: number): void {
@@ -1579,13 +1739,16 @@ export class SpellVFX {
             ];
 
       const geo = buildRibbonGeometry(pts, 1.8, true, 12);
-      const mat = createNeonRibbonMaterial(cHex, 1.15, 0.95);
+      const isWc = this.artStyle === 'WATERCOLOR_INK';
+      const mat = isWc
+        ? createWatercolorRibbonMaterial(cHex, 0.94, 0.28)
+        : createNeonRibbonMaterial(cHex, 1.15, 0.95);
       const mesh = new THREE.Mesh(geo, mat);
-      if (this.artStyle === 'WATERCOLOR_INK') {
+      if (isWc) {
         const group = new THREE.Group();
         mesh.renderOrder = 10;
         const ink = new THREE.Mesh(
-          buildInkOutlineGeometry(pts, 2.0, true, 12.6, 1.1, 0.25),
+          buildInkOutlineGeometry(pts, 2.2, true, 12.6, 1.1, 0.25),
           createSumiInkMaterial(0.96, 0.4)
         );
         ink.renderOrder = 15;
@@ -1633,13 +1796,13 @@ export class SpellVFX {
     if (this.artStyle === 'WATERCOLOR_INK') {
       const g = new THREE.Group();
       const wash = new THREE.Mesh(
-        buildRibbonGeometry(pts, 5.4, true, 3.0),
-        createNeonRibbonMaterial(colorHex, 1.2, 0.9)
+        buildRibbonGeometry(pts, 6.2, true, 3.0),
+        createWatercolorRibbonMaterial(colorHex, 0.86, 0.32)
       );
       wash.renderOrder = 12;
       const ink = new THREE.Mesh(
-        buildInkOutlineGeometry(pts, 3.2, true, 3.6, 0, 0.65),
-        createSumiInkMaterial(0.9, 0.55)
+        buildInkOutlineGeometry(pts, 3.0, true, 3.6, 0, 0.7),
+        createSumiInkMaterial(0.88, 0.6)
       );
       ink.renderOrder = 15;
       g.add(wash, ink);
@@ -1668,6 +1831,63 @@ export class SpellVFX {
   ): void {
     const group = new THREE.Group();
     group.position.set(x, y, 0);
+
+    if (this.artStyle === 'WATERCOLOR_INK') {
+      const beamGeo = new THREE.PlaneGeometry(128, 28);
+      beamGeo.translate(64, 0, 0);
+      beamGeo.rotateY(-Math.PI / 2);
+      const beam = new THREE.Mesh(
+        beamGeo,
+        createWatercolorBeamMaterial(colorHex, secondaryColorHex, 0xffffff, false, 0.2)
+      );
+      setShaderUniform(beam.material, 'uLength', 6.0);
+      beam.renderOrder = 15;
+      group.add(beam);
+
+      const assets = getWatercolorAssets();
+      const orbMat = new THREE.SpriteMaterial({
+        map: assets.particles.orb,
+        color: colorHex,
+        transparent: true,
+        opacity: 0.94,
+        blending: THREE.NormalBlending,
+        depthWrite: false,
+      });
+      const orb = new THREE.Sprite(orbMat);
+      orb.scale.set(36, 36, 1);
+      orb.position.set(0, 0, 125);
+      orb.renderOrder = 18;
+      group.add(orb);
+
+      const inkBolt = new THREE.Mesh(
+        buildInkOutlineGeometry(
+          [{ x: -4, y: 0 }, { x: 4, y: 0 }],
+          3.4,
+          false,
+          12,
+          2,
+          1.2
+        ),
+        createSumiInkMaterial(0.92, 0.65)
+      );
+      inkBolt.scale.set(1, 1, 1);
+      inkBolt.renderOrder = 16;
+      group.add(inkBolt);
+
+      this.scene.add(group);
+      this.stormStrikes.push({
+        group,
+        orb,
+        beam,
+        life: 0.19,
+        maxLife: 0.19,
+        x,
+        y,
+        colorHex,
+        secondaryColorHex,
+      });
+      return;
+    }
 
     const beamGeo = new THREE.PlaneGeometry(18, 128);
     beamGeo.rotateX(Math.PI / 2);
@@ -1746,6 +1966,7 @@ export class SpellVFX {
     }
 
     const arcCount = isNova ? 5 : 2;
+    const isWc = this.artStyle === 'WATERCOLOR_INK';
     for (let i = 0; i < arcCount; i++) {
       const a = isNova ? angle + (i / arcCount) * Math.PI * 2 : angle + (i - 0.5) * 0.08;
       const arcSpan = isNova ? Math.PI * 0.58 : spread * (i === 0 ? 0.88 : 0.65);
@@ -1753,15 +1974,17 @@ export class SpellVFX {
       const layerR = (i === 0 ? 28 : 20) * rScale;
       const pts = createArcPoints(-arcSpan * 0.5, arcSpan * 0.5, layerR, 16);
       const mesh = new THREE.Mesh(
-        buildRibbonGeometry(pts, i === 0 ? 4.4 : 2.8, false, 12),
-        createNeonRibbonMaterial(cHex, 1.2, i === 0 ? 0.95 : 0.72)
+        buildRibbonGeometry(pts, i === 0 ? (isWc ? 6.4 : 4.4) : (isWc ? 4.4 : 2.8), false, 12),
+        isWc
+          ? createWatercolorRibbonMaterial(cHex, i === 0 ? 0.88 : 0.65, 0.35)
+          : createNeonRibbonMaterial(cHex, 1.2, i === 0 ? 0.95 : 0.72)
       );
-      if (this.artStyle === 'WATERCOLOR_INK' && i === 0) {
+      if (isWc) {
         const g = new THREE.Group();
         mesh.renderOrder = 12;
         const ink = new THREE.Mesh(
-          buildInkOutlineGeometry(pts, 2.2, false, 12.6, 1.2, 0.35),
-          createSumiInkMaterial(0.82, 0.4)
+          buildInkOutlineGeometry(pts, i === 0 ? 2.6 : 1.8, false, 12.6, 1.4, 0.4),
+          createSumiInkMaterial(0.86, 0.45)
         );
         ink.renderOrder = 15;
         g.add(mesh, ink);
@@ -1769,7 +1992,7 @@ export class SpellVFX {
         g.rotation.z = a;
         this.scene.add(g);
         const maxLife = 0.34;
-        const spd = range * 2.35;
+        const spd = range * (i === 0 ? 2.35 : 2.05);
         this.waveArcs.push({
           mesh: g as unknown as THREE.Mesh,
           x,
@@ -1796,7 +2019,7 @@ export class SpellVFX {
         maxLife,
       });
     }
-    if (this.artStyle === 'WATERCOLOR_INK' && Math.random() < 0.35) {
+    if (isWc && Math.random() < 0.35) {
       this.spawnInkDroplets(x, y, isNova ? 5 : 2, 0.65);
     }
   }
@@ -1827,22 +2050,52 @@ export class SpellVFX {
     if (this.artStyle === 'WATERCOLOR_INK') {
       const group = new THREE.Group();
       const wash = new THREE.Mesh(
-        buildRibbonGeometry(jagged, 7.2, false, 14.5),
-        createNeonRibbonMaterial(palette[0]!, 1.2, 0.92)
+        buildRibbonGeometry(jagged, 9.2, false, 14.5),
+        createWatercolorRibbonMaterial(palette[0]!, 0.9, 0.25)
       );
       wash.renderOrder = 13;
       const inkPts = jagged.map((p) => ({ x: p.x + 2.2, y: p.y - 1.8 }));
       const ink = new THREE.Mesh(
-        buildInkOutlineGeometry(inkPts, 3.0, false, 15.2, 1.5, 0.4),
-        createSumiInkMaterial(0.95, 0.65)
+        buildInkOutlineGeometry(inkPts, 4.4, false, 15.2, 2.0, 0.5),
+        createSumiInkMaterial(0.97, 0.7)
       );
       ink.renderOrder = 15;
       const core = new THREE.Mesh(
-        buildRibbonGeometry(jagged, 2.0, false, 16),
-        createNeonRibbonMaterial(0xffffff, 1.35, 1.0)
+        buildRibbonGeometry(jagged, 2.6, false, 16),
+        createWatercolorRibbonMaterial(0xffffff, 0.95, 0)
       );
       core.renderOrder = 16;
       group.add(wash, ink, core);
+
+      // 1-2 short jagged branching comic forks
+      if (jagged.length >= 4) {
+        const forkCount = 1 + (Math.random() < 0.65 ? 1 : 0);
+        for (let f = 0; f < forkCount; f++) {
+          const anchor = jagged[1 + Math.floor(Math.random() * (jagged.length - 2))]!;
+          const ang = Math.random() * Math.PI * 2;
+          const bLen = 18 + Math.random() * 24;
+          const mid = {
+            x: anchor.x + Math.cos(ang) * bLen * 0.5 + (Math.random() - 0.5) * 10,
+            y: anchor.y + Math.sin(ang) * bLen * 0.5 + (Math.random() - 0.5) * 10,
+          };
+          const tip = {
+            x: anchor.x + Math.cos(ang + (Math.random() - 0.5) * 0.5) * bLen,
+            y: anchor.y + Math.sin(ang + (Math.random() - 0.5) * 0.5) * bLen,
+          };
+          const fWash = new THREE.Mesh(
+            buildRibbonGeometry([anchor, mid, tip], 4.8, false, 14.4),
+            createWatercolorRibbonMaterial(palette[1 % palette.length]!, 0.85, 0.2)
+          );
+          fWash.renderOrder = 13;
+          const fInk = new THREE.Mesh(
+            buildInkOutlineGeometry([anchor, mid, tip], 2.4, false, 15.1, 1.5, 0.35),
+            createSumiInkMaterial(0.95, 0.55)
+          );
+          fInk.renderOrder = 15;
+          group.add(fWash, fInk);
+        }
+      }
+
       this.scene.add(group);
       this.transientObjs.push({ obj: group, life: 0.16, maxLife: 0.16 });
       this.spawnInkDroplets(last.x, last.y, 4, 0.7);
@@ -1905,14 +2158,15 @@ export class SpellVFX {
       st.life -= dt;
       const t = Math.max(0, st.life / st.maxLife);
       st.orb.position.z = t * 125;
+      setShaderUniform(st.beam.material, 'uFade', 0.45 + (1 - t) * 0.55);
       setShaderUniform(st.beam.material, 'uOpacity', 0.45 + (1 - t) * 0.55);
       if (st.life <= 0) {
         this.spawnBurst(st.x, st.y, st.colorHex, 20, 1.25);
         this.spawnShards(st.x, st.y, [st.colorHex, st.secondaryColorHex], 6, 0.9);
         this.spawnRing(st.x, st.y, 48, st.colorHex, 0.28);
         if (this.artStyle === 'WATERCOLOR_INK') {
-          this.spawnWatercolorStarburst(st.x, st.y, 48, 0xffffff, st.colorHex, st.secondaryColorHex, 0.34, false);
-          this.spawnInkDroplets(st.x, st.y, 9, 0.9);
+          this.spawnWatercolorStarburst(st.x, st.y, 56, 0xffffff, st.colorHex, st.secondaryColorHex, 0.38, true, false);
+          this.spawnInkDroplets(st.x, st.y, 12, 0.95);
         }
         this.scene.remove(st.group);
         this.disposeObject(st.group);
@@ -1936,19 +2190,19 @@ export class SpellVFX {
         this.starburstAnims.splice(i, 1);
       } else {
         const prog = 1 - sb.life / sb.maxLife;
-        const popT = Math.min(1, prog / 0.28);
+        const popT = Math.min(1, prog / 0.18);
         const easeOut = 1 - Math.pow(1 - popT, 3);
-        const s = 0.3 + easeOut * (sb.targetScale - 0.3);
-        const fade = prog < 0.35 ? 1 : Math.max(0, 1 - (prog - 0.35) / 0.65);
+        const s = 0.22 + easeOut * (sb.targetScale - 0.22);
+        const fade = prog < 0.55 ? 1 : Math.max(0, 1 - (prog - 0.55) / 0.45);
 
         sb.washMesh.scale.set(s, s, 1);
         sb.inkMesh.scale.set(s, s, 1);
-        setShaderUniform(sb.washMesh.material, 'uOpacity', fade * 0.94);
-        setShaderUniform(sb.inkMesh.material, 'uOpacity', fade * 0.96);
+        setShaderUniform(sb.washMesh.material, 'uOpacity', fade * 0.96);
+        setShaderUniform(sb.inkMesh.material, 'uOpacity', fade * 0.98);
         if (sb.underMesh) {
-          const us = 0.4 + prog * 1.05;
+          const us = 0.45 + Math.min(1, prog * 1.15) * 0.9;
           sb.underMesh.scale.set(us, us, 1);
-          setShaderUniform(sb.underMesh.material, 'uOpacity', fade * 0.68);
+          setShaderUniform(sb.underMesh.material, 'uOpacity', fade * 0.84);
         }
       }
     }
@@ -1968,7 +2222,12 @@ export class SpellVFX {
         const prog = 1 - wa.life / wa.maxLife;
         const s = 1 + prog * 2.75;
         wa.mesh.scale.set(s, s, 1);
-        setShaderUniform(wa.mesh.material, 'uOpacity', (wa.life / wa.maxLife) * 0.92);
+        const op = (wa.life / wa.maxLife) * 0.92;
+        wa.mesh.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            setShaderUniform(child.material, 'uOpacity', op);
+          }
+        });
       }
     }
 
@@ -2337,18 +2596,25 @@ export class SpellVFX {
       wash.renderOrder = 10;
 
       const ink = new THREE.Mesh(
-        buildInkOutlineGeometry(pts, 3.2, true, 2.5, 1.8, 0.5),
+        buildInkOutlineGeometry(pts, 3.6, true, 2.5, 1.8, 0.5),
         createSumiInkMaterial(0.97, 0.5)
       );
       ink.renderOrder = 15;
 
       const crack = new THREE.Mesh(
-        buildInkOutlineGeometry([{ x: -s * 0.5, y: 0 }, { x: s * 0.45, y: s * 0.25 }], 2.0, false, 2.8, 1.0, 0.3),
+        buildInkOutlineGeometry(
+          [{ x: -s * 0.52, y: -s * 0.1 }, { x: s * 0.48, y: s * 0.25 }, { x: s * 0.1, y: -s * 0.42 }],
+          2.1,
+          false,
+          2.8,
+          1.0,
+          0.35
+        ),
         createSumiInkMaterial(0.9, 0.35)
       );
       crack.renderOrder = 15;
 
-      g.add(shadow, createGlowSprite(primary, s * 2.6, 0.26), wash, ink, crack);
+      g.add(shadow, createGlowSprite(primary, s * 2.8, 0.3), wash, ink, crack);
     } else if (p.kind === 'STORM_BOMB') {
       const payloadCols = p.colors.filter((c) => c !== 0xe6f0ff);
       const c1 = payloadCols[0] ?? primary;
@@ -2371,18 +2637,18 @@ export class SpellVFX {
       wash.renderOrder = 10;
 
       const ring1 = new THREE.Mesh(
-        buildInkOutlineGeometry(createPolygonPoints(6, p.radius * 1.38), 2.8, true, 2.4, 1.6, 0.4),
+        buildInkOutlineGeometry(createPolygonPoints(6, p.radius * 1.38), 3.2, true, 2.4, 1.6, 0.4),
         createSumiInkMaterial(0.96, 0.5)
       );
       ring1.renderOrder = 15;
 
       const ring2 = new THREE.Mesh(
-        buildInkOutlineGeometry(createPolygonPoints(5, p.radius * 1.05), 2.2, true, 2.8, 1.2, 0.35),
+        buildInkOutlineGeometry(createPolygonPoints(5, p.radius * 1.05), 2.4, true, 2.8, 1.2, 0.35),
         createSumiInkMaterial(0.92, 0.45)
       );
       ring2.renderOrder = 15;
 
-      g.add(shadow, wash, ring1, ring2, createGlowSprite(c1, p.radius * 3.0, 0.32));
+      g.add(shadow, wash, ring1, ring2, createGlowSprite(c1, p.radius * 3.2, 0.34));
     } else if (p.kind === 'NANO_BOLT') {
       const dartPts = [
         { x: p.radius * 2.0, y: 0 },
@@ -2407,11 +2673,11 @@ export class SpellVFX {
       wash.renderOrder = 10;
 
       const ink = new THREE.Mesh(
-        buildInkOutlineGeometry(dartPts, 2.4, true, 13.8, 1.4, 0.3),
+        buildInkOutlineGeometry(dartPts, 2.8, true, 13.8, 1.4, 0.3),
         createSumiInkMaterial(0.97, 0.45)
       );
       ink.renderOrder = 15;
-      g.add(shadow, createGlowSprite(0x5cff3b, p.radius * 2.8, 0.28), wash, ink);
+      g.add(shadow, createGlowSprite(0x5cff3b, p.radius * 3.0, 0.3), wash, ink);
     } else {
       const mixedColor = vp.isVoid
         ? vp.outlineA
@@ -2447,18 +2713,18 @@ export class SpellVFX {
       wash.renderOrder = 10;
 
       const ink = new THREE.Mesh(
-        buildInkOutlineGeometry(edgePts, 2.4, true, 14.0, 1.6, 0.35),
+        buildInkOutlineGeometry(edgePts, 2.8, true, 14.0, 1.6, 0.35),
         createSumiInkMaterial(0.97, 0.45)
       );
       ink.renderOrder = 15;
 
       const contrail = new THREE.Mesh(
-        buildRibbonGeometry([{ x: -r * 0.8, y: 0 }, { x: -r * 5.2, y: 0 }], r * 0.55, false, 12.6),
-        createNeonRibbonMaterial(mixedColor, 1.15, 0.72)
+        buildRibbonGeometry([{ x: -r * 0.8, y: 0 }, { x: -r * 5.2, y: 0 }], r * 0.72, false, 12.6),
+        createWatercolorRibbonMaterial(mixedColor, 0.82, 0.25)
       );
       contrail.renderOrder = 9;
 
-      g.add(shadow, createGlowSprite(mixedColor, r * 2.5, 0.24), wash, ink, contrail);
+      g.add(shadow, createGlowSprite(mixedColor, r * 2.8, 0.28), wash, ink, contrail);
     }
   }
 
@@ -2490,74 +2756,138 @@ export class SpellVFX {
         const stripW = Math.max(40, Math.min(64, b.width * 2.1));
         const isWc = this.artStyle === 'WATERCOLOR_INK';
 
-        // 0: Core beam strip (watercolor parallel brush streams vs neon beam core)
-        const corePlane = new THREE.PlaneGeometry(1, isWc ? stripW * 1.15 : stripW);
-        corePlane.translate(0.5, 0, 0);
-        const coreMesh = new THREE.Mesh(
-          corePlane,
-          isWc ? createWatercolorBeamMaterial(cA, cB, cC, isVoid) : createBeamCoreMaterial(cA, cB, isVoid)
-        );
-        if (isWc) coreMesh.renderOrder = 14;
-        group.add(coreMesh);
-
-        // 1: Additive swirling colored braided wrappings around core
-        const braidPlane = new THREE.PlaneGeometry(1, stripW * 1.15);
-        braidPlane.translate(0.5, 0, 0);
-        const braidMesh = new THREE.Mesh(braidPlane, createBraidedBeamMaterial(cA, cB, cC, isVoid));
-        if (isWc) braidMesh.renderOrder = 13;
-        group.add(braidMesh);
-
-        // 2: End impact crystal / flare
-        const impactDiamond = [
-          { x: 14, y: 0 },
-          { x: 0, y: 9 },
-          { x: -9, y: 0 },
-          { x: 0, y: -9 },
-        ];
         if (isWc) {
+          const assets = getWatercolorAssets();
+
+          // 0: Core multi-strand hand-painted dry-brush laser strip
+          const corePlane = new THREE.PlaneGeometry(1, stripW * 1.45);
+          corePlane.translate(0.5, 0, 0);
+          const coreMesh = new THREE.Mesh(
+            corePlane,
+            createWatercolorBeamMaterial(cA, cB, cC, isVoid, 0)
+          );
+          coreMesh.renderOrder = 14;
+          group.add(coreMesh);
+
+          // 1: Offset wispy over-stroke watercolor layer (fanning hand-drawn bristles)
+          const overPlane = new THREE.PlaneGeometry(1, stripW * 1.8);
+          overPlane.translate(0.5, 0, 0);
+          const overMesh = new THREE.Mesh(
+            overPlane,
+            createWatercolorBeamMaterial(cB, cC, 0xffffff, isVoid, 1.0)
+          );
+          overMesh.renderOrder = 13;
+          group.add(overMesh);
+
+          // 2: Hand-drawn comic impact starburst at beam end
           const impGroup = new THREE.Group();
           const impWash = new THREE.Mesh(
-            buildRibbonGeometry(impactDiamond, 3.8, true, 15.0),
-            createNeonRibbonMaterial(cB, 1.25, 0.92)
+            new THREE.PlaneGeometry(44, 44),
+            createWatercolorStarburstMaterial(assets.starburstWashTextures[0]!, 0xffffff, cA, cB, 0.94)
           );
-          impWash.renderOrder = 14;
+          impWash.renderOrder = 19;
           const impInk = new THREE.Mesh(
-            buildInkOutlineGeometry(impactDiamond, 2.8, true, 15.6, 1.8, 0.4),
-            createSumiInkMaterial(0.97, 0.55)
+            new THREE.PlaneGeometry(42, 42),
+            createInkStampMaterial(assets.starburstInkTextures[0]!, 0.96)
           );
-          impInk.renderOrder = 16;
+          impInk.position.set(-1.8, 1.6, 0.8);
+          impInk.renderOrder = 22;
           impGroup.add(impWash, impInk);
           group.add(impGroup);
+
+          // 3: Soft impact glow halo
+          const impGlow = createGlowSprite(cB, 34, 0.24);
+          impGlow.renderOrder = 12;
+          group.add(impGlow);
+
+          // 4: Painted paint-droplet & ink-fleck specks riding along the beam
+          const speckContainer = new THREE.Group();
+          for (let s = 0; s < 8; s++) {
+            const isInkFleck = s % 3 === 0;
+            const sp = new THREE.Sprite(
+              new THREE.SpriteMaterial({
+                map: isInkFleck ? assets.inkDropletTex : assets.particles.spark,
+                color: isInkFleck ? 0xffffff : s % 2 === 0 ? cB : 0xe0f7ff,
+                transparent: true,
+                opacity: 0.88,
+                blending: THREE.NormalBlending,
+                depthWrite: false,
+              })
+            );
+            const sz = isInkFleck ? 8 + (s % 2) * 3 : 10 + (s % 3) * 4;
+            sp.scale.set(sz, sz, 1);
+            sp.renderOrder = 18;
+            speckContainer.add(sp);
+          }
+          group.add(speckContainer);
+
+          // 5: Hand-painted watercolor muzzle flare anchored at the ship's nose
+          const muzGeo = new THREE.PlaneGeometry(54, 44);
+          muzGeo.translate(16, 0, 0);
+          const muzCol = new THREE.Color(cA).lerp(new THREE.Color(0xffffff), 0.35);
+          const muzMesh = new THREE.Mesh(
+            muzGeo,
+            new THREE.MeshBasicMaterial({
+              map: assets.muzzleFlareTex,
+              color: muzCol,
+              transparent: true,
+              opacity: 0.92,
+              blending: THREE.NormalBlending,
+              depthWrite: false,
+              side: THREE.DoubleSide,
+            })
+          );
+          muzMesh.renderOrder = 16;
+          group.add(muzMesh);
         } else {
+          // 0: Core beam strip
+          const corePlane = new THREE.PlaneGeometry(1, stripW);
+          corePlane.translate(0.5, 0, 0);
+          const coreMesh = new THREE.Mesh(corePlane, createBeamCoreMaterial(cA, cB, isVoid));
+          group.add(coreMesh);
+
+          // 1: Additive swirling colored braided wrappings around core
+          const braidPlane = new THREE.PlaneGeometry(1, stripW * 1.15);
+          braidPlane.translate(0.5, 0, 0);
+          const braidMesh = new THREE.Mesh(braidPlane, createBraidedBeamMaterial(cA, cB, cC, isVoid));
+          group.add(braidMesh);
+
+          // 2: End impact crystal / flare
+          const impactDiamond = [
+            { x: 14, y: 0 },
+            { x: 0, y: 9 },
+            { x: -9, y: 0 },
+            { x: 0, y: -9 },
+          ];
           group.add(
             new THREE.Mesh(
               buildRibbonGeometry(impactDiamond, 2.4, true, 15.0),
               createNeonRibbonMaterial(cB, 1.25, 0.9)
             )
           );
-        }
 
-        // 3: End impact sprite halo
-        group.add(createGlowSprite(cB, 32, 0.28));
+          // 3: End impact sprite halo
+          group.add(createGlowSprite(cB, 32, 0.28));
 
-        // 4: Twinkling 4-point star-sparks riding along the beam
-        const sparkContainer = new THREE.Group();
-        for (let s = 0; s < 8; s++) {
-          const sp = new THREE.Sprite(
-            new THREE.SpriteMaterial({
-              map: this.starTexture,
-              color: s % 2 === 0 ? cB : 0xffffff,
-              transparent: true,
-              opacity: 0.88,
-              blending: THREE.AdditiveBlending,
-              depthWrite: false,
-            })
-          );
-          const sz = 10 + (s % 3) * 5;
-          sp.scale.set(sz, sz, 1);
-          sparkContainer.add(sp);
+          // 4: Twinkling 4-point star-sparks riding along the beam
+          const sparkContainer = new THREE.Group();
+          for (let s = 0; s < 8; s++) {
+            const sp = new THREE.Sprite(
+              new THREE.SpriteMaterial({
+                map: this.starTexture,
+                color: s % 2 === 0 ? cB : 0xffffff,
+                transparent: true,
+                opacity: 0.88,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+              })
+            );
+            const sz = 10 + (s % 3) * 5;
+            sp.scale.set(sz, sz, 1);
+            sparkContainer.add(sp);
+          }
+          group.add(sparkContainer);
         }
-        group.add(sparkContainer);
 
         this.beamMeshes.set(b.id, group);
         this.scene.add(group);
@@ -2584,9 +2914,19 @@ export class SpellVFX {
       setShaderUniform(braidMesh.material, 'uLength', len / 24);
       setShaderUniform(braidMesh.material, 'uFade', fade);
 
-      const impactMesh = group.children[2] as THREE.Mesh;
-      impactMesh.position.set(b.x + cos * len, b.y + sin * len, 0);
-      impactMesh.rotation.z = timeSec * 10 + b.id;
+      const impactObj = group.children[2]!;
+      impactObj.position.set(b.x + cos * len, b.y + sin * len, 15.0);
+      if (this.artStyle === 'WATERCOLOR_INK') {
+        const boilStep = Math.floor(timeSec * 13);
+        const s = (0.85 + 0.28 * Math.sin(timeSec * 24 + b.id)) * fade;
+        impactObj.scale.set(s, s, 1);
+        impactObj.rotation.z = boilStep * 0.45 + b.id;
+        if (Math.random() < 0.25) {
+          this.spawnInkDroplets(b.x + cos * len, b.y + sin * len, 2, 0.7);
+        }
+      } else {
+        impactObj.rotation.z = timeSec * 10 + b.id;
+      }
 
       group.children[3]!.position.set(b.x + cos * len, b.y + sin * len, 14);
 
@@ -2598,6 +2938,15 @@ export class SpellVFX {
         const lat = Math.sin(along * 0.04 - timeSec * 10 + s * 1.9) * (b.width * 0.42);
         sp.position.set(b.x + cos * along + nx * lat, b.y + sin * along + ny * lat, 15.5);
         sp.material.opacity = Math.sin(frac * Math.PI) * 0.88 * fade;
+      }
+
+      const muzzleFlare = group.children[5] as THREE.Mesh | undefined;
+      if (muzzleFlare) {
+        muzzleFlare.position.set(b.x, b.y, 15.2);
+        muzzleFlare.rotation.z = b.angle;
+        const mPulse = 0.86 + 0.2 * Math.sin(Math.floor(timeSec * 15) * 2.1 + b.id);
+        muzzleFlare.scale.set(mPulse, mPulse, 1);
+        (muzzleFlare.material as THREE.MeshBasicMaterial).opacity = 0.92 * fade;
       }
 
       const flowColors = isVoid ? vp.particleColors : b.composition.weightedColors;
@@ -3003,8 +3352,8 @@ export class SpellVFX {
           );
           topInk.renderOrder = 15;
           const floorGlow = new THREE.Mesh(
-            buildRibbonGeometry([{ x: -dist * 0.5, y: 0 }, { x: dist * 0.5, y: 0 }], 8.0, false, 1.0),
-            createNeonRibbonMaterial(p1, 1.1, 0.55)
+            buildRibbonGeometry([{ x: -dist * 0.5, y: 0 }, { x: dist * 0.5, y: 0 }], 9.0, false, 1.0),
+            createWatercolorRibbonMaterial(p1, 0.58, 0.25)
           );
           floorGlow.renderOrder = 8;
           panelGroup.add(wallMesh, floorGlow, groundInk, topInk);
@@ -3199,11 +3548,16 @@ export class SpellVFX {
           g.add(glow); // 3
 
           const trig = new THREE.Mesh(
-            buildRibbonGeometry(createPolygonPoints(24, m.triggerRadius), 2.6, true, 0.9),
-            createNeonRibbonMaterial(p1, 1.05, payloadColors.length >= 2 ? 0.52 : 0.36)
+            buildRibbonGeometry(createPolygonPoints(24, m.triggerRadius), 3.4, true, 0.9),
+            createWatercolorRibbonMaterial(p1, payloadColors.length >= 2 ? 0.55 : 0.4, 0.35)
           );
           trig.renderOrder = 4;
-          g.add(trig); // 4
+          const trigInk = new THREE.Mesh(
+            buildInkOutlineGeometry(createPolygonPoints(16, m.triggerRadius), 1.8, true, 1.2, 0, 0.45),
+            createSumiInkMaterial(0.55, 0.4)
+          );
+          trigInk.renderOrder = 5;
+          g.add(trig, trigInk); // 4, 5
 
           g.position.set(m.x, m.y, 0);
           this.mineMeshes.set(m.id, g);

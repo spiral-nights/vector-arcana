@@ -143,6 +143,7 @@ export class HUD {
 
   private lastAugmentKey = '';
   private lastActiveAugKey = '';
+  private calloutIdCounter = 0;
 
   constructor(container: HTMLElement, callbacks: HUDCallbacks) {
     this.root = container;
@@ -599,26 +600,66 @@ export class HUD {
     screenX: number,
     screenY: number,
     word: string,
-    variant: 'FIRE' | 'CYAN' | 'MAGENTA' | 'LIME' = 'FIRE'
+    variant: 'FIRE' | 'CYAN' | 'MAGENTA' | 'LIME' | 'ROSE' = 'FIRE',
+    scale = 1.0
   ): void {
-    while (this.comicCalloutLayer.childElementCount >= 7) {
+    while (this.comicCalloutLayer.childElementCount >= 10) {
       this.comicCalloutLayer.firstElementChild?.remove();
     }
+    const palette: Record<
+      'FIRE' | 'CYAN' | 'MAGENTA' | 'LIME' | 'ROSE',
+      { stops: [string, string, string]; glow: string }
+    > = {
+      FIRE: { stops: ['#fff999', '#ff8c1a', '#ff2e6e'], glow: 'rgba(255, 130, 40, 0.85)' },
+      CYAN: { stops: ['#ffffff', '#7cf4ff', '#1fa2ff'], glow: 'rgba(56, 232, 255, 0.9)' },
+      MAGENTA: { stops: ['#ffe6ff', '#ff66e6', '#b829ff'], glow: 'rgba(224, 64, 251, 0.88)' },
+      LIME: { stops: ['#f7ff88', '#6bff3b', '#14c94b'], glow: 'rgba(92, 255, 59, 0.85)' },
+      ROSE: { stops: ['#ffe0f2', '#ff4da6', '#ff1e6e'], glow: 'rgba(255, 42, 133, 0.88)' },
+    };
+    const pal = palette[variant];
+    const gradId = `cc-grad-${++this.calloutIdCounter}`;
+    const w = Math.max(150, word.length * 36 + 56);
+    const h = 74;
+    const cx = w * 0.5;
+    const cy = 50;
+
+    const tspans = Array.from(word)
+      .map((ch, i) => {
+        const dy = i === 0 ? '0' : i % 2 === 1 ? '-2' : '2';
+        const safeCh = ch.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return `<tspan dy="${dy}">${safeCh}</tspan>`;
+      })
+      .join('');
+
     const el = document.createElement('span');
-    el.className = `comic-callout variant-${variant.toLowerCase()}`;
-    el.setAttribute('data-text', word);
+    el.className = 'comic-callout';
     const tilt = ((Math.random() * 2 - 1) * 14).toFixed(1);
     el.style.setProperty('--tilt', `${tilt}deg`);
+    el.style.setProperty('--callout-glow', pal.glow);
+    el.style.setProperty('--callout-scale', scale.toFixed(2));
     el.style.left = `${Math.round(screenX)}px`;
     el.style.top = `${Math.round(screenY)}px`;
-    const fill = document.createElement('span');
-    fill.className = 'comic-callout-fill';
-    fill.textContent = word;
-    el.appendChild(fill);
+
+    el.innerHTML = `
+      <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="visible" aria-hidden="true">
+        <defs>
+          <linearGradient id="${gradId}" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="${pal.stops[0]}" />
+            <stop offset="52%" stop-color="${pal.stops[1]}" />
+            <stop offset="100%" stop-color="${pal.stops[2]}" />
+          </linearGradient>
+        </defs>
+        <g transform="translate(${cx}, ${cy}) skewX(-10)">
+          <text x="3" y="4" text-anchor="middle" font-family="'Bangers', 'Comic Neue', 'Comic Sans MS', 'Trebuchet MS', sans-serif" font-size="48" font-weight="900" letter-spacing="2" fill="#04060b" stroke="#04060b" stroke-width="11" stroke-linejoin="round" stroke-linecap="round" paint-order="stroke fill">${tspans}</text>
+          <text x="0" y="0" text-anchor="middle" font-family="'Bangers', 'Comic Neue', 'Comic Sans MS', 'Trebuchet MS', sans-serif" font-size="48" font-weight="900" letter-spacing="2" fill="#08090d" stroke="#08090d" stroke-width="11" stroke-linejoin="round" stroke-linecap="round" paint-order="stroke fill">${tspans}</text>
+          <text x="0" y="0" text-anchor="middle" font-family="'Bangers', 'Comic Neue', 'Comic Sans MS', 'Trebuchet MS', sans-serif" font-size="48" font-weight="900" letter-spacing="2" fill="url(#${gradId})" stroke="#08090d" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" paint-order="stroke fill">${tspans}</text>
+        </g>
+      </svg>
+    `;
     this.comicCalloutLayer.appendChild(el);
     window.setTimeout(() => {
       el.remove();
-    }, 580);
+    }, 640);
   }
 
   public setMuted(muted: boolean): void {

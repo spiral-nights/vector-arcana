@@ -301,12 +301,20 @@ let accumulator = 0;
 let hudTimer = 0;
 
 const COMIC_KILL_WORDS = ['BAM!', 'BOM!', 'POP!'] as const;
+const COMIC_VARIANTS = ['FIRE', 'CYAN', 'MAGENTA', 'LIME', 'ROSE'] as const;
 
-function pickCalloutVariant(elements: readonly string[]): 'FIRE' | 'CYAN' | 'MAGENTA' | 'LIME' {
+function pickCalloutVariant(elements: readonly string[]): 'FIRE' | 'CYAN' | 'MAGENTA' | 'LIME' | 'ROSE' {
   if (elements.includes('NANO')) return 'LIME';
   if (elements.includes('CRYO') || elements.includes('CRYSTAL') || elements.includes('FLUX')) return 'CYAN';
-  if (elements.includes('VOID') || elements.includes('PLASMA')) return 'MAGENTA';
+  if (elements.includes('VOID')) return 'MAGENTA';
+  if (elements.includes('PLASMA')) return 'ROSE';
   return 'FIRE';
+}
+
+function randomPerimeterOffset(): { dx: number; dy: number } {
+  const a = Math.random() * Math.PI * 2;
+  const dist = 28 + Math.random() * 28;
+  return { dx: Math.cos(a) * dist, dy: Math.sin(a) * dist };
 }
 
 function frame(now: number): void {
@@ -389,7 +397,9 @@ function frame(now: number): void {
             : ev.elements.includes('FLUX')
             ? 'SPLASH!'
             : COMIC_KILL_WORDS[Math.floor(Math.random() * COMIC_KILL_WORDS.length)]!;
-          hud.spawnComicCallout(pt.x, pt.y - 12, word, pickCalloutVariant(ev.elements));
+          const off = randomPerimeterOffset();
+          const scale = 0.92 + Math.random() * 0.25;
+          hud.spawnComicCallout(pt.x + off.dx, pt.y + off.dy, word, pickCalloutVariant(ev.elements), scale);
           calloutCooldown = 0.14;
         }
       }
@@ -410,8 +420,14 @@ function frame(now: number): void {
         const pt = sceneManager.worldToScreen(ev.x, ev.y, 24);
         if (pt.visible) {
           const word = ev.isBoss ? 'BOOM!' : COMIC_KILL_WORDS[Math.floor(Math.random() * COMIC_KILL_WORDS.length)]!;
-          const variant = ev.isBoss ? 'FIRE' : ev.statuses.includes('PRIMED') ? 'CYAN' : 'FIRE';
-          hud.spawnComicCallout(pt.x, pt.y - 16, word, variant);
+          const variant = ev.isBoss
+            ? 'FIRE'
+            : ev.statuses.includes('PRIMED')
+            ? 'CYAN'
+            : COMIC_VARIANTS[Math.floor(Math.random() * COMIC_VARIANTS.length)]!;
+          const off = randomPerimeterOffset();
+          const scale = ev.isBoss ? 1.35 : 0.92 + Math.random() * 0.25;
+          hud.spawnComicCallout(pt.x + off.dx, pt.y + off.dy, word, variant, scale);
           calloutCooldown = ev.isBoss ? 0.05 : 0.14;
         }
       }

@@ -158,133 +158,183 @@ function bakePaperCloudTexture(): THREE.CanvasTexture {
 
 function generateStarburstAngles(seed: number): Array<{ a: number; r: number }> {
   const rand = seededRand(seed);
-  const spikes = 14 + Math.floor(rand() * 4) * 2; // 14..20 alternating spikes
+  const pairCount = 14 + Math.floor(rand() * 5); // 14..18 razor spikes -> 28..36 vertices
+  const total = pairCount * 2;
   const pts: Array<{ a: number; r: number }> = [];
-  for (let i = 0; i < spikes; i++) {
-    const a = (i / spikes) * Math.PI * 2 + (rand() - 0.5) * 0.14;
+  for (let i = 0; i < total; i++) {
     const isOuter = i % 2 === 0;
-    const r = isOuter ? 0.68 + rand() * 0.24 : 0.28 + rand() * 0.14;
+    const baseA = (i / total) * Math.PI * 2;
+    const a = baseA + (rand() - 0.5) * (isOuter ? 0.09 : 0.06);
+    let r: number;
+    if (isOuter) {
+      // Mix dramatic long needle comic spikes with punchy medium spikes
+      r = i % 4 === 0 || rand() < 0.42 ? 0.78 + rand() * 0.2 : 0.55 + rand() * 0.21;
+    } else {
+      r = 0.24 + rand() * 0.2;
+    }
     pts.push({ a, r });
   }
   return pts;
 }
 
 function bakeStarburstPair(variantIdx: number): { wash: THREE.CanvasTexture; ink: THREE.CanvasTexture } {
-  const size = 256;
-  const half = size * 0.5;
-  const maxR = half * 0.86;
+  const washSize = 256;
+  const wHalf = washSize * 0.5;
+  const wMaxR = wHalf * 0.86;
   const seed = 9100 + variantIdx * 313;
   const basePts = generateStarburstAngles(seed);
   const rand = seededRand(seed + 71);
 
-  const [washCanvas, wCtx] = makeCanvas(size);
-  const [inkCanvas, iCtx] = makeCanvas(size);
+  const [washCanvas, wCtx] = makeCanvas(washSize);
+  const [, bCtx] = makeCanvas(washSize);
 
-  // Layer 20 stacked perturbed semi-transparent watercolor passes into R/G/B/A mask
-  // R = outer fringe, G = mid wash, B = inner core, A = organic feathered wash alpha
-  const [, bCtx] = makeCanvas(size);
-  for (let pass = 0; pass < 20; pass++) {
-    const scaleJitter = 0.92 + rand() * 0.16;
+  // 22 stacked perturbed watercolor passes with outer bleed (1.04x - 1.18x)
+  for (let pass = 0; pass < 22; pass++) {
+    const bleed = pass < 7 ? 1.04 + rand() * 0.14 : 0.88 + rand() * 0.18;
     bCtx.beginPath();
     for (let i = 0; i < basePts.length; i++) {
       const p = basePts[i]!;
-      const pr = p.r * maxR * scaleJitter * (0.94 + rand() * 0.12);
-      const px = half + Math.cos(p.a) * pr + (rand() - 0.5) * 6;
-      const py = half + Math.sin(p.a) * pr + (rand() - 0.5) * 6;
+      const pr = p.r * wMaxR * bleed * (0.94 + rand() * 0.12);
+      const px = wHalf + Math.cos(p.a) * pr + (rand() - 0.5) * 6.5;
+      const py = wHalf + Math.sin(p.a) * pr + (rand() - 0.5) * 6.5;
       if (i === 0) bCtx.moveTo(px, py);
       else bCtx.lineTo(px, py);
     }
     bCtx.closePath();
-    bCtx.fillStyle = 'rgba(255, 255, 255, 0.068)';
+    bCtx.fillStyle = pass < 7 ? 'rgba(255, 255, 255, 0.048)' : 'rgba(255, 255, 255, 0.072)';
     bCtx.fill();
   }
 
-  // Wet outer watercolor splatter lobes outside main spikes
-  for (let s = 0; s < 16; s++) {
+  // Feathered watercolor mottling lobes bleeding beyond the comic spikes
+  for (let s = 0; s < 22; s++) {
     const a = rand() * Math.PI * 2;
-    const d = maxR * (0.55 + rand() * 0.42);
-    const sr = 6 + rand() * 14;
-    const g = bCtx.createRadialGradient(
-      half + Math.cos(a) * d,
-      half + Math.sin(a) * d,
-      1,
-      half + Math.cos(a) * d,
-      half + Math.sin(a) * d,
-      sr
-    );
-    g.addColorStop(0, 'rgba(255,255,255,0.42)');
+    const d = wMaxR * (0.48 + rand() * 0.56);
+    const sr = 8 + rand() * 18;
+    const cx = wHalf + Math.cos(a) * d;
+    const cy = wHalf + Math.sin(a) * d;
+    const g = bCtx.createRadialGradient(cx, cy, 1, cx, cy, sr);
+    g.addColorStop(0, 'rgba(255,255,255,0.46)');
+    g.addColorStop(0.6, 'rgba(255,255,255,0.2)');
     g.addColorStop(1, 'rgba(255,255,255,0)');
     bCtx.fillStyle = g;
     bCtx.beginPath();
-    bCtx.arc(half + Math.cos(a) * d, half + Math.sin(a) * d, sr, 0, Math.PI * 2);
+    bCtx.arc(cx, cy, sr, 0, Math.PI * 2);
     bCtx.fill();
   }
 
-  const rawBody = bCtx.getImageData(0, 0, size, size);
-  const washImg = wCtx.createImageData(size, size);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const idx = (y * size + x) * 4;
+  const rawBody = bCtx.getImageData(0, 0, washSize, washSize);
+  const washImg = wCtx.createImageData(washSize, washSize);
+  for (let y = 0; y < washSize; y++) {
+    for (let x = 0; x < washSize; x++) {
+      const idx = (y * washSize + x) * 4;
       const alphaNorm = (rawBody.data[idx + 3] ?? 0) / 255;
       if (alphaNorm <= 0.01) continue;
-      const dx = (x - half) / maxR;
-      const dy = (y - half) / maxR;
+      const dx = (x - wHalf) / wMaxR;
+      const dy = (y - wHalf) / wMaxR;
       const r = Math.hypot(dx, dy);
-      const grain = 0.8 + 0.35 * tileableValueNoise(x / 6, y / 6, 48, 221 + variantIdx);
-      const midBand = Math.max(0, Math.min(1, 1 - Math.abs(r - 0.36) * 2.1));
-      const core = Math.max(0, Math.min(1, 1 - r / 0.34));
-      const edgePool = Math.max(0, Math.min(1, 1 - Math.abs(alphaNorm - 0.38) * 3.0));
+      const mottle = tileableValueNoise(x / 7, y / 7, 36, 221 + variantIdx);
+      const fine = tileableValueNoise(x / 3, y / 3, 64, 577 + variantIdx);
+      const midBand = Math.max(0, Math.min(1, 1 - Math.abs(r - 0.34) * 2.0 + (mottle - 0.5) * 0.32));
+      const core = Math.max(0, Math.min(1, 1 - r / 0.33 + (mottle - 0.5) * 0.25));
+      const edgePool = Math.max(0, Math.min(1, 1 - Math.abs(alphaNorm - 0.36) * 2.9));
 
-      washImg.data[idx] = Math.round(Math.min(1, alphaNorm * grain + edgePool * 0.3) * 255);
-      washImg.data[idx + 1] = Math.round(Math.min(1, midBand * alphaNorm * 1.3) * 255);
-      washImg.data[idx + 2] = Math.round(Math.min(1, core * core * 1.15) * 255);
-      washImg.data[idx + 3] = Math.round(Math.min(1, alphaNorm * 1.18) * 255);
+      washImg.data[idx] = Math.round(Math.min(1, alphaNorm * (0.76 + 0.38 * fine) + edgePool * 0.34) * 255);
+      washImg.data[idx + 1] = Math.round(Math.min(1, midBand * alphaNorm * 1.45) * 255);
+      washImg.data[idx + 2] = Math.round(Math.min(1, core * core * 1.28) * 255);
+      washImg.data[idx + 3] = Math.round(Math.min(1, alphaNorm * 1.24) * 255);
     }
   }
   wCtx.putImageData(washImg, 0, 0);
 
-  // Matching jagged sumi-e ink outline with variable stroke width & overshot spikes
+  // Bake crisp comic ink starburst at 512x512 (pure Canvas 2D — razor sharp spike tips + splatter)
+  const inkSize = 512;
+  const iHalf = inkSize * 0.5;
+  const iMaxR = iHalf * 0.86;
+  const [inkCanvas, iCtx] = makeCanvas(inkSize);
+
+  const verts = basePts.map((p) => ({
+    x: iHalf + Math.cos(p.a) * p.r * iMaxR * 0.94,
+    y: iHalf + Math.sin(p.a) * p.r * iMaxR * 0.94,
+    r: p.r,
+    a: p.a,
+  }));
+
+  // Continuous mitered perimeter for razor-sharp comic spike corners
   iCtx.strokeStyle = '#08090d';
   iCtx.fillStyle = '#08090d';
+  iCtx.lineJoin = 'miter';
+  iCtx.miterLimit = 6;
   iCtx.lineCap = 'round';
-  iCtx.lineJoin = 'round';
-  for (let i = 0; i < basePts.length; i++) {
-    const p1 = basePts[i]!;
-    const p2 = basePts[(i + 1) % basePts.length]!;
-    const x1 = half + Math.cos(p1.a) * p1.r * maxR * 0.94;
-    const y1 = half + Math.sin(p1.a) * p1.r * maxR * 0.94;
-    const x2 = half + Math.cos(p2.a) * p2.r * maxR * 0.94;
-    const y2 = half + Math.sin(p2.a) * p2.r * maxR * 0.94;
-    const dx = x2 - x1;
-    const dy = y2 - y1;
+  iCtx.lineWidth = 5.4;
+  iCtx.beginPath();
+  for (let i = 0; i < verts.length; i++) {
+    const v = verts[i]!;
+    if (i === 0) iCtx.moveTo(v.x, v.y);
+    else iCtx.lineTo(v.x, v.y);
+  }
+  iCtx.closePath();
+  iCtx.stroke();
+
+  // Variable-weight comic brushwork accents + overshot spike flicks on alternating edges
+  for (let i = 0; i < verts.length; i++) {
+    const v1 = verts[i]!;
+    const v2 = verts[(i + 1) % verts.length]!;
+    const dx = v2.x - v1.x;
+    const dy = v2.y - v1.y;
     const segLen = Math.max(1, Math.hypot(dx, dy));
     const ux = dx / segLen;
     const uy = dy / segLen;
-    const ov = i % 2 === 0 ? 4.5 : 2.5;
-    const sx = x1 - ux * ov;
-    const sy = y1 - uy * ov;
-    const ex = x2 + ux * ov;
-    const ey = y2 + uy * ov;
-    const nx = -uy;
-    const ny = ux;
-    const midBend = (rand() - 0.5) * 4.5;
+    const ov = i % 2 === 0 ? 7.5 : 3.5;
 
-    iCtx.lineWidth = 2.6 + rand() * 2.4;
+    iCtx.lineWidth = 3.2 + rand() * 4.8;
     iCtx.beginPath();
-    iCtx.moveTo(sx, sy);
-    iCtx.quadraticCurveTo((sx + ex) * 0.5 + nx * midBend, (sy + ey) * 0.5 + ny * midBend, ex, ey);
+    iCtx.moveTo(v1.x - ux * ov, v1.y - uy * ov);
+    iCtx.lineTo(v2.x + ux * ov, v2.y + uy * ov);
     iCtx.stroke();
+
+    // Fainter sketchy inner contour / comic speed-accent along some valleys
+    if (i % 2 === 1 && rand() < 0.65) {
+      iCtx.save();
+      iCtx.globalAlpha = 0.68;
+      iCtx.lineWidth = 2.0 + rand() * 1.8;
+      const shrink = 0.8 + rand() * 0.08;
+      const sx = iHalf + (v1.x - iHalf) * shrink;
+      const sy = iHalf + (v1.y - iHalf) * shrink;
+      const ex = iHalf + (v2.x - iHalf) * (shrink + 0.06);
+      const ey = iHalf + (v2.y - iHalf) * (shrink + 0.06);
+      iCtx.beginPath();
+      iCtx.moveTo(sx, sy);
+      iCtx.lineTo(ex, ey);
+      iCtx.stroke();
+      iCtx.restore();
+    }
   }
 
-  // Scattered radial black ink splatter droplets etched into ink stamp
-  for (let d = 0; d < 24; d++) {
+  // Tiny dark charcoal ink blotches/dots inside the fiery core (authentic comic blast texture)
+  for (let c = 0; c < 12; c++) {
     const a = rand() * Math.PI * 2;
-    const dist = maxR * (0.58 + rand() * 0.48);
-    const rx = 1.6 + rand() * 3.8;
-    const ry = 1.0 + rand() * 2.0;
+    const dist = iMaxR * (0.06 + rand() * 0.28);
+    const rx = 2.2 + rand() * 4.8;
+    const ry = 1.6 + rand() * 3.4;
     iCtx.save();
-    iCtx.translate(half + Math.cos(a) * dist, half + Math.sin(a) * dist);
-    iCtx.rotate(a);
+    iCtx.globalAlpha = 0.72 + rand() * 0.24;
+    iCtx.translate(iHalf + Math.cos(a) * dist, iHalf + Math.sin(a) * dist);
+    iCtx.rotate(rand() * Math.PI);
+    iCtx.beginPath();
+    iCtx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    iCtx.fill();
+    iCtx.restore();
+  }
+
+  // 44 crisp asymmetric black ink splatter flecks & radial teardrop droplets flying outward
+  for (let d = 0; d < 44; d++) {
+    const a = rand() * Math.PI * 2;
+    const dist = iMaxR * (0.56 + rand() * 0.56);
+    const rx = 2.2 + rand() * 7.2;
+    const ry = 1.2 + rand() * 3.4;
+    iCtx.save();
+    iCtx.translate(iHalf + Math.cos(a) * dist, iHalf + Math.sin(a) * dist);
+    iCtx.rotate(a + (rand() - 0.5) * 0.35);
     iCtx.beginPath();
     iCtx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
     iCtx.fill();
@@ -304,21 +354,22 @@ function bakeSplatterWashTexture(variantIdx: number): THREE.CanvasTexture {
   const rand = seededRand(5300 + variantIdx * 197);
   const [rawCanvas, rCtx] = makeCanvas(size);
 
-  const lobes = 16;
+  const lobes = 22;
   const radii: number[] = [];
   for (let i = 0; i < lobes; i++) {
-    radii.push(half * (0.48 + rand() * 0.34));
+    const spike = i % 3 === 0 ? 0.72 + rand() * 0.24 : 0.44 + rand() * 0.28;
+    radii.push(half * spike);
   }
 
-  for (let pass = 0; pass < 18; pass++) {
+  for (let pass = 0; pass < 20; pass++) {
     rCtx.beginPath();
     for (let i = 0; i <= lobes; i++) {
       const idx = i % lobes;
       const next = (i + 1) % lobes;
       const a0 = (idx / lobes) * Math.PI * 2;
       const a1 = (next / lobes) * Math.PI * 2;
-      const r0 = radii[idx]! * (0.9 + rand() * 0.2);
-      const r1 = radii[next]! * (0.9 + rand() * 0.2);
+      const r0 = radii[idx]! * (0.86 + rand() * 0.26);
+      const r1 = radii[next]! * (0.86 + rand() * 0.26);
       const x0 = half + Math.cos(a0) * r0;
       const y0 = half + Math.sin(a0) * r0;
       const x1 = half + Math.cos(a1) * r1;
@@ -327,16 +378,28 @@ function bakeSplatterWashTexture(variantIdx: number): THREE.CanvasTexture {
       rCtx.quadraticCurveTo(x0, y0, (x0 + x1) * 0.5, (y0 + y1) * 0.5);
     }
     rCtx.closePath();
-    rCtx.fillStyle = 'rgba(255,255,255,0.072)';
+    rCtx.fillStyle = 'rgba(255,255,255,0.068)';
     rCtx.fill();
   }
 
-  // Satellite watercolor drops
-  for (let d = 0; d < 18; d++) {
+  // Elongated outward paint-splatter tendrils & satellite wet blooms
+  for (let t = 0; t < 10; t++) {
     const a = rand() * Math.PI * 2;
-    const dist = half * (0.58 + rand() * 0.34);
-    const rr = 3 + rand() * 8;
-    rCtx.fillStyle = 'rgba(255,255,255,0.38)';
+    const d0 = half * (0.45 + rand() * 0.25);
+    const d1 = half * (0.76 + rand() * 0.2);
+    rCtx.strokeStyle = 'rgba(255,255,255,0.34)';
+    rCtx.lineWidth = 4 + rand() * 8;
+    rCtx.lineCap = 'round';
+    rCtx.beginPath();
+    rCtx.moveTo(half + Math.cos(a) * d0, half + Math.sin(a) * d0);
+    rCtx.lineTo(half + Math.cos(a) * d1, half + Math.sin(a) * d1);
+    rCtx.stroke();
+  }
+  for (let d = 0; d < 26; d++) {
+    const a = rand() * Math.PI * 2;
+    const dist = half * (0.52 + rand() * 0.42);
+    const rr = 3 + rand() * 9;
+    rCtx.fillStyle = 'rgba(255,255,255,0.42)';
     rCtx.beginPath();
     rCtx.arc(half + Math.cos(a) * dist, half + Math.sin(a) * dist, rr, 0, Math.PI * 2);
     rCtx.fill();
@@ -350,15 +413,16 @@ function bakeSplatterWashTexture(variantIdx: number): THREE.CanvasTexture {
       const idx = (y * size + x) * 4;
       const a = (src.data[idx + 3] ?? 0) / 255;
       if (a < 0.01) continue;
-      const grain = 0.78 + 0.36 * tileableValueNoise(x / 7, y / 7, 40, 611 + variantIdx);
-      const pool = Math.max(0, Math.min(1, 1 - Math.abs(a - 0.35) * 3.2));
+      const mottle = 0.72 + 0.42 * tileableValueNoise(x / 8, y / 8, 32, 611 + variantIdx);
+      const fine = 0.84 + 0.24 * tileableValueNoise(x / 3, y / 3, 64, 907 + variantIdx);
+      const pool = Math.max(0, Math.min(1, 1 - Math.abs(a - 0.34) * 3.0));
       const dx = (x - half) / half;
       const dy = (y - half) / half;
-      const core = Math.max(0, 1 - Math.hypot(dx, dy) * 1.45);
-      out.data[idx] = Math.round(Math.min(1, a * grain) * 255);
-      out.data[idx + 1] = Math.round(pool * 255);
+      const core = Math.max(0, 1 - Math.hypot(dx, dy) * 1.38);
+      out.data[idx] = Math.round(Math.min(1, a * mottle * fine) * 255);
+      out.data[idx + 1] = Math.round(Math.min(1, pool * 1.15) * 255);
       out.data[idx + 2] = Math.round(core * 255);
-      out.data[idx + 3] = Math.round(Math.min(1, a * 1.15) * 255);
+      out.data[idx + 3] = Math.round(Math.min(1, a * 1.24) * 255);
     }
   }
   oCtx.putImageData(out, 0, 0);
@@ -398,13 +462,13 @@ function bakeBrushStrokeTexture(): THREE.CanvasTexture {
   const img = ctx.createImageData(w, h);
   for (let y = 0; y < h; y++) {
     const ny = (y / (h - 1)) * 2 - 1;
-    const cross = Math.exp(-ny * ny * 3.6);
+    const cross = Math.exp(-ny * ny * 3.2);
     for (let x = 0; x < w; x++) {
       const nx = x / (w - 1);
       const endEnv = Math.sin(nx * Math.PI);
-      const bristle = 0.72 + 0.28 * Math.sin(ny * 14 + nx * 9);
-      const grain = 0.8 + 0.2 * tileableValueNoise(x / 5, y / 3, 32, 811);
-      const val = Math.max(0, Math.min(1, cross * Math.pow(endEnv, 0.45) * bristle * grain));
+      const bristle = 0.62 + 0.38 * Math.sin(ny * 16 + nx * 12) * Math.cos(ny * 7 - nx * 5);
+      const grain = 0.75 + 0.25 * tileableValueNoise(x / 4, y / 2, 32, 811);
+      const val = Math.max(0, Math.min(1, cross * Math.pow(endEnv, 0.36) * bristle * grain));
       const idx = (y * w + x) * 4;
       img.data[idx] = 255;
       img.data[idx + 1] = 255;
@@ -414,8 +478,356 @@ function bakeBrushStrokeTexture(): THREE.CanvasTexture {
   }
   ctx.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
   tex.needsUpdate = true;
   return tex;
+}
+
+/**
+ * Hand-painted dry-brush laser & energy stroke texture (512x128):
+ * R = primary core dry-brush strands
+ * G = flanking painterly strokes + wispy side filaments
+ * B = soft watercolor mist + scattered side paint droplets
+ * A = combined painterly mask with dry-brush bristle scratches
+ */
+function bakeLaserBrushTexture(): THREE.CanvasTexture {
+  const w = 512;
+  const h = 128;
+  const cy = h * 0.5;
+  const rand = seededRand(7741);
+
+  const makeRectCanvas = (): [HTMLCanvasElement, CanvasRenderingContext2D] => {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    return [c, c.getContext('2d')!];
+  };
+
+  const [rC, rCtx] = makeRectCanvas();
+  const [gC, gCtx] = makeRectCanvas();
+  const [bC, bCtx] = makeRectCanvas();
+
+  // R: 3 overlapping central hand-brushed Bezier core strokes
+  const coreSpecs = [
+    { yOff: 0, width: 15, alpha: 0.92, amp: 3.5 },
+    { yOff: -9, width: 8.5, alpha: 0.72, amp: 4.5 },
+    { yOff: 10, width: 8.0, alpha: 0.68, amp: 4.5 },
+  ];
+  for (const sp of coreSpecs) {
+    rCtx.strokeStyle = `rgba(255,255,255,${sp.alpha})`;
+    rCtx.lineCap = 'round';
+    rCtx.lineWidth = sp.width;
+    rCtx.beginPath();
+    rCtx.moveTo(6, cy + sp.yOff * 0.4);
+    for (let x = 24; x <= w - 8; x += 24) {
+      const t = x / w;
+      const fan = t < 0.35 ? 0.55 + t * 1.2 : 1.0;
+      const yy = cy + sp.yOff * fan + (rand() - 0.5) * sp.amp;
+      rCtx.lineTo(x, yy);
+    }
+    rCtx.stroke();
+  }
+
+  // G: 4 flanking painterly strokes + wispy stray brush hairs fanning out from muzzle
+  const flankOffsets = [-22, -13, 14, 24];
+  for (const fy of flankOffsets) {
+    gCtx.strokeStyle = `rgba(255,255,255,${0.55 + rand() * 0.35})`;
+    gCtx.lineCap = 'round';
+    gCtx.lineWidth = 3.2 + rand() * 4.5;
+    gCtx.beginPath();
+    const startX = rand() < 0.5 ? 10 : 38 + rand() * 60;
+    const endX = w - 12 - rand() * 55;
+    gCtx.moveTo(startX, cy + fy * 0.45);
+    for (let x = startX + 22; x <= endX; x += 22) {
+      const t = x / w;
+      const yy = cy + fy * (0.45 + 0.65 * Math.sin(t * Math.PI * 0.85)) + (rand() - 0.5) * 6.2;
+      gCtx.lineTo(x, yy);
+    }
+    gCtx.stroke();
+  }
+  // Fine dry-brush bristle wisps
+  for (let i = 0; i < 16; i++) {
+    const startX = rand() * w * 0.45;
+    const len = 45 + rand() * 140;
+    const yBase = cy + (rand() - 0.5) * 58;
+    gCtx.strokeStyle = `rgba(255,255,255,${0.32 + rand() * 0.45})`;
+    gCtx.lineWidth = 1.2 + rand() * 2.2;
+    gCtx.beginPath();
+    gCtx.moveTo(startX, yBase);
+    gCtx.quadraticCurveTo(startX + len * 0.5, yBase + (rand() - 0.5) * 8, startX + len, yBase + (rand() - 0.5) * 6);
+    gCtx.stroke();
+  }
+
+  // Carve dry-brush bristle scratch gaps into R and G
+  for (const ctx of [rCtx, gCtx]) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    for (let b = 0; b < 22; b++) {
+      const sx = rand() * w * 0.5;
+      const ex = sx + 40 + rand() * 220;
+      const yy = cy + (rand() - 0.5) * 64;
+      ctx.strokeStyle = `rgba(0,0,0,${0.25 + rand() * 0.55})`;
+      ctx.lineWidth = 1.0 + rand() * 1.9;
+      ctx.beginPath();
+      ctx.moveTo(sx, yy);
+      ctx.lineTo(ex, yy + (rand() - 0.5) * 4);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // B: Wet watercolor mist bloom + scattered tiny paint droplets/speckles around strokes
+  const mistGrad = bCtx.createLinearGradient(0, 0, 0, h);
+  mistGrad.addColorStop(0, 'rgba(255,255,255,0)');
+  mistGrad.addColorStop(0.28, 'rgba(255,255,255,0.28)');
+  mistGrad.addColorStop(0.5, 'rgba(255,255,255,0.72)');
+  mistGrad.addColorStop(0.72, 'rgba(255,255,255,0.28)');
+  mistGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  bCtx.fillStyle = mistGrad;
+  bCtx.fillRect(0, 0, w, h);
+
+  for (let s = 0; s < 58; s++) {
+    const sx = 14 + rand() * (w - 28);
+    const sy = cy + (rand() - 0.5) * 88;
+    const sr = 1.1 + rand() * 2.8;
+    bCtx.fillStyle = `rgba(255,255,255,${0.48 + rand() * 0.5})`;
+    bCtx.beginPath();
+    bCtx.ellipse(sx, sy, sr * (1.2 + rand()), sr * 0.85, (rand() - 0.5) * 0.4, 0, Math.PI * 2);
+    bCtx.fill();
+  }
+
+  const rData = rCtx.getImageData(0, 0, w, h).data;
+  const gData = gCtx.getImageData(0, 0, w, h).data;
+  const bData = bCtx.getImageData(0, 0, w, h).data;
+  const [outCanvas, oCtx] = makeRectCanvas();
+  const out = oCtx.createImageData(w, h);
+  for (let i = 0; i < w * h; i++) {
+    const idx = i * 4;
+    const r = rData[idx + 3] ?? 0;
+    const g = gData[idx + 3] ?? 0;
+    const b = bData[idx + 3] ?? 0;
+    out.data[idx] = r;
+    out.data[idx + 1] = g;
+    out.data[idx + 2] = b;
+    out.data[idx + 3] = Math.min(255, Math.round(Math.max(r, g * 0.92, b * 0.72)));
+  }
+  oCtx.putImageData(out, 0, 0);
+  void rC;
+  void gC;
+  void bC;
+  const tex = new THREE.CanvasTexture(outCanvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * Hand-painted splattery watercolor muzzle burst with dry-brush whiskers fanning forward (+X).
+ */
+function bakeWatercolorMuzzleTexture(): THREE.CanvasTexture {
+  const size = 128;
+  const [canvas, ctx] = makeCanvas(size);
+  const c = size * 0.5;
+  const rand = seededRand(8419);
+
+  // Glowing watercolor puddle core near left-center
+  const grad = ctx.createRadialGradient(c * 0.75, c, 2, c * 0.85, c, c * 0.85);
+  grad.addColorStop(0, 'rgba(255,255,255,0.95)');
+  grad.addColorStop(0.45, 'rgba(255,255,255,0.55)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(c * 0.85, c, c * 0.85, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Spiky dry-brush whiskers fanning forward along +X
+  ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 16; i++) {
+    const spreadA = (rand() - 0.5) * 1.45;
+    const len = 24 + rand() * 38;
+    ctx.lineWidth = 1.6 + rand() * 3.8;
+    ctx.beginPath();
+    ctx.moveTo(c * 0.65, c + (rand() - 0.5) * 10);
+    ctx.quadraticCurveTo(
+      c * 0.65 + Math.cos(spreadA) * len * 0.5,
+      c + Math.sin(spreadA) * len * 0.5 + (rand() - 0.5) * 6,
+      c * 0.65 + Math.cos(spreadA) * len,
+      c + Math.sin(spreadA) * len
+    );
+    ctx.stroke();
+  }
+
+  // Scattered forward paint speckles
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  for (let d = 0; d < 18; d++) {
+    const a = (rand() - 0.5) * 1.7;
+    const dist = 16 + rand() * 44;
+    const rr = 1.2 + rand() * 2.5;
+    ctx.beginPath();
+    ctx.arc(c * 0.7 + Math.cos(a) * dist, c + Math.sin(a) * dist, rr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+export interface WatercolorParticleTextures {
+  orb: THREE.CanvasTexture;
+  fire: THREE.CanvasTexture;
+  water: THREE.CanvasTexture;
+  plasma: THREE.CanvasTexture;
+  snow: THREE.CanvasTexture;
+  cross: THREE.CanvasTexture;
+  spark: THREE.CanvasTexture;
+}
+
+function bakeWatercolorParticleTextures(): WatercolorParticleTextures {
+  const size = 64;
+  const c = size * 0.5;
+  const ink = '#10121a';
+
+  const mkTex = (draw: (ctx: CanvasRenderingContext2D) => void): THREE.CanvasTexture => {
+    const [canvas, ctx] = makeCanvas(size);
+    draw(ctx);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+  };
+
+  const orb = mkTex((ctx) => {
+    ctx.fillStyle = ink;
+    ctx.beginPath();
+    for (let i = 0; i <= 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      const r = 21 + Math.sin(i * 2.3) * 3.5;
+      const x = c + Math.cos(a) * r;
+      const y = c + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.beginPath();
+    for (let i = 0; i <= 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      const r = 17 + Math.sin(i * 2.3) * 3.0;
+      const x = c - 1 + Math.cos(a) * r;
+      const y = c - 1 + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+  });
+
+  const fire = mkTex((ctx) => {
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 4.2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(c, 6);
+    ctx.bezierCurveTo(c + 12, 20, c + 20, 36, c + 11, 52);
+    ctx.quadraticCurveTo(c, 58, c - 11, 52);
+    ctx.bezierCurveTo(c - 20, 36, c - 12, 20, c, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  });
+
+  const water = mkTex((ctx) => {
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 4.0;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(c, 8);
+    ctx.bezierCurveTo(c + 16, 26, c + 17, 46, c, 54);
+    ctx.bezierCurveTo(c - 17, 46, c - 16, 26, c, 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.lineWidth = 3.0;
+    ctx.beginPath();
+    ctx.arc(c - 2, c + 6, 8, Math.PI * 0.85, Math.PI * 1.4);
+    ctx.stroke();
+  });
+
+  const plasma = mkTex((ctx) => {
+    const drawCloud = (rScale: number): void => {
+      ctx.beginPath();
+      for (let i = 0; i <= 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        const r = (17 + (i % 2 === 0 ? 6 : 1)) * rScale;
+        const x = c + Math.cos(a) * r;
+        const y = c + Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+    };
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 3.8;
+    drawCloud(1.0);
+    ctx.fill();
+    ctx.stroke();
+  });
+
+  const snow = mkTex((ctx) => {
+    const drawArms = (color: string, width: number): void => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(c, c);
+        ctx.lineTo(c + Math.cos(a) * 24, c + Math.sin(a) * 24);
+        ctx.stroke();
+      }
+    };
+    drawArms(ink, 8.2);
+    drawArms('#ffffff', 4.4);
+  });
+
+  const cross = mkTex((ctx) => {
+    ctx.fillStyle = ink;
+    ctx.fillRect(c - 8, c - 23, 16, 46);
+    ctx.fillRect(c - 23, c - 8, 46, 16);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(c - 5.5, c - 20.5, 11, 41);
+    ctx.fillRect(c - 20.5, c - 5.5, 41, 11);
+  });
+
+  const spark = mkTex((ctx) => {
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 3.6;
+    ctx.lineJoin = 'miter';
+    ctx.beginPath();
+    ctx.moveTo(c, 4);
+    ctx.lineTo(c + 7, c - 7);
+    ctx.lineTo(size - 4, c);
+    ctx.lineTo(c + 7, c + 7);
+    ctx.lineTo(c, size - 4);
+    ctx.lineTo(c - 7, c + 7);
+    ctx.lineTo(4, c);
+    ctx.lineTo(c - 7, c - 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  });
+
+  return { orb, fire, water, plasma, snow, cross, spark };
 }
 
 export interface WatercolorAssets {
@@ -426,6 +838,9 @@ export interface WatercolorAssets {
   splatterWashTextures: THREE.CanvasTexture[];
   inkDropletTex: THREE.CanvasTexture;
   brushStrokeTex: THREE.CanvasTexture;
+  laserBrushTex: THREE.CanvasTexture;
+  muzzleFlareTex: THREE.CanvasTexture;
+  particles: WatercolorParticleTextures;
 }
 
 let cachedAssets: WatercolorAssets | null = null;
@@ -440,7 +855,7 @@ export function getWatercolorAssets(): WatercolorAssets {
     starburstInkTextures.push(pair.ink);
   }
   const splatterWashTextures: THREE.CanvasTexture[] = [];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 6; i++) {
     splatterWashTextures.push(bakeSplatterWashTexture(i));
   }
   cachedAssets = {
@@ -451,6 +866,9 @@ export function getWatercolorAssets(): WatercolorAssets {
     splatterWashTextures,
     inkDropletTex: bakeInkDropletTexture(),
     brushStrokeTex: bakeBrushStrokeTexture(),
+    laserBrushTex: bakeLaserBrushTexture(),
+    muzzleFlareTex: bakeWatercolorMuzzleTexture(),
+    particles: bakeWatercolorParticleTextures(),
   };
   return cachedAssets;
 }
@@ -857,10 +1275,12 @@ export function createWatercolorStarburstMaterial(
         vec4 tex = texture2D(uMap, vUv);
         if (tex.a < 0.02) discard;
 
-        vec3 col = uOuter * (0.7 + tex.r * 0.45);
-        col = mix(col, uMid * 1.08, clamp(tex.g * 1.15, 0.0, 1.0));
-        col = mix(col, uCore * 1.25, clamp(tex.b * 1.1, 0.0, 1.0));
-        gl_FragColor = vec4(col, tex.a * uOpacity);
+        // Pigment pooling edge darkens slightly along wet boundaries while core blooms super hot
+        float poolShade = smoothstep(0.18, 0.72, tex.a);
+        vec3 col = uOuter * (0.64 + tex.r * 0.52) * (0.78 + 0.22 * poolShade);
+        col = mix(col, uMid * 1.18, clamp(tex.g * 1.25, 0.0, 1.0));
+        col = mix(col, uCore * 1.38, clamp(tex.b * 1.22, 0.0, 1.0));
+        gl_FragColor = vec4(col, clamp(tex.a * uOpacity, 0.0, 0.98));
       }
     `,
     transparent: true,
@@ -991,18 +1411,25 @@ export function createWatercolorGridMaterial(): THREE.ShaderMaterial {
 /**
  * Tapered brush-stroke energy beam shader (3-4 parallel glowing watercolor streams + sumi-e ink edge accents).
  */
+/**
+ * Multi-layered hand-painted dry-brush watercolor laser/beam shader + reusable hand-inked ribbon material.
+ */
 export function createWatercolorBeamMaterial(
   colorA: number,
   colorB: number,
   colorC: number,
-  isVoid = false
+  isVoid = false,
+  layerOffset = 0
 ): THREE.ShaderMaterial {
+  const assets = getWatercolorAssets();
   return new THREE.ShaderMaterial({
     uniforms: {
+      uLaserBrush: { value: assets.laserBrushTex },
       uColorA: { value: new THREE.Color(colorA) },
       uColorB: { value: new THREE.Color(colorB) },
       uColorC: { value: new THREE.Color(colorC) },
       uIsVoid: { value: isVoid ? 1.0 : 0.0 },
+      uLayerOffset: { value: layerOffset },
       uTime: WATERCOLOR_TIME_UNIFORM,
       uLength: { value: 10 },
       uFade: { value: 1 },
@@ -1015,10 +1442,12 @@ export function createWatercolorBeamMaterial(
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform sampler2D uLaserBrush;
       uniform vec3 uColorA;
       uniform vec3 uColorB;
       uniform vec3 uColorC;
       uniform float uIsVoid;
+      uniform float uLayerOffset;
       uniform float uTime;
       uniform float uLength;
       uniform float uFade;
@@ -1028,48 +1457,49 @@ export function createWatercolorBeamMaterial(
         return fract(sin(n) * 43758.5453123);
       }
 
-      float noise1(float x) {
-        float i = floor(x);
-        float f = fract(x);
-        float u = f * f * (3.0 - 2.0 * f);
-        return mix(hash1(i), hash1(i + 1.0), u);
-      }
-
       void main() {
         float x = vUv.x * max(uLength, 1.0);
-        float y = (vUv.y - 0.5) * 2.0;
-        float muzzle = smoothstep(0.0, 0.14, x);
+        float muzzle = smoothstep(0.0, 0.08, x);
         float tail = 1.0 - smoothstep(max(uLength - 0.35, 0.0), uLength, x);
         float env = muzzle * tail * uFade;
 
-        float flutter = (noise1(x * 3.8 - uTime * 22.0) - 0.5) * 0.14;
-        float yy = y + flutter;
+        // 15 Hz quantized hand-drawn line boil
+        float boil = floor(uTime * 15.0 + uLayerOffset * 7.0);
+        float jitterY = (hash1(floor(x * 1.4) + boil * 3.1) - 0.5) * 0.035;
 
-        // 3 parallel watercolor brush streams + central core
-        float streamC = exp(-pow(yy * 5.4, 2.0));
-        float streamU = exp(-pow((yy - 0.32 + sin(x * 2.2 - uTime * 14.0) * 0.05) * 8.5, 2.0));
-        float streamL = exp(-pow((yy + 0.32 + cos(x * 2.4 - uTime * 13.0) * 0.05) * 8.5, 2.0));
-        float brushWash = exp(-yy * yy * 2.6) * (0.45 + 0.25 * noise1(x * 6.5 - uTime * 18.0));
+        vec2 uv1 = vec2(fract(x * 0.14 - uTime * 1.35 + uLayerOffset * 0.31), clamp(vUv.y + jitterY, 0.01, 0.99));
+        vec2 uv2 = vec2(fract(x * 0.22 - uTime * 1.85 + 0.43 + uLayerOffset * 0.57), clamp(1.0 - vUv.y - jitterY * 0.8 + (hash1(boil) - 0.5) * 0.04, 0.01, 0.99));
 
-        // Crisp sumi-e ink brush flank lines framing the neon wash
-        float inkFlank = exp(-pow((abs(yy) - 0.54) * 16.0, 2.0)) * 0.65;
+        vec4 b1 = texture2D(uLaserBrush, uv1);
+        vec4 b2 = texture2D(uLaserBrush, uv2);
+
+        float coreStrand = max(b1.r, b2.r * 0.85);
+        float flankStrands = clamp(b1.g * 0.85 + b2.g * 0.72, 0.0, 1.25);
+        float mistSpecks = clamp(b1.b * 0.78 + b2.b * 0.65, 0.0, 1.15);
+
+        // Subtle broken sketchy sumi-e ink flicks along outer dry-brush edges (no heavy black rails)
+        float distC = abs(vUv.y - 0.5) * 2.0;
+        float sketchMask = smoothstep(0.32, 0.72, distC) * step(0.42, fract(x * 0.55 + hash1(boil + floor(x)) * 0.7));
+        float inkFlicks = clamp(flankStrands * sketchMask * 0.62, 0.0, 0.65);
 
         if (uIsVoid > 0.5) {
-          float blackCore = smoothstep(0.28, 0.08, abs(yy));
-          vec3 neonRim = mix(uColorA, uColorB, 0.5 + 0.5 * sin(x * 2.5 - uTime * 12.0)) * 1.2;
-          vec3 col = mix(neonRim * (streamU + streamL + brushWash), vec3(0.031, 0.035, 0.051), blackCore);
-          float alpha = clamp((blackCore * 0.96 + (streamU + streamL + brushWash) * 0.78) * env, 0.0, 0.98);
+          float inkCore = smoothstep(0.22, 0.78, coreStrand);
+          vec3 neonBleed = mix(uColorA, uColorB, clamp(b2.g, 0.0, 1.0)) * 1.25;
+          vec3 col = mix(neonBleed * (flankStrands + mistSpecks), vec3(0.031, 0.035, 0.051), inkCore);
+          float alpha = clamp((inkCore * 0.95 + (flankStrands + mistSpecks) * 0.8) * env, 0.0, 0.98);
           gl_FragColor = vec4(col, alpha);
           return;
         }
 
-        vec3 mainCol = uColorA * (brushWash * 0.85 + streamC * 0.55)
-          + uColorB * (streamU * 0.85)
-          + uColorC * (streamL * 0.85)
-          + vec3(1.15) * pow(streamC, 2.2) * 0.72;
-        mainCol = mix(mainCol, vec3(0.031, 0.035, 0.051), inkFlank * 0.78);
-        float alpha = clamp((brushWash * 0.62 + streamC * 0.88 + (streamU + streamL) * 0.6 + inkFlank * 0.55) * env, 0.0, 0.96);
-        gl_FragColor = vec4(mainCol, alpha);
+        vec3 strandCol = uColorA * (flankStrands * 0.72 + mistSpecks * 0.68)
+          + mix(uColorB, uColorC, clamp(b2.g, 0.0, 1.0)) * (flankStrands * 0.64)
+          + mix(uColorA, vec3(1.18), 0.72) * pow(coreStrand, 1.35) * 0.92;
+        strandCol = mix(strandCol, vec3(0.031, 0.035, 0.051), inkFlicks * 0.72);
+
+        float combinedAlpha = max(coreStrand * 0.96, max(flankStrands * 0.82, mistSpecks * 0.64)) + inkFlicks * 0.35;
+        float alpha = clamp(combinedAlpha * env * (uLayerOffset > 0.1 ? 0.72 : 1.0), 0.0, 0.98);
+        if (alpha < 0.02) discard;
+        gl_FragColor = vec4(strandCol, alpha);
       }
     `,
     transparent: true,
@@ -1080,11 +1510,69 @@ export function createWatercolorBeamMaterial(
 }
 
 /**
- * Watercolor Mist & Brush-Arc Spray Cone Shader.
+ * Reusable hand-painted dry-brush watercolor ribbon material (compatible with setRibbonColor & uOpacity fades).
  */
-export function createWatercolorSprayConeMaterial(colorA: number, colorB: number): THREE.ShaderMaterial {
+export function createWatercolorRibbonMaterial(
+  colorHex: number,
+  opacity = 0.9,
+  inkEdge = 0.32
+): THREE.ShaderMaterial {
+  const assets = getWatercolorAssets();
   return new THREE.ShaderMaterial({
     uniforms: {
+      uBrush: { value: assets.brushStrokeTex },
+      uLaserBrush: { value: assets.laserBrushTex },
+      uColor: { value: new THREE.Color(colorHex) },
+      uOpacity: { value: opacity },
+      uInkEdge: { value: inkEdge },
+      uTime: WATERCOLOR_TIME_UNIFORM,
+    },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uBrush;
+      uniform sampler2D uLaserBrush;
+      uniform vec3 uColor;
+      uniform float uOpacity;
+      uniform float uInkEdge;
+      uniform float uTime;
+      varying vec2 vUv;
+
+      void main() {
+        float boil = floor(uTime * 13.0) * 0.17;
+        vec4 stroke = texture2D(uBrush, vec2(fract(vUv.x * 2.5 + boil), vUv.y));
+        vec4 dry = texture2D(uLaserBrush, vec2(fract(vUv.x * 1.8 - boil * 0.5), vUv.y));
+        float bristle = clamp(stroke.a * 0.72 + max(dry.r, dry.g) * 0.62, 0.0, 1.0);
+        if (bristle < 0.04) discard;
+
+        float center = 1.0 - abs(vUv.y - 0.5) * 2.0;
+        float edgeInk = exp(-pow((abs(vUv.y - 0.5) * 2.0 - 0.78) * 7.5, 2.0)) * uInkEdge;
+        vec3 col = mix(uColor * (0.86 + dry.r * 0.34), vec3(1.0), pow(max(0.0, center), 2.4) * 0.48);
+        col = mix(col, vec3(0.031, 0.035, 0.051), clamp(edgeInk, 0.0, 0.85));
+        float alpha = clamp((bristle * 0.88 + edgeInk * 0.45) * uOpacity, 0.0, 0.96);
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+    transparent: true,
+    blending: THREE.NormalBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+}
+
+/**
+ * Watercolor Mist & Dry-Brush Spray Cone Shader.
+ */
+export function createWatercolorSprayConeMaterial(colorA: number, colorB: number): THREE.ShaderMaterial {
+  const assets = getWatercolorAssets();
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uLaserBrush: { value: assets.laserBrushTex },
       uColorA: { value: new THREE.Color(colorA) },
       uColorB: { value: new THREE.Color(colorB) },
       uTime: WATERCOLOR_TIME_UNIFORM,
@@ -1099,6 +1587,7 @@ export function createWatercolorSprayConeMaterial(colorA: number, colorB: number
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform sampler2D uLaserBrush;
       uniform vec3 uColorA;
       uniform vec3 uColorB;
       uniform float uTime;
@@ -1126,19 +1615,25 @@ export function createWatercolorSprayConeMaterial(colorA: number, colorB: number
         float r = length(vec2(x, y));
         if (x <= 0.0 || r > 1.0) discard;
 
-        float ang = abs(atan(y, x));
+        float ang = atan(y, x);
         float normAng = ang / max(uHalfAngle, 0.05);
-        if (normAng > 1.0) discard;
+        if (abs(normAng) > 1.0) discard;
 
-        float n = noise(vec2(r * 7.5 - uTime * 6.0, ang * 9.0));
-        float edgeInk = exp(-pow((normAng - 0.94) * 14.0, 2.0)) * smoothstep(0.08, 0.85, r);
-        float brushArc = exp(-pow((fract(r * 4.2 - uTime * 3.6) - 0.5) * 7.0, 2.0));
-        float env = smoothstep(1.0, 0.45, normAng) * smoothstep(0.0, 0.06, r) * smoothstep(1.0, 0.25, r);
+        float boil = floor(uTime * 14.0) * 0.13;
+        vec2 brushUv = vec2(fract(r * 1.4 - uTime * 2.4 + boil), clamp(normAng * 0.42 + 0.5, 0.02, 0.98));
+        vec4 dry = texture2D(uLaserBrush, brushUv);
+        float n = noise(vec2(r * 7.5 - uTime * 5.2, ang * 9.0));
 
-        vec3 wash = mix(uColorA, uColorB, 0.25 + 0.6 * n) * (0.7 + n * 0.55);
-        wash += vec3(0.95) * brushArc * 0.45;
-        wash = mix(wash, vec3(0.031, 0.035, 0.051), edgeInk * 0.72);
-        float alpha = clamp((env * (0.58 + brushArc * 0.35) + edgeInk * 0.5) * uOpacity, 0.0, 0.9);
+        float raggedEdge = 0.88 + 0.12 * sin(r * 18.0 + boil * 9.0);
+        float edgeInk = exp(-pow((abs(normAng) - raggedEdge) * 12.0, 2.0)) * smoothstep(0.06, 0.85, r) * (0.5 + 0.5 * dry.a);
+        float brushStrokes = max(dry.r * 0.85, dry.g * 0.95);
+        float env = smoothstep(1.0, 0.35, abs(normAng)) * smoothstep(0.0, 0.05, r) * smoothstep(1.0, 0.22, r);
+
+        vec3 wash = mix(uColorA, uColorB, 0.25 + 0.65 * n) * (0.76 + n * 0.42);
+        wash += vec3(1.05) * brushStrokes * 0.48;
+        wash = mix(wash, vec3(0.031, 0.035, 0.051), edgeInk * 0.78);
+        float alpha = clamp((env * (0.48 + brushStrokes * 0.52) + edgeInk * 0.52) * uOpacity, 0.0, 0.94);
+        if (alpha < 0.02) discard;
         gl_FragColor = vec4(wash, alpha);
       }
     `,
@@ -1150,7 +1645,7 @@ export function createWatercolorSprayConeMaterial(colorA: number, colorB: number
 }
 
 /**
- * Watercolor & Ink Wall Panel Shader supporting all 7 elemental styles with sumi-e ink rims.
+ * Watercolor & Ink Wall Panel Shader supporting all 7 elemental styles with paper tooth & sumi-e ink rims.
  */
 export function createWatercolorWallMaterial(
   colorA: number,
@@ -1158,8 +1653,10 @@ export function createWatercolorWallMaterial(
   wallStyle = 6,
   isVoid = false
 ): THREE.ShaderMaterial {
+  const assets = getWatercolorAssets();
   return new THREE.ShaderMaterial({
     uniforms: {
+      uGrain: { value: assets.paperTileTex },
       uColorA: { value: new THREE.Color(colorA) },
       uColorB: { value: new THREE.Color(colorB) },
       uStyle: { value: wallStyle },
@@ -1174,6 +1671,7 @@ export function createWatercolorWallMaterial(
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform sampler2D uGrain;
       uniform vec3 uColorA;
       uniform vec3 uColorB;
       uniform float uStyle;
@@ -1198,7 +1696,9 @@ export function createWatercolorWallMaterial(
       void main() {
         int st = int(uStyle + 0.5);
         vec3 ink = vec3(0.031, 0.035, 0.051);
-        float grain = 0.8 + 0.25 * noise(vUv * 18.0);
+        float boil = floor(uTime * 13.0) * 0.09;
+        float paper = texture2D(uGrain, vUv * vec2(3.5, 1.8)).r;
+        float grain = 0.74 + 0.34 * paper;
 
         if (st == 2) {
           float n1 = noise(vec2(vUv.x * 8.5, vUv.y * 3.8 - uTime * 4.2));
@@ -1208,7 +1708,7 @@ export function createWatercolorWallMaterial(
           if (flame < 0.04) discard;
           float inkEdge = exp(-pow((flame - 0.22) * 8.0, 2.0));
           vec3 col = mix(uColorA, uColorB, clamp(n2 * 0.85, 0.0, 1.0)) * grain;
-          col = mix(col, ink, inkEdge * 0.78);
+          col = mix(col, ink, inkEdge * 0.84);
           gl_FragColor = vec4(col, clamp(flame * 0.92 * uOpacity, 0.0, 0.95));
           return;
         }
@@ -1219,9 +1719,10 @@ export function createWatercolorWallMaterial(
           if (vUv.y > topCut) discard;
           float inkRim = exp(-pow((topCut - vUv.y) * 18.0, 2.0));
           float facet = smoothstep(0.35, 0.85, noise(vec2(vUv.x * 14.0, vUv.y * 10.0)));
+          float hatch = smoothstep(0.92, 1.0, abs(sin((vUv.x * 16.0 + vUv.y * 6.0) + boil)));
           vec3 col = mix(uColorA, uColorB, facet * 0.65) * grain;
-          col = mix(col, ink, inkRim * 0.9);
-          gl_FragColor = vec4(col, 0.88 * uOpacity);
+          col = mix(col, ink, clamp(inkRim * 0.9 + hatch * 0.35, 0.0, 0.95));
+          gl_FragColor = vec4(col, 0.9 * uOpacity);
           return;
         }
         if (st == 3) {
@@ -1230,8 +1731,8 @@ export function createWatercolorWallMaterial(
           float inkCrest = exp(-pow((waveTop - vUv.y) * 18.0, 2.0));
           float n = noise(vec2(vUv.x * 9.0 - uTime * 2.8, vUv.y * 7.0 + uTime * 1.8));
           vec3 col = mix(uColorA, uColorB, 0.35 + n * 0.45) * grain;
-          col = mix(col, ink, inkCrest * 0.85);
-          gl_FragColor = vec4(col, 0.86 * uOpacity);
+          col = mix(col, ink, inkCrest * 0.88);
+          gl_FragColor = vec4(col, 0.88 * uOpacity);
           return;
         }
         if (st == 4) {
@@ -1243,9 +1744,9 @@ export function createWatercolorWallMaterial(
             arcs += exp(-pow((vUv.y - (cy + j)) * 24.0, 2.0));
           }
           float inkOutline = exp(-pow((min(vUv.y, 1.0 - vUv.y)) * 18.0, 2.0));
-          vec3 col = mix(uColorA * 0.85, vec3(1.0, 0.98, 0.75), clamp(arcs, 0.0, 1.0));
-          col = mix(col, ink, inkOutline * 0.82);
-          gl_FragColor = vec4(col, clamp((0.35 + min(1.0, arcs) * 0.65) * uOpacity, 0.0, 0.95));
+          vec3 col = mix(uColorA * 0.85, vec3(1.0, 0.98, 0.75), clamp(arcs, 0.0, 1.0)) * grain;
+          col = mix(col, ink, inkOutline * 0.86);
+          gl_FragColor = vec4(col, clamp((0.36 + min(1.0, arcs) * 0.65) * uOpacity, 0.0, 0.95));
           return;
         }
         if (st == 5) {
@@ -1274,7 +1775,7 @@ export function createWatercolorWallMaterial(
 }
 
 /**
- * Watercolor Storm Ground Vortex Shader (6 elemental styles + ink rune outline accents).
+ * Watercolor Storm Ground Vortex Shader (6 elemental styles + paper grain & ink rune outline accents).
  */
 export function createWatercolorStormVortexMaterial(
   barrierColor: number,
@@ -1282,8 +1783,10 @@ export function createWatercolorStormVortexMaterial(
   colorB: number,
   style = 0
 ): THREE.ShaderMaterial {
+  const assets = getWatercolorAssets();
   return new THREE.ShaderMaterial({
     uniforms: {
+      uGrain: { value: assets.paperTileTex },
       uColorBarrier: { value: new THREE.Color(barrierColor) },
       uColorA: { value: new THREE.Color(colorA) },
       uColorB: { value: new THREE.Color(colorB) },
@@ -1299,6 +1802,7 @@ export function createWatercolorStormVortexMaterial(
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform sampler2D uGrain;
       uniform vec3 uColorBarrier;
       uniform vec3 uColorA;
       uniform vec3 uColorB;
@@ -1327,20 +1831,23 @@ export function createWatercolorStormVortexMaterial(
         if (r > 1.0) discard;
 
         float ang = atan(p.y, p.x);
+        float boil = floor(uTime * 13.0) * 0.11;
+        float paper = texture2D(uGrain, vUv * 2.5).r;
         float n = noise(p * 4.5 + vec2(uTime * 0.4, -uTime * 0.35));
         float swirl = pow(0.5 + 0.5 * sin(ang * 3.0 - r * 7.5 + uTime * 3.8 + n * 2.2), 2.2);
-        float outerInkRing = exp(-pow((r - 0.88) * 18.0, 2.0));
-        float innerInkRing = exp(-pow((r - 0.52) * 20.0, 2.0)) * 0.55;
+        float wob = 0.025 * sin(ang * 7.0 + boil);
+        float outerInkRing = exp(-pow((r - (0.88 + wob)) * 18.0, 2.0));
+        float innerInkRing = exp(-pow((r - (0.52 - wob)) * 20.0, 2.0)) * 0.62;
         float fade = smoothstep(1.0, 0.48, r);
 
         vec3 ink = vec3(0.031, 0.035, 0.051);
-        vec3 col = mix(uColorA, uColorB, swirl * 0.72 + n * 0.25) * (0.65 + swirl * 0.55);
+        vec3 col = mix(uColorA, uColorB, swirl * 0.72 + n * 0.25) * (0.62 + swirl * 0.52) * (0.8 + 0.3 * paper);
         if (uStyle > 3.5 && uStyle < 4.5) {
           float bh = smoothstep(0.35, 0.14, r);
           col = mix(col, ink, bh);
         }
-        col = mix(col, ink, clamp(outerInkRing + innerInkRing, 0.0, 0.92));
-        float alpha = clamp((fade * (0.34 + swirl * 0.42) + outerInkRing * 0.75) * uOpacity, 0.0, 0.92);
+        col = mix(col, ink, clamp(outerInkRing + innerInkRing, 0.0, 0.94));
+        float alpha = clamp((fade * (0.36 + swirl * 0.42) + outerInkRing * 0.78) * uOpacity, 0.0, 0.94);
         gl_FragColor = vec4(col, alpha);
       }
     `,
@@ -1352,15 +1859,17 @@ export function createWatercolorStormVortexMaterial(
 }
 
 /**
- * Overhead Watercolor Storm Cloud Canopy Shader.
+ * Overhead Watercolor Storm Cloud Canopy Shader with paper tooth & scalloped sumi-e ink rims.
  */
 export function createWatercolorStormCloudMaterial(
   colorA: number,
   colorB: number,
   style = 0
 ): THREE.ShaderMaterial {
+  const assets = getWatercolorAssets();
   return new THREE.ShaderMaterial({
     uniforms: {
+      uGrain: { value: assets.paperTileTex },
       uColorA: { value: new THREE.Color(colorA) },
       uColorB: { value: new THREE.Color(colorB) },
       uTime: WATERCOLOR_TIME_UNIFORM,
@@ -1375,6 +1884,7 @@ export function createWatercolorStormCloudMaterial(
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform sampler2D uGrain;
       uniform vec3 uColorA;
       uniform vec3 uColorB;
       uniform float uTime;
@@ -1406,14 +1916,15 @@ export function createWatercolorStormCloudMaterial(
         if (r > lobe) discard;
 
         float normR = r / lobe;
+        float paper = texture2D(uGrain, vUv * 2.5).r;
         float poolInk = exp(-pow((normR - 0.93) * 14.0, 2.0));
         float cloud = noise(p * 3.5 - vec2(uTime * 0.4, -uTime * 0.35));
-        vec3 col = mix(uColorA, uColorB, cloud * 0.75) * (0.72 + cloud * 0.48);
+        vec3 col = mix(uColorA, uColorB, cloud * 0.75) * (0.72 + cloud * 0.48) * (0.8 + 0.3 * paper);
         if (uStyle > 3.5 && uStyle < 4.5) {
           col = mix(col, vec3(0.031, 0.035, 0.051), smoothstep(0.32, 0.12, r));
         }
-        col = mix(col, vec3(0.031, 0.035, 0.051), poolInk * 0.85);
-        float alpha = clamp((smoothstep(1.0, 0.25, normR) * 0.76 + poolInk * 0.5) * uOpacity, 0.0, 0.9);
+        col = mix(col, vec3(0.031, 0.035, 0.051), poolInk * 0.88);
+        float alpha = clamp((smoothstep(1.0, 0.25, normR) * 0.78 + poolInk * 0.55) * uOpacity, 0.0, 0.92);
         gl_FragColor = vec4(col, alpha);
       }
     `,
@@ -1425,11 +1936,13 @@ export function createWatercolorStormCloudMaterial(
 }
 
 /**
- * Spilled Watercolor Liquid Pool Shader with capillary edge pooling and ink ripple lines.
+ * Spilled Watercolor Liquid Pool Shader with capillary edge pooling, paper tooth, and ink ripple lines.
  */
 export function createWatercolorPoolMaterial(colorA: number, colorB: number, seed = 0): THREE.ShaderMaterial {
+  const assets = getWatercolorAssets();
   return new THREE.ShaderMaterial({
     uniforms: {
+      uGrain: { value: assets.paperTileTex },
       uColorA: { value: new THREE.Color(colorA) },
       uColorB: { value: new THREE.Color(colorB) },
       uTime: WATERCOLOR_TIME_UNIFORM,
@@ -1444,6 +1957,7 @@ export function createWatercolorPoolMaterial(colorA: number, colorB: number, see
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform sampler2D uGrain;
       uniform vec3 uColorA;
       uniform vec3 uColorB;
       uniform float uTime;
@@ -1455,15 +1969,17 @@ export function createWatercolorPoolMaterial(colorA: number, colorB: number, see
         vec2 p = (vUv - 0.5) * 2.0;
         float r = length(p);
         float ang = atan(p.y, p.x);
-        float edgeRadius = 0.82 + 0.1 * sin(ang * 3.0 + uSeed) + 0.05 * cos(ang * 5.0 - uSeed * 1.7);
+        float boil = floor(uTime * 13.0) * 0.08;
+        float edgeRadius = 0.82 + 0.1 * sin(ang * 3.0 + uSeed) + 0.05 * cos(ang * 5.0 - uSeed * 1.7 + boil);
         if (r > edgeRadius) discard;
 
         float normR = r / edgeRadius;
+        float paper = texture2D(uGrain, vUv * 2.5).r;
         float poolEdge = exp(-pow((normR - 0.92) * 14.0, 2.0));
         float ripple = exp(-pow((fract(normR * 2.2 - uTime * 0.45) - 0.5) * 10.0, 2.0)) * 0.45;
-        vec3 col = mix(uColorA * 0.78, uColorB * 1.1, ripple + (1.0 - normR) * 0.35);
-        col = mix(col, vec3(0.031, 0.035, 0.051), poolEdge * 0.82);
-        float alpha = clamp((0.46 + (1.0 - normR) * 0.2 + poolEdge * 0.45) * uOpacity, 0.0, 0.85);
+        vec3 col = mix(uColorA * 0.78, uColorB * 1.1, ripple + (1.0 - normR) * 0.35) * (0.8 + 0.3 * paper);
+        col = mix(col, vec3(0.031, 0.035, 0.051), poolEdge * 0.86);
+        float alpha = clamp((0.48 + (1.0 - normR) * 0.2 + poolEdge * 0.48) * uOpacity, 0.0, 0.88);
         gl_FragColor = vec4(col, alpha);
       }
     `,
@@ -1482,8 +1998,10 @@ export function createWatercolorShieldMaterial(
   colorB: number,
   isDome: boolean
 ): THREE.ShaderMaterial {
+  const assets = getWatercolorAssets();
   return new THREE.ShaderMaterial({
     uniforms: {
+      uGrain: { value: assets.paperTileTex },
       uColorA: { value: new THREE.Color(colorA) },
       uColorB: { value: new THREE.Color(colorB) },
       uTime: WATERCOLOR_TIME_UNIFORM,
@@ -1498,6 +2016,7 @@ export function createWatercolorShieldMaterial(
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform sampler2D uGrain;
       uniform vec3 uColorA;
       uniform vec3 uColorB;
       uniform float uTime;
@@ -1506,24 +2025,27 @@ export function createWatercolorShieldMaterial(
       varying vec2 vUv;
 
       void main() {
+        float boil = floor(uTime * 13.0) * 0.11;
+        float paper = texture2D(uGrain, vUv * 2.5).r;
         if (uIsDome > 0.5) {
           vec2 p = (vUv - 0.5) * 2.0;
           float r = length(p);
           if (r > 1.0) discard;
           float rimInk = exp(-pow((r - 0.96) * 24.0, 2.0));
           float rimWash = smoothstep(0.62, 0.98, r);
-          float hatch = smoothstep(0.92, 1.0, abs(sin((p.x + p.y) * 18.0 + uTime * 0.5)));
-          vec3 col = mix(uColorA, uColorB, rimWash * 0.6 + hatch * 0.3);
-          col = mix(col, vec3(0.031, 0.035, 0.051), rimInk * 0.88);
-          float alpha = clamp((0.14 + rimWash * 0.45 + rimInk * 0.65) * uOpacity, 0.0, 0.88);
+          float hatch = smoothstep(0.92, 1.0, abs(sin((p.x + p.y) * 18.0 + boil)));
+          vec3 col = mix(uColorA, uColorB, rimWash * 0.6 + hatch * 0.3) * (0.82 + 0.28 * paper);
+          col = mix(col, vec3(0.031, 0.035, 0.051), clamp(rimInk * 0.88 + hatch * 0.32, 0.0, 0.94));
+          float alpha = clamp((0.16 + rimWash * 0.45 + rimInk * 0.68) * uOpacity, 0.0, 0.9);
           gl_FragColor = vec4(col, alpha);
           return;
         }
         float arcFade = smoothstep(0.0, 0.08, vUv.x) * smoothstep(1.0, 0.92, vUv.x);
         float topInk = exp(-pow((vUv.y - 0.94) * 16.0, 2.0));
-        vec3 col = mix(uColorA, uColorB, vUv.y * 0.65);
-        col = mix(col, vec3(0.031, 0.035, 0.051), topInk * 0.85);
-        float alpha = clamp((0.36 + vUv.y * 0.35 + topInk * 0.4) * arcFade * uOpacity, 0.0, 0.9);
+        float hatch = smoothstep(0.92, 1.0, abs(sin((vUv.x * 24.0 + vUv.y * 8.0) + boil)));
+        vec3 col = mix(uColorA, uColorB, vUv.y * 0.65) * (0.82 + 0.28 * paper);
+        col = mix(col, vec3(0.031, 0.035, 0.051), clamp(topInk * 0.88 + hatch * 0.3, 0.0, 0.94));
+        float alpha = clamp((0.38 + vUv.y * 0.35 + topInk * 0.42) * arcFade * uOpacity, 0.0, 0.92);
         gl_FragColor = vec4(col, alpha);
       }
     `,
@@ -1535,13 +2057,16 @@ export function createWatercolorShieldMaterial(
 }
 
 /**
- * Sweeping Ink & Watercolor Crescent Slash Shader.
+ * Sweeping Calligraphy Dry-Brush Ink & Watercolor Crescent Slash Shader.
  */
 export function createWatercolorSlashMaterial(colorA: number, colorB: number): THREE.ShaderMaterial {
+  const assets = getWatercolorAssets();
   return new THREE.ShaderMaterial({
     uniforms: {
+      uLaserBrush: { value: assets.laserBrushTex },
       uColorA: { value: new THREE.Color(colorA) },
       uColorB: { value: new THREE.Color(colorB) },
+      uTime: WATERCOLOR_TIME_UNIFORM,
       uFade: { value: 1 },
     },
     vertexShader: /* glsl */ `
@@ -1552,18 +2077,23 @@ export function createWatercolorSlashMaterial(colorA: number, colorB: number): T
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform sampler2D uLaserBrush;
       uniform vec3 uColorA;
       uniform vec3 uColorB;
+      uniform float uTime;
       uniform float uFade;
       varying vec2 vUv;
 
       void main() {
         float arcEnv = sin(vUv.x * 3.14159265);
-        float outerBlade = exp(-pow((vUv.y - 0.84) * 9.0, 2.0));
+        float boil = floor(uTime * 14.0) * 0.13;
+        vec4 dry = texture2D(uLaserBrush, vec2(fract(vUv.x * 1.3 + boil), vUv.y));
+        float bristleSwoosh = max(dry.r, dry.g * 0.92);
+        float outerBlade = exp(-pow((vUv.y - 0.82) * 8.5, 2.0));
         float inkSpine = exp(-pow((vUv.y - 0.92) * 18.0, 2.0));
-        vec3 col = mix(uColorB, uColorA, vUv.y) * (0.85 + outerBlade * 0.55);
-        col = mix(col, vec3(0.031, 0.035, 0.051), inkSpine * 0.9);
-        float alpha = clamp((smoothstep(0.15, 0.88, vUv.y) * 0.65 + outerBlade * 0.7 + inkSpine * 0.8) * arcEnv * uFade, 0.0, 0.95);
+        vec3 col = mix(uColorB, uColorA, vUv.y) * (0.85 + outerBlade * 0.55 + dry.r * 0.35);
+        col = mix(col, vec3(0.031, 0.035, 0.051), clamp(inkSpine * 0.92, 0.0, 0.95));
+        float alpha = clamp((smoothstep(0.12, 0.85, vUv.y) * (0.42 + bristleSwoosh * 0.65) + outerBlade * 0.65 + inkSpine * 0.85) * arcEnv * uFade, 0.0, 0.96);
         gl_FragColor = vec4(col, alpha);
       }
     `,
@@ -1575,7 +2105,7 @@ export function createWatercolorSlashMaterial(colorA: number, colorB: number): T
 }
 
 /**
- * Brush-textured ribbon material for watercolor motion trails.
+ * Brush-textured ribbon material for watercolor motion trails (with dry-brush tail breakup).
  */
 export function createWatercolorTrailMaterial(brushTex: THREE.Texture): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
@@ -1597,8 +2127,11 @@ export function createWatercolorTrailMaterial(brushTex: THREE.Texture): THREE.Sh
       varying vec2 vUv;
       varying vec3 vColor;
       void main() {
-        float a = texture2D(uMap, vec2(0.5, vUv.y)).a;
-        gl_FragColor = vec4(vColor, a * 0.78);
+        float stroke = texture2D(uMap, vec2(vUv.x, vUv.y)).a;
+        float tailBreakup = smoothstep(0.05, 0.55, 1.0 - vUv.x) * 0.65 + 0.35;
+        float a = stroke * tailBreakup;
+        if (a < 0.03) discard;
+        gl_FragColor = vec4(vColor, a * 0.86);
       }
     `,
     transparent: true,

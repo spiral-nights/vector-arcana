@@ -6,6 +6,7 @@ import { buildRibbonGeometry, createNeonRibbonMaterial } from './NeonShaders';
 import {
   buildInkOutlineGeometry,
   createSumiInkMaterial,
+  createWatercolorRibbonMaterial,
   createWatercolorTrailMaterial,
   getWatercolorAssets,
 } from './WatercolorAssets';
@@ -31,7 +32,7 @@ interface TrailRecord {
 }
 
 interface DashGhost {
-  mesh: THREE.Mesh;
+  mesh: THREE.Object3D;
   life: number;
   maxLife: number;
 }
@@ -60,8 +61,12 @@ export class MotionTrails {
     this.trails.clear();
     for (const gh of this.ghosts) {
       this.scene.remove(gh.mesh);
-      gh.mesh.geometry.dispose();
-      (gh.mesh.material as THREE.Material).dispose();
+      gh.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.geometry.dispose();
+          if (child.material instanceof THREE.Material) child.material.dispose();
+        }
+      });
     }
     this.ghosts.length = 0;
   }
@@ -246,7 +251,7 @@ export class MotionTrails {
       this.trails.set(key, rec);
     } else {
       rec.maxAge = maxAge;
-      rec.halfWidth = halfWidth;
+      rec.halfWidth = this.artStyle === 'WATERCOLOR_INK' ? halfWidth * 1.35 : halfWidth;
       rec.color.setHex(colorHex);
       rec.tailColor.setHex(tailColorHex);
     }
@@ -343,12 +348,29 @@ export class MotionTrails {
           stalkersAlive.add(e.id);
           const prev = this.lastStalkerPos.get(e.id);
           if (prev && Math.hypot(e.x - prev.x, e.y - prev.y) > 75) {
-            const flashMesh = new THREE.Mesh(
-              buildRibbonGeometry([prev, { x: e.x, y: e.y }], 4.6, false, 14),
-              createNeonRibbonMaterial(0x00f5ff, 1.35, 0.92)
-            );
-            this.scene.add(flashMesh);
-            this.ghosts.push({ mesh: flashMesh, life: 0.24, maxLife: 0.24 });
+            if (this.artStyle === 'WATERCOLOR_INK') {
+              const g = new THREE.Group();
+              const wash = new THREE.Mesh(
+                buildRibbonGeometry([prev, { x: e.x, y: e.y }], 6.2, false, 14),
+                createWatercolorRibbonMaterial(0x00f5ff, 0.88, 0.4)
+              );
+              wash.renderOrder = 13;
+              const ink = new THREE.Mesh(
+                buildInkOutlineGeometry([prev, { x: e.x, y: e.y }], 3.0, false, 14.6, 2.0, 0.45),
+                createSumiInkMaterial(0.94, 0.55)
+              );
+              ink.renderOrder = 15;
+              g.add(wash, ink);
+              this.scene.add(g);
+              this.ghosts.push({ mesh: g, life: 0.24, maxLife: 0.24 });
+            } else {
+              const flashMesh = new THREE.Mesh(
+                buildRibbonGeometry([prev, { x: e.x, y: e.y }], 4.6, false, 14),
+                createNeonRibbonMaterial(0x00f5ff, 1.35, 0.92)
+              );
+              this.scene.add(flashMesh);
+              this.ghosts.push({ mesh: flashMesh, life: 0.24, maxLife: 0.24 });
+            }
           }
           this.lastStalkerPos.set(e.id, { x: e.x, y: e.y });
         }
@@ -386,14 +408,20 @@ export class MotionTrails {
       gh.life -= safeDt;
       if (gh.life <= 0) {
         this.scene.remove(gh.mesh);
-        gh.mesh.geometry.dispose();
-        (gh.mesh.material as THREE.Material).dispose();
+        gh.mesh.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.geometry.dispose();
+            if (child.material instanceof THREE.Material) child.material.dispose();
+          }
+        });
         this.ghosts.splice(i, 1);
       } else {
-        const mat = gh.mesh.material as THREE.ShaderMaterial;
-        if (mat.uniforms.uOpacity) {
-          mat.uniforms.uOpacity.value = (gh.life / gh.maxLife) * 0.78;
-        }
+        const op = (gh.life / gh.maxLife) * 0.78;
+        gh.mesh.traverse((child) => {
+          if (child instanceof THREE.Mesh && child.material instanceof THREE.ShaderMaterial && child.material.uniforms.uOpacity) {
+            child.material.uniforms.uOpacity.value = op;
+          }
+        });
       }
     }
   }
