@@ -1,3 +1,4 @@
+import { getAugmentStacks } from './Augments';
 import { createEnemy, normalizeAngle, stepEnemyAI } from './EnemyAI';
 import { computeComposition, ResolvedSelfCast, ResolvedSpell } from './SpellResolver';
 import {
@@ -5,6 +6,7 @@ import {
   ARENA_HALF_W,
   ArenaBlock,
   ArenaPillar,
+  AugmentId,
   BeamEntity,
   ChannelState,
   ChargeState,
@@ -183,6 +185,12 @@ export class CombatEngine {
   private hitNumberAccum = new Map<number, { dmg: number; timer: number; color: number; x: number; y: number }>();
   private comboTextCooldown = new Map<number, number>();
   private splashCooldown = new Map<number, number>();
+  private augments: Partial<Record<AugmentId, number>> = {};
+  private refractedBeamIds = new Map<string, number[]>();
+
+  public setAugments(augments: Partial<Record<AugmentId, number>>): void {
+    this.augments = augments;
+  }
 
   private getSpellAccentColor(elements: readonly QueueElement[], comp: ElementComposition): number {
     if (elements.includes('VOID')) {
@@ -216,6 +224,7 @@ export class CombatEngine {
     this.hitNumberAccum.clear();
     this.comboTextCooldown.clear();
     this.splashCooldown.clear();
+    this.refractedBeamIds.clear();
   }
 
   public clearTransientForSector(): void {
@@ -231,6 +240,7 @@ export class CombatEngine {
     this.hitNumberAccum.clear();
     this.comboTextCooldown.clear();
     this.splashCooldown.clear();
+    this.refractedBeamIds.clear();
   }
 
   public spawnEnemy(archetype: EnemyArchetype, x: number, y: number, wave: number): EnemyEntity {
@@ -577,13 +587,15 @@ export class CombatEngine {
       }
 
       if (firstEnemy) {
+        const superStacks = getAugmentStacks(this.augments, 'SUPERCONDUCTOR');
+        const relayedMineIds = new Set<number>();
         let cur: EnemyEntity | null = firstEnemy;
-        let maxJumps = cur.statuses.PRIMED ? 9 : 6;
+        let maxJumps = (cur.statuses.PRIMED ? 9 : 6) + superStacks * 3;
         while (cur && hitEnemyIds.size < maxJumps) {
           hitEnemyIds.add(cur.id);
           pts.push({ x: cur.x, y: cur.y });
           const isPrimed = Boolean(cur.statuses.PRIMED);
-          if (isPrimed) maxJumps = 9;
+          if (isPrimed) maxJumps = 9 + superStacks * 3;
           // Lightning interrupts enemy beam charge / stalker windup
           if (cur.aiState === 'CHARGE' || cur.aiState === 'TELEPORT_WINDUP') {
             cur.aiState = 'SEEK';
@@ -603,6 +615,28 @@ export class CombatEngine {
             if (d < nextDist) {
               nextDist = d;
               nextTarget = candidate;
+            }
+          }
+          // Superconductor: relay arc off deployed Mines to reach further enemies
+          if (!nextTarget && superStacks > 0) {
+            let bestRelayDist = jumpRange;
+            for (const m of this.mines) {
+              if (relayedMineIds.has(m.id)) continue;
+              const dMine = Math.hypot(m.x - cur.x, m.y - cur.y);
+              if (dMine > jumpRange) continue;
+              for (const candidate of this.enemies) {
+                if (hitEnemyIds.has(candidate.id) || candidate.hp <= 0) continue;
+                const dEnemy = Math.hypot(candidate.x - m.x, candidate.y - m.y);
+                if (dEnemy <= jumpRange && dMine + dEnemy < bestRelayDist * 2) {
+                  bestRelayDist = (dMine + dEnemy) * 0.5;
+                  relayedMineIds.add(m.id);
+                  pts.push({ x: m.x, y: m.y });
+                  events.push({ type: 'vfx_burst', x: m.x, y: m.y, colorHex: 0xfff733, count: 6, radius: 26 });
+                  nextTarget = candidate;
+                  break;
+                }
+              }
+              if (nextTarget) break;
             }
           }
           cur = nextTarget;
@@ -1008,11 +1042,12 @@ export class CombatEngine {
   private detonateRock(p: ProjectileEntity, events: SimEvent[], hitTarget = true): void {
     const counts = p.composition.counts;
     const kineticCount = counts.KINETIC ?? 1;
-    const blastRadius = 95 + kineticCount * 38;
+    const singStacks = p.elements.includes('VOID') ? getAugmentStacks(this.augments, 'SINGULARITY_PULL') : 0;
+    const blastRadius = (95 + kineticCount * 38) * (singStacks > 0 ? 1.3 : 1);
 
     const rockAccent = this.getSpellAccentColor(p.elements, p.composition);
     const rockShardCols = this.getSpellParticleColors(p.elements, p.colors);
-    const knockback = p.elements.includes('VOID') ? -240 : 320;
+    const knockback = p.elements.includes('VOID') ? -240 - singStacks * 150 : 320;
     const hits = this.applyAoEDamage(p.x, p.y, blastRadius, p.damage, p.elements, knockback, events);
     events.push({ type: 'grid_impulse', x: p.x, y: p.y, strength: 220 + kineticCount * 90, radius: blastRadius + 50 });
     events.push({
@@ -1210,6 +1245,31 @@ export class CombatEngine {
           hitIds: [e.id],
           spin: 0,
         });
+      }
+
+      // Permafrost Detonation: blast nearby enemies for 75% of shattered enemy's max HP
+      const pfStacks = getAugmentStacks(this.augments, 'PERMAFROST_DETONATION');
+      if (pfStacks > 0) {
+        const pfDmg = e.maxHp * (0.75 + (pfStacks - 1) * 0.35);
+        const pfRadius = 165;
+        for (const other of this.enemies) {
+          if (other.id !== e.id && other.hp > 0 && Math.hypot(other.x - e.x, other.y - e.y) <= pfRadius + other.radius) {
+            other.hp -= pfDmg / (1 + other.baseArmor);
+            other.hitFlash = 0.12;
+            this.setStatus(other, 'CHILLED', 2.5, 1);
+          }
+        }
+        events.push({ type: 'vfx_ring', x: e.x, y: e.y, radius: pfRadius, colorHex: 0x00f5ff, duration: 0.32 });
+        events.push({
+          type: 'vfx_element_explosion',
+          x: e.x,
+          y: e.y,
+          radius: pfRadius * 0.9,
+          elements: ['CRYSTAL'],
+          colors: [0x80ffff, 0x00f5ff],
+          power: pfStacks + 1,
+        });
+        events.push({ type: 'damage_number', x: e.x, y: e.y - e.radius - 28, text: 'PERMAFROST!', colorHex: 0x80ffff, big: true });
       }
     }
 
@@ -1503,7 +1563,10 @@ export class CombatEngine {
       } else {
         ch.tickTimer -= dt;
         if (ch.tickTimer <= 0) {
-          ch.tickTimer = ch.delivery === 'SPRAY' ? 0.06 : 0.075;
+          const baseCd = ch.delivery === 'SPRAY' ? 0.06 : 0.075;
+          const ocStacks = player.overclockTimer > 0 ? getAugmentStacks(this.augments, 'OVERCLOCKED_QUEUE') : 0;
+          const rateMult = ocStacks > 0 ? Math.max(0.55, 1 - 0.2 * ocStacks) : 1;
+          ch.tickTimer = baseCd * rateMult;
           this.emitChannelTick(player, ch, events);
         }
       }
@@ -1663,7 +1726,10 @@ export class CombatEngine {
       }
     }
 
-    // Update beams, Beam Clashes, and Beam hits (only create puddles on object hit!)
+    // Update beams, Beam Clashes, Prism Refraction, Singularity Pull, and Beam hits
+    const prismStacks = getAugmentStacks(this.augments, 'PRISM_REFRACTION');
+    const singBeamStacks = getAugmentStacks(this.augments, 'SINGULARITY_PULL');
+    const activeRefractKeys = new Set<string>();
     for (let i = this.beams.length - 1; i >= 0; i--) {
       const b = this.beams[i]!;
       const isChanneled = player.channel && player.channel.beamId === b.id;
@@ -1740,12 +1806,97 @@ export class CombatEngine {
         const effectiveLen = b.clashing ? b.clashDist : b.length;
         for (const e of this.enemies) {
           if (e.hp <= 0) continue;
-          const { perpDist } = pointToRayDist(e.x, e.y, b.x, b.y, cos, sin, effectiveLen);
+          const { perpDist, along } = pointToRayDist(e.x, e.y, b.x, b.y, cos, sin, effectiveLen);
           if (perpDist <= e.radius + b.width * 0.5) {
             this.applyElementalHit(e, b.damagePerSec * dt, b.elements, cos, sin, events);
             if (b.elements.includes('FLUX')) {
               e.vx += cos * 220 * dt;
               e.vy += sin * 220 * dt;
+            }
+          }
+          // Singularity Pull: Void beams pull nearby enemies inward toward beam axis
+          if (singBeamStacks > 0 && b.elements.includes('VOID') && along > 10 && perpDist > 8 && perpDist <= 165) {
+            const cx = b.x + cos * along;
+            const cy = b.y + sin * along;
+            const pdx = cx - e.x;
+            const pdy = cy - e.y;
+            const pd = Math.max(1, Math.hypot(pdx, pdy));
+            const pull = 220 * singBeamStacks * dt;
+            e.vx += (pdx / pd) * pull;
+            e.vy += (pdy / pd) * pull;
+          }
+        }
+
+        // Prism Refraction: beams passing through player's Barrier Shield split into 3 diverging beams
+        if (prismStacks > 0 && !b.refracted) {
+          for (const s of this.shields) {
+            // Exact forward ray-circle intersection against shield membrane at radius s.radius
+            const rx = b.x - s.x;
+            const ry = b.y - s.y;
+            const bProj = rx * cos + ry * sin;
+            const cDist = rx * rx + ry * ry - s.radius * s.radius;
+            const disc = bProj * bProj - cDist;
+            if (disc < 0) continue;
+            const sqrtDisc = Math.sqrt(disc);
+            const t1 = -bProj - sqrtDisc;
+            const t2 = -bProj + sqrtDisc;
+            const along = t1 > 8 ? t1 : t2 > 8 ? t2 : -1;
+            if (along <= 8 || along > effectiveLen) continue;
+            const ox = b.x + cos * along;
+            const oy = b.y + sin * along;
+            if (!s.isNova) {
+              const hitAng = Math.atan2(oy - s.y, ox - s.x);
+              if (Math.abs(normalizeAngle(hitAng - s.angle)) > s.arc) continue;
+            }
+            {
+              const rKey = `${b.id}:${s.id}`;
+              activeRefractKeys.add(rKey);
+              let childIds = this.refractedBeamIds.get(rKey);
+              const offsets = [-0.36, 0, 0.36];
+              if (!childIds) {
+                childIds = offsets.map(() => this.nextId++);
+                this.refractedBeamIds.set(rKey, childIds);
+              }
+              const dmgFactor = 0.65 + (prismStacks - 1) * 0.15;
+              for (let oi = 0; oi < offsets.length; oi++) {
+                const cid = childIds[oi]!;
+                const ang = b.angle + offsets[oi]!;
+                const existing = this.beams.find((rb) => rb.id === cid);
+                if (existing) {
+                  existing.x = ox;
+                  existing.y = oy;
+                  existing.angle = ang;
+                  existing.length = Math.max(260, b.length * 0.72);
+                  existing.width = Math.max(12, b.width * 0.72);
+                  existing.damagePerSec = b.damagePerSec * dmgFactor;
+                  existing.life = dt * 2.5;
+                  existing.maxLife = 0.25;
+                  existing.colorHex = b.colorHex;
+                  existing.colors = b.colors;
+                  existing.elements = b.elements;
+                  existing.composition = b.composition;
+                } else {
+                  this.beams.push({
+                    id: cid,
+                    owner: 'PLAYER',
+                    x: ox,
+                    y: oy,
+                    angle: ang,
+                    length: Math.max(260, b.length * 0.72),
+                    width: Math.max(12, b.width * 0.72),
+                    damagePerSec: b.damagePerSec * dmgFactor,
+                    life: dt * 2.5,
+                    maxLife: 0.25,
+                    colorHex: b.colorHex,
+                    colors: b.colors,
+                    elements: b.elements,
+                    composition: b.composition,
+                    clashing: false,
+                    clashDist: Math.max(260, b.length * 0.72),
+                    refracted: true,
+                  });
+                }
+              }
             }
           }
         }
@@ -1802,6 +1953,11 @@ export class CombatEngine {
         if (perpDist <= 16 + b.width * 0.4) {
           this.damagePlayer(player, 24 * dt + 10, undefined, onPlayerDamaged, events);
         }
+      }
+    }
+    for (const key of this.refractedBeamIds.keys()) {
+      if (!activeRefractKeys.has(key)) {
+        this.refractedBeamIds.delete(key);
       }
     }
 
@@ -1946,6 +2102,15 @@ export class CombatEngine {
           }
           events.push({ type: 'vfx_shatter', x: w.x, y: w.y, colorHex: 0x80ffff });
         }
+        const tectStacks = getAugmentStacks(this.augments, 'TECTONIC_MINES');
+        if (tectStacks > 0) {
+          this.spawnMine(w.x, w.y, w.colorHex, w.composition, w.elements);
+          const spawned = this.mines[this.mines.length - 1];
+          if (spawned && tectStacks > 1) {
+            spawned.damage = Math.round(spawned.damage * (1 + (tectStacks - 1) * 0.35));
+          }
+          events.push({ type: 'sfx', sound: 'mine_deploy' });
+        }
         this.walls.splice(i, 1);
       }
     }
@@ -1967,10 +2132,16 @@ export class CombatEngine {
       if (triggered) {
         const mineAccent = this.getSpellAccentColor(m.elements, m.composition);
         const mineShardCols = this.getSpellParticleColors(m.elements, m.colors);
-        this.applyAoEDamage(m.x, m.y, m.blastRadius, m.damage, m.elements, 280, events);
-        events.push({ type: 'vfx_burst', x: m.x, y: m.y, colorHex: mineAccent, count: 20, radius: m.blastRadius * 0.6 });
+        const singMineStacks = m.elements.includes('VOID') ? getAugmentStacks(this.augments, 'SINGULARITY_PULL') : 0;
+        const blastR = m.blastRadius * (singMineStacks > 0 ? 1.25 : 1);
+        const knockback = singMineStacks > 0 ? -240 * singMineStacks : 280;
+        this.applyAoEDamage(m.x, m.y, blastR, m.damage, m.elements, knockback, events);
+        if (singMineStacks > 0) {
+          events.push({ type: 'grid_well', x: m.x, y: m.y, strength: 220 * singMineStacks, radius: blastR + 30 });
+        }
+        events.push({ type: 'vfx_burst', x: m.x, y: m.y, colorHex: mineAccent, count: 20, radius: blastR * 0.6 });
         events.push({ type: 'vfx_shards', x: m.x, y: m.y, colors: mineShardCols, count: 14, speedScale: 1.1 });
-        events.push({ type: 'vfx_ring', x: m.x, y: m.y, radius: m.blastRadius, colorHex: mineAccent });
+        events.push({ type: 'vfx_ring', x: m.x, y: m.y, radius: blastR, colorHex: mineAccent });
         events.push({ type: 'grid_impulse', x: m.x, y: m.y, strength: 220, radius: m.blastRadius + 30 });
         events.push({ type: 'sfx', sound: 'mine_explode' });
         this.mines.splice(i, 1);

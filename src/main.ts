@@ -1,3 +1,4 @@
+import { SynthAudio } from './audio/SynthAudio';
 import { SceneManager } from './render/SceneManager';
 import { WarpingGrid } from './render/WarpingGrid';
 import { EntityRenderer } from './render/EntityRenderer';
@@ -5,6 +6,39 @@ import { SpellVFX } from './render/SpellVFX';
 import { GameSim } from './sim/GameSim';
 import { BaseElement, CastMode, ControlPreset, ELEMENT_META, FIXED_DT } from './sim/types';
 import { HUD } from './ui/HUD';
+
+const HIGHSCORE_KEY = 'vector-arcana-highscores-v1';
+
+interface HighScoreEntry {
+  score: number;
+  wave: number;
+}
+
+function loadHighScores(): HighScoreEntry[] {
+  try {
+    const raw = window.localStorage.getItem(HIGHSCORE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((x): x is HighScoreEntry => typeof x?.score === 'number' && typeof x?.wave === 'number')
+      .slice(0, 5);
+  } catch {
+    return [];
+  }
+}
+
+function recordHighScore(score: number, wave: number): HighScoreEntry[] {
+  const next = [...loadHighScores(), { score: Math.round(score), wave }]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+  try {
+    window.localStorage.setItem(HIGHSCORE_KEY, JSON.stringify(next));
+  } catch {
+    // Ignore storage quota / privacy mode restrictions
+  }
+  return next;
+}
 
 const KEY_TO_ELEMENT: Record<string, BaseElement> = {
   KeyQ: 'FLUX',
@@ -24,11 +58,13 @@ const sceneManager = new SceneManager(appEl);
 const warpingGrid = new WarpingGrid(sceneManager.scene);
 const entityRenderer = new EntityRenderer(sceneManager.scene);
 const spellVFX = new SpellVFX(sceneManager.scene);
-const sim = new GameSim();
+const synthAudio = new SynthAudio();
+const sim = new GameSim('TITLE');
 
 let preset: ControlPreset = 'CLASSIC';
 let muted = false;
 let hitStopTimer = 0;
+let highScores = loadHighScores();
 
 const keysDown = new Set<string>();
 let lmbDown = false;
@@ -67,6 +103,7 @@ const hud = new HUD(hudEl, {
   },
   onToggleMute: () => {
     muted = !muted;
+    synthAudio.setMuted(muted);
     hud.setMuted(muted);
   },
   onTogglePause: () => {
@@ -75,9 +112,15 @@ const hud = new HUD(hudEl, {
     else if (snap.phase === 'PAUSED') sim.setPhase('PLAYING');
   },
   onStartGame: () => {
+    synthAudio.unlock();
+    clearHeldInputs();
     sim.startNewRun();
   },
-  onPickAugment: () => {},
+  onPickAugment: (index: number) => {
+    synthAudio.unlock();
+    clearHeldInputs();
+    sim.pickAugment(index);
+  },
 });
 
 const stopContextMenu = (e: Event): void => {
@@ -103,6 +146,7 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mousedown', (e) => {
+  synthAudio.unlock();
   syncShiftFromMouse(e);
   if (e.button === 1) {
     e.preventDefault();
@@ -144,7 +188,18 @@ window.addEventListener('mouseup', (e) => {
 
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
+  synthAudio.unlock();
   keysDown.add(e.code);
+
+  const curPhase = sim.getSnapshot().phase;
+  if (curPhase === 'AUGMENT_CHOICE') {
+    if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') {
+      const idx = e.code === 'Digit1' ? 0 : e.code === 'Digit2' ? 1 : 2;
+      clearHeldInputs();
+      sim.pickAugment(idx);
+    }
+    return;
+  }
 
   const el = KEY_TO_ELEMENT[e.code];
   if (el) {
@@ -161,13 +216,13 @@ window.addEventListener('keydown', (e) => {
       pendingDash = true;
     }
   } else if (e.code === 'Enter') {
-    if (sim.getSnapshot().phase === 'GAME_OVER') {
+    if (curPhase === 'TITLE' || curPhase === 'GAME_OVER') {
+      clearHeldInputs();
       sim.startNewRun();
     }
   } else if (e.code === 'Escape') {
-    const snap = sim.getSnapshot();
-    if (snap.phase === 'PLAYING') sim.setPhase('PAUSED');
-    else if (snap.phase === 'PAUSED') sim.setPhase('PLAYING');
+    if (curPhase === 'PLAYING') sim.setPhase('PAUSED');
+    else if (curPhase === 'PAUSED') sim.setPhase('PLAYING');
   }
 });
 
@@ -270,6 +325,10 @@ function frame(now: number): void {
       hud.showWaveBanner(ev.wave, ev.isBoss);
     } else if (ev.type === 'gate_open') {
       hud.showGateOpenBanner();
+    } else if (ev.type === 'sfx') {
+      synthAudio.play(ev.sound, ev.colorHex);
+    } else if (ev.type === 'game_over') {
+      highScores = recordHighScore(ev.score, ev.wave);
     }
   }
 
@@ -292,7 +351,7 @@ function frame(now: number): void {
   if (hudTimer >= 0.05) {
     hudTimer = 0;
     const shiftHeld = keysDown.has('ShiftLeft') || keysDown.has('ShiftRight');
-    hud.update(snapshot, [], preset === 'CLASSIC' && shiftHeld);
+    hud.update(snapshot, highScores, preset === 'CLASSIC' && shiftHeld);
   }
 
   sceneManager.render(rawDt);

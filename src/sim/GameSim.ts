@@ -1,9 +1,12 @@
+import { getAugmentStacks, rollAugmentChoices } from './Augments';
 import { CombatEngine } from './CombatEngine';
 import { enqueueElement, resolveSelfCast, resolveSpell } from './SpellResolver';
 import { WaveDirector } from './WaveDirector';
 import {
   ARENA_HALF_H,
   ARENA_HALF_W,
+  AugmentDef,
+  AugmentId,
   FIXED_DT,
   PlayerState,
   SimEvent,
@@ -48,9 +51,12 @@ export class GameSim {
   private player: PlayerState = createInitialPlayer();
   public readonly combat = new CombatEngine();
   public readonly waveDirector = new WaveDirector();
+  public augments: Partial<Record<AugmentId, number>> = {};
+  public pendingAugments: AugmentDef[] = [];
   private events: SimEvent[] = [];
 
-  constructor() {
+  constructor(initialPhase: SimSnapshot['phase'] = 'PLAYING') {
+    this.phase = initialPhase;
     this.waveDirector.startWave(1, this.events);
   }
 
@@ -58,10 +64,33 @@ export class GameSim {
     this.phase = 'PLAYING';
     this.tick = 0;
     this.player = createInitialPlayer();
+    this.augments = {};
+    this.pendingAugments = [];
     this.combat.reset();
+    this.combat.setAugments(this.augments);
     this.waveDirector.reset();
     this.events.length = 0;
     this.waveDirector.startWave(1, this.events);
+  }
+
+  public pickAugment(index: number): boolean {
+    if (this.phase !== 'AUGMENT_CHOICE') return false;
+    const chosen = this.pendingAugments[index];
+    if (!chosen) return false;
+    this.augments[chosen.id] = (this.augments[chosen.id] ?? 0) + 1;
+    this.combat.setAugments(this.augments);
+    this.pendingAugments = [];
+    this.phase = 'PLAYING';
+    this.events.push({ type: 'sfx', sound: 'augment_pick' });
+    this.events.push({
+      type: 'vfx_ring',
+      x: this.player.x,
+      y: this.player.y,
+      radius: 110,
+      colorHex: parseInt(chosen.color.slice(1), 16),
+      duration: 0.35,
+    });
+    return true;
   }
 
   public setPhase(phase: SimSnapshot['phase']): void {
@@ -71,6 +100,7 @@ export class GameSim {
   public step(input: SimInput): void {
     if (this.phase !== 'PLAYING') return;
     this.tick++;
+    this.combat.setAugments(this.augments);
 
     const p = this.player;
     const dxAim = input.aimX - p.x;
@@ -82,10 +112,23 @@ export class GameSim {
     p.dashCooldown = Math.max(0, p.dashCooldown - FIXED_DT);
     p.invulnTimer = Math.max(0, p.invulnTimer - FIXED_DT);
     p.castCooldown = Math.max(0, p.castCooldown - FIXED_DT);
+    p.overclockTimer = Math.max(0, p.overclockTimer - FIXED_DT);
     p.wardRemaining = Math.max(0, p.wardRemaining - FIXED_DT);
     if (p.wardRemaining <= 0) {
       p.wardElement = null;
     }
+
+    const ocStacks = getAugmentStacks(this.augments, 'OVERCLOCKED_QUEUE');
+    const tryTriggerOverclock = (uniqueCount: number): void => {
+      if (ocStacks > 0 && uniqueCount >= 3) {
+        p.overclockTimer = p.overclockMax;
+        this.events.push({ type: 'vfx_ring', x: p.x, y: p.y, radius: 75, colorHex: 0x39ff14, duration: 0.25 });
+      }
+    };
+    const getOcCooldownMult = (): number =>
+      p.overclockTimer > 0 && ocStacks > 0 ? Math.max(0.5, 1 - (0.2 + (ocStacks - 1) * 0.08)) : 1;
+    const getOcMoveMult = (): number =>
+      p.overclockTimer > 0 && ocStacks > 0 ? 1 + 0.25 + (ocStacks - 1) * 0.1 : 1;
 
     for (const el of input.queuedElements) {
       const res = enqueueElement(p.queue, el, 'IGNORE');
@@ -115,6 +158,7 @@ export class GameSim {
         const slashSpell = resolveSpell(p.queue, 'DASH');
         if (slashSpell) {
           this.combat.castSpell(p, slashSpell, input.aimX, input.aimY, this.events);
+          tryTriggerOverclock(slashSpell.uniqueCount);
           p.queue = [];
         }
       }
@@ -134,8 +178,9 @@ export class GameSim {
               this.combat.stopChannel(p);
             }
           }
+          tryTriggerOverclock(new Set(selfCast.elements).size);
           p.queue = [];
-          p.castCooldown = 0.16;
+          p.castCooldown = 0.16 * getOcCooldownMult();
         }
       } else if (input.castAction === 'FORWARD' || input.castAction === 'NOVA') {
         const spell = resolveSpell(p.queue, input.castAction);
@@ -152,8 +197,9 @@ export class GameSim {
           } else {
             this.combat.castSpell(p, spell, input.aimX, input.aimY, this.events);
           }
+          tryTriggerOverclock(spell.uniqueCount);
           p.queue = [];
-          p.castCooldown = 0.16;
+          p.castCooldown = 0.16 * getOcCooldownMult();
         }
       }
     }
@@ -203,7 +249,8 @@ export class GameSim {
         }
       }
 
-      const maxSpeed = p.channel ? 165 * 0.68 : p.charge ? 165 * 0.65 : 165;
+      const baseSpeed = 165 * getOcMoveMult();
+      const maxSpeed = p.channel ? baseSpeed * 0.68 : p.charge ? baseSpeed * 0.65 : baseSpeed;
       const accel = 13;
       p.vx += (mx * maxSpeed - p.vx) * Math.min(1, accel * FIXED_DT);
       p.vy += (my * maxSpeed - p.vy) * Math.min(1, accel * FIXED_DT);
@@ -283,6 +330,9 @@ export class GameSim {
       p.hp = Math.min(p.maxHp, p.hp + 25);
       this.combat.clearTransientForSector();
       this.waveDirector.startWave(nextSector, this.events);
+      this.pendingAugments = rollAugmentChoices();
+      this.phase = 'AUGMENT_CHOICE';
+      this.events.push({ type: 'augment_offer', choices: this.pendingAugments });
     }
 
     if (p.hp <= 0) {
@@ -323,8 +373,8 @@ export class GameSim {
       rifts: this.waveDirector.rifts,
       hazards: this.combat.hazards,
       gate: this.waveDirector.gate,
-      augments: {},
-      pendingAugments: [],
+      augments: { ...this.augments },
+      pendingAugments: [...this.pendingAugments],
       boss: warden ? { name: 'SECTOR WARDEN', hp: warden.hp, maxHp: warden.maxHp } : null,
     };
   }

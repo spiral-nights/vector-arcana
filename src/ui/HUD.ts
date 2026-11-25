@@ -1,5 +1,6 @@
+import { getAugmentDef } from '../sim/Augments';
 import { formatSpellPreview } from '../sim/SpellResolver';
-import { ARENA_HALF_H, ARENA_HALF_W, BASE_ELEMENTS, ControlPreset, ELEMENT_META, QueueElement, SimSnapshot } from '../sim/types';
+import { ARENA_HALF_H, ARENA_HALF_W, AugmentId, BASE_ELEMENTS, ControlPreset, ELEMENT_META, QueueElement, SimSnapshot } from '../sim/types';
 
 export interface HUDCallbacks {
   onToggleTilt: () => void;
@@ -78,41 +79,49 @@ export class HUD {
   private readonly tiltBtn: HTMLButtonElement;
   private readonly ctrlBtn: HTMLButtonElement;
   private readonly muteBtn: HTMLButtonElement;
+  private readonly pauseBtn: HTMLButtonElement;
+  private readonly augmentsStrip: HTMLElement;
 
   private readonly startModal: HTMLElement;
+  private readonly pauseModal: HTMLElement;
   private readonly augmentModal: HTMLElement;
   private readonly augmentGrid: HTMLElement;
   private readonly gameOverModal: HTMLElement;
   private readonly gameOverSub: HTMLElement;
   private readonly highscoresEl: HTMLElement;
+  private lastAugmentKey = '';
+  private lastActiveAugKey = '';
 
   constructor(container: HTMLElement, callbacks: HUDCallbacks) {
     this.root = container;
     this.root.innerHTML = `
       <div class="hud-top">
-        <div class="hud-panel hud-stats">
-          <div class="stat-block">
-            <span class="stat-label">Sector</span>
-            <span class="stat-value" id="hud-wave">1</span>
-          </div>
-          <div class="stat-block">
-            <span class="stat-label">Score</span>
-            <span class="stat-value" id="hud-score">0</span>
-          </div>
-          <div class="stat-block">
-            <span class="stat-label">Mult</span>
-            <span class="stat-value stat-mult" id="hud-mult">x1</span>
-          </div>
-          <div class="bars-stack">
-            <div class="bar-row">
-              <div class="bar-header"><span>HULL</span><span id="hud-hull-txt">100/100</span></div>
-              <div class="bar-track"><div class="bar-fill hull" id="hud-hull-fill" style="width:100%"></div></div>
+        <div class="hud-top-left">
+          <div class="hud-panel hud-stats">
+            <div class="stat-block">
+              <span class="stat-label">Sector</span>
+              <span class="stat-value" id="hud-wave">1</span>
             </div>
-            <div class="bar-row">
-              <div class="bar-header"><span>OVERDRIVE</span></div>
-              <div class="bar-track"><div class="bar-fill overdrive" id="hud-od-fill" style="width:0%"></div></div>
+            <div class="stat-block">
+              <span class="stat-label">Score</span>
+              <span class="stat-value" id="hud-score">0</span>
+            </div>
+            <div class="stat-block">
+              <span class="stat-label">Mult</span>
+              <span class="stat-value stat-mult" id="hud-mult">x1</span>
+            </div>
+            <div class="bars-stack">
+              <div class="bar-row">
+                <div class="bar-header"><span>HULL</span><span id="hud-hull-txt">100/100</span></div>
+                <div class="bar-track"><div class="bar-fill hull" id="hud-hull-fill" style="width:100%"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-header"><span>OVERDRIVE</span></div>
+                <div class="bar-track"><div class="bar-fill overdrive" id="hud-od-fill" style="width:0%"></div></div>
+              </div>
             </div>
           </div>
+          <div class="augments-strip" id="hud-augments"></div>
         </div>
         <div class="hud-controls">
           <button class="hud-btn active" id="btn-tilt">TILT: 26°</button>
@@ -151,9 +160,17 @@ export class HUD {
           <div class="modal-title">Vector Arcana</div>
           <div class="modal-sub">
             Queue up to 3 elements with <strong>Q W E R</strong> / <strong>A S D F</strong>.<br/>
-            Hold <strong>LMB</strong> or <strong>Arrows</strong> to move · <strong>RMB</strong> Forward Cast · <strong>Shift+RMB</strong> Nova · <strong>MMB/Space</strong> Self · <strong>Shift+LMB</strong> Phase Slash.
+            Hold <strong>LMB</strong> or <strong>Arrows</strong> to move · <strong>RMB</strong> Forward Cast · <strong>Space</strong> / <strong>Shift+RMB</strong> Nova · <strong>MMB/C</strong> Self · <strong>Shift+LMB</strong> Phase Dash.
           </div>
           <button class="primary-btn" id="btn-start">Launch Construct</button>
+        </div>
+      </div>
+
+      <div class="modal-backdrop" id="modal-pause">
+        <div class="modal-card">
+          <div class="modal-title">System Paused</div>
+          <div class="modal-sub">Press <strong>Esc</strong> or click below to resume defense protocols.</div>
+          <button class="primary-btn" id="btn-resume">Resume Construct</button>
         </div>
       </div>
 
@@ -195,8 +212,11 @@ export class HUD {
     this.tiltBtn = this.root.querySelector('#btn-tilt')!;
     this.ctrlBtn = this.root.querySelector('#btn-ctrl')!;
     this.muteBtn = this.root.querySelector('#btn-mute')!;
+    this.pauseBtn = this.root.querySelector('#btn-pause')!;
+    this.augmentsStrip = this.root.querySelector('#hud-augments')!;
 
     this.startModal = this.root.querySelector('#modal-start')!;
+    this.pauseModal = this.root.querySelector('#modal-pause')!;
     this.augmentModal = this.root.querySelector('#modal-augment')!;
     this.augmentGrid = this.root.querySelector('#augment-grid')!;
     this.gameOverModal = this.root.querySelector('#modal-gameover')!;
@@ -221,7 +241,8 @@ export class HUD {
     this.tiltBtn.addEventListener('click', callbacks.onToggleTilt);
     this.ctrlBtn.addEventListener('click', callbacks.onToggleControls);
     this.muteBtn.addEventListener('click', callbacks.onToggleMute);
-    this.root.querySelector('#btn-pause')!.addEventListener('click', callbacks.onTogglePause);
+    this.pauseBtn.addEventListener('click', callbacks.onTogglePause);
+    this.root.querySelector('#btn-resume')!.addEventListener('click', callbacks.onTogglePause);
     this.root.querySelector('#btn-start')!.addEventListener('click', callbacks.onStartGame);
     this.root.querySelector('#btn-restart')!.addEventListener('click', callbacks.onStartGame);
     this.setPreset('CLASSIC');
@@ -374,7 +395,7 @@ export class HUD {
         e.archetype === 'BASTION' ? '#e6f0ff' :
         e.archetype === 'STALKER' ? '#00f5ff' :
         e.archetype === 'WEAVER' ? '#b429ff' :
-        e.archetype === 'SPLITTER' ? '#e8741a' : '#ff2e97';
+        e.archetype === 'SPLITTER' ? '#a86b3e' : '#ff2e97';
       const r = e.archetype === 'WARDEN' ? 5 : 2.3;
       ctx.beginPath();
       ctx.arc(toX(e.x), toY(e.y), r, 0, Math.PI * 2);
@@ -480,21 +501,42 @@ export class HUD {
 
     this.drawMinimap(snapshot);
 
+    // Active augments strip (rebuild only when changed)
+    const activeAugEntries = (Object.entries(snapshot.augments) as Array<[AugmentId, number]>).filter(([, n]) => n > 0);
+    const activeAugKey = activeAugEntries.map(([id, n]) => `${id}:${n}`).join('|');
+    if (activeAugKey !== this.lastActiveAugKey) {
+      this.lastActiveAugKey = activeAugKey;
+      this.augmentsStrip.innerHTML = activeAugEntries
+        .map(([id, n]) => {
+          const def = getAugmentDef(id);
+          return `<span class="augment-badge" style="border-color:${def.color}88;color:${def.color}">${def.name}${n > 1 ? ` ×${n}` : ''}</span>`;
+        })
+        .join('');
+    }
+
+    this.pauseBtn.classList.toggle('active', snapshot.phase === 'PAUSED');
     this.startModal.classList.toggle('open', snapshot.phase === 'TITLE');
+    this.pauseModal.classList.toggle('open', snapshot.phase === 'PAUSED');
     this.augmentModal.classList.toggle('open', snapshot.phase === 'AUGMENT_CHOICE');
     this.gameOverModal.classList.toggle('open', snapshot.phase === 'GAME_OVER');
 
     if (snapshot.phase === 'AUGMENT_CHOICE' && snapshot.pendingAugments.length > 0) {
-      this.augmentGrid.innerHTML = snapshot.pendingAugments
-        .map(
-          (aug, idx) => `
-          <div class="augment-card" data-aug-index="${idx}" style="border-color:${aug.color}88">
-            <span class="augment-tag" style="color:${aug.color}">[${idx + 1}] ${aug.tag}</span>
-            <span class="augment-name">${aug.name}</span>
-            <span class="augment-desc">${aug.description}</span>
-          </div>`
-        )
-        .join('');
+      const augKey = snapshot.pendingAugments.map((a) => a.id).join('|');
+      if (augKey !== this.lastAugmentKey) {
+        this.lastAugmentKey = augKey;
+        this.augmentGrid.innerHTML = snapshot.pendingAugments
+          .map(
+            (aug, idx) => `
+            <div class="augment-card" data-aug-index="${idx}" style="border-color:${aug.color}88">
+              <span class="augment-tag" style="color:${aug.color}">[${idx + 1}] ${aug.tag}</span>
+              <span class="augment-name">${aug.name}</span>
+              <span class="augment-desc">${aug.description}</span>
+            </div>`
+          )
+          .join('');
+      }
+    } else if (this.lastAugmentKey !== '') {
+      this.lastAugmentKey = '';
     }
 
     if (snapshot.phase === 'GAME_OVER') {

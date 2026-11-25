@@ -65,6 +65,32 @@ body {
   gap: 20px;
 }
 
+.hud-top-left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.augments-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 480px;
+}
+
+.augment-badge {
+  background: rgba(8, 12, 24, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.55);
+}
+
 .stat-block {
   display: flex;
   flex-direction: column;
