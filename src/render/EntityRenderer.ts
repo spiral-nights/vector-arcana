@@ -1,27 +1,58 @@
 import * as THREE from 'three';
 import { createGlowSprite } from './GlowUtil';
+import { buildRibbonGeometry, createNeonRibbonMaterial, setShaderUniform } from './NeonShaders';
 import { ELEMENT_META, EnemyEntity, QueueElement, SimSnapshot } from '../sim/types';
+
+function createArcPts(radius: number, span: number, segs = 26): Array<{ x: number; y: number }> {
+  const pts: Array<{ x: number; y: number }> = [];
+  const start = Math.PI - span * 0.5;
+  for (let i = 0; i <= segs; i++) {
+    const a = start + (i / segs) * span;
+    pts.push({ x: Math.cos(a) * radius, y: Math.sin(a) * radius });
+  }
+  return pts;
+}
+
+function createPolygonPts(sides: number, radius: number, rotOffset = 0): Array<{ x: number; y: number }> {
+  const pts: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i < sides; i++) {
+    const a = (i / sides) * Math.PI * 2 + rotOffset;
+    pts.push({ x: Math.cos(a) * radius, y: Math.sin(a) * radius });
+  }
+  return pts;
+}
+
+function setRibbonColor(mesh: THREE.Mesh, colorHex: number): void {
+  const mat = mesh.material;
+  if (mat instanceof THREE.ShaderMaterial && mat.uniforms.uColor) {
+    (mat.uniforms.uColor.value as THREE.Color).setHex(colorHex);
+  } else if (mat instanceof THREE.MeshBasicMaterial) {
+    mat.color.setHex(colorHex);
+  }
+}
 
 export class EntityRenderer {
   private readonly scene: THREE.Scene;
   private readonly playerGroup = new THREE.Group();
-  private readonly shipChevrons: THREE.LineLoop[] = [];
+  private readonly shipChevrons: THREE.Mesh[] = [];
   private readonly noseTipMesh: THREE.Mesh;
   private readonly shipGlow: THREE.Sprite;
-  private readonly muzzleSparkle: THREE.LineSegments;
-  private readonly thrusterLine: THREE.Line;
-  private readonly rearHaloLine: THREE.Line;
-  private readonly hullArcLine: THREE.Line;
-  private readonly wardArcLine: THREE.Line;
-  private readonly wardInnerArcLine: THREE.Line;
-  private readonly channelArcLine: THREE.Line;
+  private readonly muzzleSparkle: THREE.Group;
+  private readonly thrusterMesh: THREE.Mesh;
+  private readonly rearHaloMesh: THREE.Mesh;
+  private readonly hullArcMesh: THREE.Mesh;
+  private lastHullRatio = -1;
+  private readonly wardArcMesh: THREE.Mesh;
+  private readonly wardInnerArcMesh: THREE.Mesh;
+  private lastWardRatio = -1;
+  private readonly channelArcMesh: THREE.Mesh;
   private readonly chargeGroup = new THREE.Group();
-  private readonly chargeCore: THREE.Line;
-  private readonly chargeRing: THREE.Line;
-  private readonly armorCage: THREE.Line;
+  private readonly chargeCore: THREE.Mesh;
+  private readonly chargeRing: THREE.Mesh;
+  private readonly armorCage: THREE.Mesh;
   private readonly reticleGroup = new THREE.Group();
   private readonly waypointGroup = new THREE.Group();
-  private readonly gatePointer: THREE.LineLoop;
+  private readonly gatePointer: THREE.Mesh;
   private readonly pipMeshes: THREE.Group[] = [];
   private readonly pipSlots: Array<QueueElement | null> = [null, null, null];
 
@@ -30,116 +61,119 @@ export class EntityRenderer {
   constructor(scene: THREE.Scene) {
     this.scene = scene;
 
-    // 3 Nested Concentric Chevrons (matching reference construct silhouette)
-    const chevronDefs: Array<Array<[number, number, number]>> = [
-      [[24, 0, 2], [-15, 16, 1.5], [-9, 0, 1.5], [-15, -16, 1.5]],
-      [[16, 0, 2.3], [-11, 11, 1.8], [-6, 0, 1.8], [-11, -11, 1.8]],
-      [[9, 0, 2.6], [-7, 6.5, 2.1], [-3, 0, 2.1], [-7, -6.5, 2.1]],
+    // 3 Nested Concentric Chevrons rendered as thick HDR glowing neon ribbons
+    const chevronDefs: Array<{ pts: Array<{ x: number; y: number }>; width: number; z: number; boost: number }> = [
+      { pts: [{ x: 25, y: 0 }, { x: -15, y: 16.5 }, { x: -9, y: 0 }, { x: -15, y: -16.5 }], width: 3.4, z: 2.0, boost: 2.4 },
+      { pts: [{ x: 16.5, y: 0 }, { x: -11, y: 11 }, { x: -6, y: 0 }, { x: -11, y: -11 }], width: 2.8, z: 2.3, boost: 2.15 },
+      { pts: [{ x: 9.5, y: 0 }, { x: -7, y: 6.5 }, { x: -3, y: 0 }, { x: -7, y: -6.5 }], width: 2.2, z: 2.6, boost: 2.0 },
     ];
-    for (const ptsDef of chevronDefs) {
-      const pts = ptsDef.map(([x, y, z]) => new THREE.Vector3(x, y, z));
-      const loop = new THREE.LineLoop(
-        new THREE.BufferGeometry().setFromPoints(pts),
-        new THREE.LineBasicMaterial({ color: 0x00f5ff })
+    for (const def of chevronDefs) {
+      const ribbon = new THREE.Mesh(
+        buildRibbonGeometry(def.pts, def.width, true, def.z),
+        createNeonRibbonMaterial(0x00f5ff, def.boost, 1.0)
       );
-      this.shipChevrons.push(loop);
-      this.playerGroup.add(loop);
+      this.shipChevrons.push(ribbon);
+      this.playerGroup.add(ribbon);
     }
 
     // Glowing Solid Additive Nose Tip
     const tipGeo = new THREE.BufferGeometry();
     tipGeo.setAttribute(
       'position',
-      new THREE.Float32BufferAttribute([25, 0, 3, 11, 5, 2.8, 11, -5, 2.8], 3)
+      new THREE.Float32BufferAttribute([26, 0, 3.0, 11, 5.2, 2.8, 11, -5.2, 2.8], 3)
     );
     this.noseTipMesh = new THREE.Mesh(
       tipGeo,
       new THREE.MeshBasicMaterial({
-        color: 0x00f5ff,
+        color: new THREE.Color(0x00f5ff).multiplyScalar(1.65),
         transparent: true,
-        opacity: 0.55,
+        opacity: 0.72,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
       })
     );
     this.playerGroup.add(this.noseTipMesh);
 
-    this.shipGlow = createGlowSprite(0x00f5ff, 46, 0.28);
+    this.shipGlow = createGlowSprite(0x00f5ff, 54, 0.36);
     this.playerGroup.add(this.shipGlow);
 
-    // Very small 4-point muzzle sparkle when actively shooting
-    const sparklePts = [
-      new THREE.Vector3(-9, 0, 3.5), new THREE.Vector3(9, 0, 3.5),
-      new THREE.Vector3(0, -9, 3.5), new THREE.Vector3(0, 9, 3.5),
-      new THREE.Vector3(-3.5, -3.5, 3.5), new THREE.Vector3(3.5, 3.5, 3.5),
-      new THREE.Vector3(-3.5, 3.5, 3.5), new THREE.Vector3(3.5, -3.5, 3.5),
-    ];
-    this.muzzleSparkle = new THREE.LineSegments(
-      new THREE.BufferGeometry().setFromPoints(sparklePts),
-      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 })
+    // Very crisp tiny 4-point HDR muzzle sparkle ONLY when actively shooting
+    this.muzzleSparkle = new THREE.Group();
+    this.muzzleSparkle.add(
+      new THREE.Mesh(
+        buildRibbonGeometry([{ x: -7, y: 0 }, { x: 7, y: 0 }], 2.0, false, 3.6),
+        createNeonRibbonMaterial(0xffffff, 2.6, 0.9)
+      ),
+      new THREE.Mesh(
+        buildRibbonGeometry([{ x: 0, y: -7 }, { x: 0, y: 7 }], 2.0, false, 3.6),
+        createNeonRibbonMaterial(0xffffff, 2.6, 0.9)
+      )
     );
-    this.muzzleSparkle.position.set(25, 0, 0);
+    this.muzzleSparkle.position.set(26, 0, 0);
     this.muzzleSparkle.visible = false;
     this.playerGroup.add(this.muzzleSparkle);
 
-    // Thruster wake
+    // Vivid HDR Thruster Wake
     const thrustPts = [
-      new THREE.Vector3(-12, 4, 1.2),
-      new THREE.Vector3(-28, 0, 1.2),
-      new THREE.Vector3(-12, -4, 1.2),
+      { x: -12, y: 4.5 },
+      { x: -28, y: 0 },
+      { x: -12, y: -4.5 },
     ];
-    this.thrusterLine = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(thrustPts),
-      new THREE.LineBasicMaterial({ color: 0x00f5ff, transparent: true, opacity: 0.85 })
+    this.thrusterMesh = new THREE.Mesh(
+      buildRibbonGeometry(thrustPts, 3.0, false, 1.4),
+      createNeonRibbonMaterial(0x00f5ff, 2.3, 0.95)
     );
-    this.playerGroup.add(this.thrusterLine);
+    this.playerGroup.add(this.thrusterMesh);
 
     // Diegetic Rear Double Halo (outer bracket + inner hull integrity arc)
-    this.rearHaloLine = this.createArcLine(31, 0x00f5ff, 0.48, Math.PI * 1.15);
-    this.playerGroup.add(this.rearHaloLine);
+    this.rearHaloMesh = new THREE.Mesh(
+      buildRibbonGeometry(createArcPts(32, Math.PI * 1.15, 26), 2.8, false, 1.5),
+      createNeonRibbonMaterial(0x00f5ff, 1.9, 0.65)
+    );
+    this.playerGroup.add(this.rearHaloMesh);
 
-    this.hullArcLine = this.createArcLine(28, 0x39ff14, 0.92, Math.PI * 0.95);
-    this.playerGroup.add(this.hullArcLine);
+    this.hullArcMesh = new THREE.Mesh(
+      buildRibbonGeometry(createArcPts(28, Math.PI * 0.95, 26), 3.2, false, 1.8),
+      createNeonRibbonMaterial(0x39ff14, 2.2, 0.95)
+    );
+    this.playerGroup.add(this.hullArcMesh);
 
-    // Diegetic Ward Arcs (Barrier silver-white outer + element-colored inner)
-    this.wardArcLine = this.createArcLine(36, 0xe6f0ff, 0.9, Math.PI * 1.05);
-    this.wardArcLine.visible = false;
-    this.playerGroup.add(this.wardArcLine);
+    // Diegetic Ward Arcs
+    this.wardArcMesh = new THREE.Mesh(
+      buildRibbonGeometry(createArcPts(37, Math.PI * 1.05, 26), 3.4, false, 2.0),
+      createNeonRibbonMaterial(0xe6f0ff, 2.3, 0.92)
+    );
+    this.wardArcMesh.visible = false;
+    this.playerGroup.add(this.wardArcMesh);
 
-    this.wardInnerArcLine = this.createArcLine(33, 0x00f5ff, 0.9, Math.PI * 1.05);
-    this.wardInnerArcLine.visible = false;
-    this.playerGroup.add(this.wardInnerArcLine);
+    this.wardInnerArcMesh = new THREE.Mesh(
+      buildRibbonGeometry(createArcPts(33.5, Math.PI * 1.05, 26), 2.8, false, 2.1),
+      createNeonRibbonMaterial(0x00f5ff, 2.1, 0.92)
+    );
+    this.wardInnerArcMesh.visible = false;
+    this.playerGroup.add(this.wardInnerArcMesh);
 
     // Forward Channel Charge Arc
-    const chPts: THREE.Vector3[] = [];
+    const chPts: Array<{ x: number; y: number }> = [];
     for (let i = 0; i <= 16; i++) {
-      const a = -0.65 + (i / 16) * 1.3;
-      chPts.push(new THREE.Vector3(Math.cos(a) * 28, Math.sin(a) * 28, 2));
+      const a = -0.68 + (i / 16) * 1.36;
+      chPts.push({ x: Math.cos(a) * 28, y: Math.sin(a) * 28 });
     }
-    this.channelArcLine = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(chPts),
-      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 })
+    this.channelArcMesh = new THREE.Mesh(
+      buildRibbonGeometry(chPts, 3.2, false, 2.3),
+      createNeonRibbonMaterial(0xffffff, 2.4, 0.92)
     );
-    this.channelArcLine.visible = false;
-    this.playerGroup.add(this.channelArcLine);
+    this.channelArcMesh.visible = false;
+    this.playerGroup.add(this.channelArcMesh);
 
     // Forward Charge Indicator
-    const corePts = [
-      new THREE.Vector3(-8, -8, 2.5), new THREE.Vector3(8, -8, 2.5),
-      new THREE.Vector3(8, 8, 2.5), new THREE.Vector3(-8, 8, 2.5), new THREE.Vector3(-8, -8, 2.5),
-    ];
-    this.chargeCore = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(corePts),
-      new THREE.LineBasicMaterial({ color: 0xe8741a })
+    this.chargeCore = new THREE.Mesh(
+      buildRibbonGeometry(createPolygonPts(4, 9.5, Math.PI / 4), 2.8, true, 2.6),
+      createNeonRibbonMaterial(0xe8741a, 2.3, 0.95)
     );
-    const ringPts: THREE.Vector3[] = [];
-    for (let i = 0; i <= 16; i++) {
-      const a = (i / 16) * Math.PI * 2;
-      ringPts.push(new THREE.Vector3(Math.cos(a) * 12, Math.sin(a) * 12, 2.2));
-    }
-    this.chargeRing = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(ringPts),
-      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75 })
+    this.chargeRing = new THREE.Mesh(
+      buildRibbonGeometry(createPolygonPts(18, 12.5), 2.4, true, 2.3),
+      createNeonRibbonMaterial(0xffffff, 2.0, 0.8)
     );
     this.chargeGroup.add(this.chargeCore, this.chargeRing);
     this.chargeGroup.position.set(29, 0, 0);
@@ -147,14 +181,9 @@ export class EntityRenderer {
     this.playerGroup.add(this.chargeGroup);
 
     // Kinetic Self-Cast Armor Cage
-    const armorPts: THREE.Vector3[] = [];
-    for (let i = 0; i <= 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      armorPts.push(new THREE.Vector3(Math.cos(a) * 25, Math.sin(a) * 25, 2.2));
-    }
-    this.armorCage = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(armorPts),
-      new THREE.LineBasicMaterial({ color: 0xe8741a, transparent: true, opacity: 0.85 })
+    this.armorCage = new THREE.Mesh(
+      buildRibbonGeometry(createPolygonPts(6, 26), 3.0, true, 2.2),
+      createNeonRibbonMaterial(0xe8741a, 2.1, 0.9)
     );
     this.armorCage.visible = false;
     this.playerGroup.add(this.armorCage);
@@ -169,43 +198,38 @@ export class EntityRenderer {
       this.pipMeshes.push(g);
     }
 
-    // Aim reticle
-    const retPts = [
-      new THREE.Vector3(-9, 0, 2),
-      new THREE.Vector3(-3, 0, 2),
-      new THREE.Vector3(3, 0, 2),
-      new THREE.Vector3(9, 0, 2),
-      new THREE.Vector3(0, -9, 2),
-      new THREE.Vector3(0, -3, 2),
-      new THREE.Vector3(0, 3, 2),
-      new THREE.Vector3(0, 9, 2),
+    // Aim reticle (crisp HDR cyan crosshairs)
+    const retSegments: Array<[Array<{ x: number; y: number }>, number]> = [
+      [[{ x: -10, y: 0 }, { x: -3.5, y: 0 }], 2.2],
+      [[{ x: 3.5, y: 0 }, { x: 10, y: 0 }], 2.2],
+      [[{ x: 0, y: -10 }, { x: 0, y: -3.5 }], 2.2],
+      [[{ x: 0, y: 3.5 }, { x: 0, y: 10 }], 2.2],
     ];
-    const retGeo = new THREE.BufferGeometry().setFromPoints(retPts);
-    this.reticleGroup.add(new THREE.LineSegments(retGeo, new THREE.LineBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.85 })));
+    for (const [pts, w] of retSegments) {
+      this.reticleGroup.add(
+        new THREE.Mesh(
+          buildRibbonGeometry(pts, w, false, 3.0),
+          createNeonRibbonMaterial(0x00e5ff, 2.1, 0.9)
+        )
+      );
+    }
     this.scene.add(this.reticleGroup);
 
     // Click-to-move waypoint marker
     const wpDiamond = [
-      new THREE.Vector3(0, 9, 1.5),
-      new THREE.Vector3(9, 0, 1.5),
-      new THREE.Vector3(0, -9, 1.5),
-      new THREE.Vector3(-9, 0, 1.5),
+      { x: 0, y: 10 },
+      { x: 10, y: 0 },
+      { x: 0, y: -10 },
+      { x: -10, y: 0 },
     ];
     this.waypointGroup.add(
-      new THREE.LineLoop(
-        new THREE.BufferGeometry().setFromPoints(wpDiamond),
-        new THREE.LineBasicMaterial({ color: 0x00f5ff, transparent: true, opacity: 0.85 })
-      )
-    );
-    const wpRing: THREE.Vector3[] = [];
-    for (let i = 0; i <= 16; i++) {
-      const a = (i / 16) * Math.PI * 2;
-      wpRing.push(new THREE.Vector3(Math.cos(a) * 14, Math.sin(a) * 14, 1.2));
-    }
-    this.waypointGroup.add(
-      new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(wpRing),
-        new THREE.LineBasicMaterial({ color: 0x1a6bff, transparent: true, opacity: 0.55 })
+      new THREE.Mesh(
+        buildRibbonGeometry(wpDiamond, 2.8, true, 1.8),
+        createNeonRibbonMaterial(0x00f5ff, 2.2, 0.9)
+      ),
+      new THREE.Mesh(
+        buildRibbonGeometry(createPolygonPts(16, 15), 2.2, true, 1.4),
+        createNeonRibbonMaterial(0x1a6bff, 1.9, 0.65)
       )
     );
     this.waypointGroup.visible = false;
@@ -213,79 +237,58 @@ export class EntityRenderer {
 
     // Diegetic East Gate Pointer
     const ptrPts = [
-      new THREE.Vector3(10, 0, 3),
-      new THREE.Vector3(-4, 6, 3),
-      new THREE.Vector3(-2, 0, 3),
-      new THREE.Vector3(-4, -6, 3),
+      { x: 11, y: 0 },
+      { x: -4.5, y: 6.5 },
+      { x: -2, y: 0 },
+      { x: -4.5, y: -6.5 },
     ];
-    this.gatePointer = new THREE.LineLoop(
-      new THREE.BufferGeometry().setFromPoints(ptrPts),
-      new THREE.LineBasicMaterial({ color: 0x39ff14, transparent: true, opacity: 0.95 })
+    this.gatePointer = new THREE.Mesh(
+      buildRibbonGeometry(ptrPts, 2.8, true, 3.2),
+      createNeonRibbonMaterial(0x39ff14, 2.35, 0.95)
     );
     this.gatePointer.visible = false;
     this.scene.add(this.gatePointer);
   }
 
-  private createArcLine(radius: number, colorHex: number, opacity: number, span: number): THREE.Line {
-    const segs = 26;
-    const pts: THREE.Vector3[] = [];
-    const start = Math.PI - span * 0.5;
-    for (let i = 0; i <= segs; i++) {
-      const a = start + (i / segs) * span;
-      pts.push(new THREE.Vector3(Math.cos(a) * radius, Math.sin(a) * radius, 1.5));
-    }
-    const geo = new THREE.BufferGeometry().setFromPoints(pts);
-    const mat = new THREE.LineBasicMaterial({ color: colorHex, transparent: true, opacity });
-    return new THREE.Line(geo, mat);
-  }
-
-  private updateArcRatio(line: THREE.Line, ratio: number, radius: number, colorHex: number, maxSpan = Math.PI * 0.95): void {
-    const clamped = Math.max(0.01, Math.min(1, ratio));
-    const segs = 26;
-    const pos = line.geometry.attributes.position as THREE.BufferAttribute;
+  private replaceArcRibbon(mesh: THREE.Mesh, radius: number, ratio: number, maxSpan: number, width: number, z: number): void {
+    const clamped = Math.max(0.02, Math.min(1, ratio));
     const span = maxSpan * clamped;
-    const start = Math.PI - span * 0.5;
-    for (let i = 0; i <= segs; i++) {
-      const a = start + (i / segs) * span;
-      pos.setXYZ(i, Math.cos(a) * radius, Math.sin(a) * radius, 1.5);
-    }
-    pos.needsUpdate = true;
-    (line.material as THREE.LineBasicMaterial).color.setHex(colorHex);
+    mesh.geometry.dispose();
+    mesh.geometry = buildRibbonGeometry(createArcPts(radius, span, 26), width, false, z);
   }
 
   private buildPipMesh(el: QueueElement): THREE.Group {
     const group = new THREE.Group();
     const meta = ELEMENT_META[el];
-    const mat = new THREE.LineBasicMaterial({ color: meta.colorHex });
-
-    const ringPts: THREE.Vector3[] = [];
     const sides =
       el === 'THERMAL' ? 3 :
       el === 'KINETIC' ? 4 :
       el === 'CRYO' || el === 'CRYSTAL' ? 6 :
       el === 'BARRIER' ? 8 : 12;
 
-    for (let i = 0; i <= sides; i++) {
-      const a = (i / sides) * Math.PI * 2 + (el === 'THERMAL' ? Math.PI / 2 : 0);
-      ringPts.push(new THREE.Vector3(Math.cos(a) * 6.8, Math.sin(a) * 6.8, 2));
-    }
-    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ringPts), mat));
+    const ringPts = createPolygonPts(sides, 7.2, el === 'THERMAL' ? Math.PI / 2 : 0);
+    group.add(
+      new THREE.Mesh(
+        buildRibbonGeometry(ringPts, 2.6, true, 2.2),
+        createNeonRibbonMaterial(meta.colorHex, 2.35, 0.95)
+      )
+    );
 
     if (el === 'NANO') {
-      const cross = [
-        new THREE.Vector3(-4, 0, 2), new THREE.Vector3(4, 0, 2),
-        new THREE.Vector3(0, -4, 2), new THREE.Vector3(0, 4, 2),
-      ];
-      group.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(cross), mat));
+      group.add(
+        new THREE.Mesh(buildRibbonGeometry([{ x: -4.5, y: 0 }, { x: 4.5, y: 0 }], 2.2, false, 2.4), createNeonRibbonMaterial(meta.colorHex, 2.4, 0.95)),
+        new THREE.Mesh(buildRibbonGeometry([{ x: 0, y: -4.5 }, { x: 0, y: 4.5 }], 2.2, false, 2.4), createNeonRibbonMaterial(meta.colorHex, 2.4, 0.95))
+      );
     } else if (el === 'VOLT') {
       const bolt = [
-        new THREE.Vector3(2, 5, 2),
-        new THREE.Vector3(-2, 0.5, 2),
-        new THREE.Vector3(2, -0.5, 2),
-        new THREE.Vector3(-2, -5, 2),
+        { x: 2.2, y: 5.2 },
+        { x: -2.2, y: 0.6 },
+        { x: 2.2, y: -0.6 },
+        { x: -2.2, y: -5.2 },
       ];
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(bolt), mat));
+      group.add(new THREE.Mesh(buildRibbonGeometry(bolt, 2.2, false, 2.4), createNeonRibbonMaterial(meta.colorHex, 2.4, 0.95)));
     }
+    group.add(createGlowSprite(meta.colorHex, 22, 0.48));
     return group;
   }
 
@@ -294,7 +297,6 @@ export class EntityRenderer {
     this.playerGroup.position.set(p.x, p.y, 0);
     this.playerGroup.rotation.z = p.aimAngle;
 
-    // Tint ship chevrons & rear halo toward active element / channel / charge
     const activeColor = p.channel
       ? p.channel.composition.primaryColorHex
       : p.charge
@@ -302,13 +304,14 @@ export class EntityRenderer {
       : p.queue[0]
       ? ELEMENT_META[p.queue[0]].colorHex
       : 0x00f5ff;
+
     for (const ch of this.shipChevrons) {
-      (ch.material as THREE.LineBasicMaterial).color.setHex(activeColor);
+      setRibbonColor(ch, activeColor);
     }
-    (this.noseTipMesh.material as THREE.MeshBasicMaterial).color.setHex(activeColor);
+    (this.noseTipMesh.material as THREE.MeshBasicMaterial).color.setHex(activeColor).multiplyScalar(1.65);
     this.shipGlow.material.color.setHex(activeColor);
-    (this.rearHaloLine.material as THREE.LineBasicMaterial).color.setHex(activeColor);
-    (this.thrusterLine.material as THREE.LineBasicMaterial).color.setHex(activeColor);
+    setRibbonColor(this.rearHaloMesh, activeColor);
+    setRibbonColor(this.thrusterMesh, activeColor);
 
     const isShooting =
       (p.channel !== null && p.channel.delivery !== 'SELF_HEAL') ||
@@ -316,10 +319,12 @@ export class EntityRenderer {
       snapshot.slashes.length > 0;
     this.muzzleSparkle.visible = isShooting;
     if (isShooting) {
-      this.muzzleSparkle.rotation.z = timeSec * 14;
-      const pulse = 0.75 + Math.sin(timeSec * 45) * 0.25;
+      this.muzzleSparkle.rotation.z = timeSec * 16;
+      const pulse = 0.72 + Math.sin(timeSec * 45) * 0.25;
       this.muzzleSparkle.scale.set(pulse, pulse, 1);
-      (this.muzzleSparkle.material as THREE.LineBasicMaterial).color.setHex(activeColor);
+      for (const child of this.muzzleSparkle.children) {
+        if (child instanceof THREE.Mesh) setRibbonColor(child, activeColor);
+      }
     }
 
     this.reticleGroup.position.set(aimWorld.x, aimWorld.y, 0);
@@ -344,58 +349,62 @@ export class EntityRenderer {
       this.gatePointer.visible = false;
     }
 
-    // Thruster flicker
-    this.thrusterLine.visible = p.moving || p.dashTimer > 0;
-    const thrustScale = p.dashTimer > 0 ? 1.9 : 0.8 + Math.sin(timeSec * 40) * 0.25;
-    this.thrusterLine.scale.set(thrustScale, 1, 1);
+    this.thrusterMesh.visible = p.moving || p.dashTimer > 0;
+    const thrustScale = p.dashTimer > 0 ? 1.95 : 0.85 + Math.sin(timeSec * 40) * 0.28;
+    this.thrusterMesh.scale.set(thrustScale, 1, 1);
 
     // Diegetic Hull Arc
     const hpRatio = p.hp / Math.max(1, p.maxHp);
-    const hullColor = hpRatio > 0.35 ? 0x39ff14 : 0xff1e2d;
-    this.updateArcRatio(this.hullArcLine, hpRatio, 28, hullColor, Math.PI * 0.95);
+    if (Math.abs(hpRatio - this.lastHullRatio) > 0.015) {
+      this.lastHullRatio = hpRatio;
+      this.replaceArcRibbon(this.hullArcMesh, 28, hpRatio, Math.PI * 0.95, 3.2, 1.8);
+    }
+    setRibbonColor(this.hullArcMesh, hpRatio > 0.35 ? 0x39ff14 : 0xff1e2d);
 
     // Diegetic Ward Arcs
     if (p.wardRemaining > 0) {
-      this.wardArcLine.visible = true;
+      this.wardArcMesh.visible = true;
       const wardRatio = p.wardRemaining / Math.max(0.1, p.wardMaxDuration);
-      this.updateArcRatio(this.wardArcLine, wardRatio, 36, 0xe6f0ff, Math.PI * 1.05);
+      if (Math.abs(wardRatio - this.lastWardRatio) > 0.015) {
+        this.lastWardRatio = wardRatio;
+        this.replaceArcRibbon(this.wardArcMesh, 37, wardRatio, Math.PI * 1.05, 3.4, 2.0);
+        this.replaceArcRibbon(this.wardInnerArcMesh, 33.5, wardRatio, Math.PI * 1.05, 2.8, 2.1);
+      }
       if (p.wardElement) {
-        this.wardInnerArcLine.visible = true;
-        this.updateArcRatio(this.wardInnerArcLine, wardRatio, 33, ELEMENT_META[p.wardElement].colorHex, Math.PI * 1.05);
+        this.wardInnerArcMesh.visible = true;
+        setRibbonColor(this.wardInnerArcMesh, ELEMENT_META[p.wardElement].colorHex);
       } else {
-        this.wardInnerArcLine.visible = false;
+        this.wardInnerArcMesh.visible = false;
       }
     } else {
-      this.wardArcLine.visible = false;
-      this.wardInnerArcLine.visible = false;
+      this.wardArcMesh.visible = false;
+      this.wardInnerArcMesh.visible = false;
+      this.lastWardRatio = -1;
     }
 
-    // Channel charge arc
     if (p.channel) {
-      this.channelArcLine.visible = true;
-      (this.channelArcLine.material as THREE.LineBasicMaterial).color.setHex(p.channel.composition.primaryColorHex);
+      this.channelArcMesh.visible = true;
+      setRibbonColor(this.channelArcMesh, p.channel.composition.primaryColorHex);
     } else {
-      this.channelArcLine.visible = false;
+      this.channelArcMesh.visible = false;
     }
 
-    // Forward charge indicator
     if (p.charge) {
       this.chargeGroup.visible = true;
-      const scale = 0.4 + p.charge.ratio * 1.05;
+      const scale = 0.45 + p.charge.ratio * 1.05;
       this.chargeGroup.scale.set(scale, scale, 1);
       this.chargeCore.rotation.z = timeSec * (4 + p.charge.ratio * 10);
       this.chargeRing.rotation.z = -timeSec * 3;
-      (this.chargeCore.material as THREE.LineBasicMaterial).color.setHex(p.charge.composition.primaryColorHex);
-      (this.chargeRing.material as THREE.LineBasicMaterial).color.setHex(p.charge.composition.secondaryColorHex);
+      setRibbonColor(this.chargeCore, p.charge.composition.primaryColorHex);
+      setRibbonColor(this.chargeRing, p.charge.composition.secondaryColorHex);
     } else {
       this.chargeGroup.visible = false;
     }
 
-    // Kinetic armor cage
     if (p.armorHp > 0) {
       this.armorCage.visible = true;
       this.armorCage.rotation.z = timeSec * 1.8;
-      (this.armorCage.material as THREE.LineBasicMaterial).opacity = 0.35 + (p.armorHp / Math.max(1, p.maxArmorHp)) * 0.6;
+      setShaderUniform(this.armorCage.material, 'uOpacity', 0.45 + (p.armorHp / Math.max(1, p.maxArmorHp)) * 0.55);
     } else {
       this.armorCage.visible = false;
     }
@@ -410,7 +419,7 @@ export class EntityRenderer {
         while (pip.children.length > 0) {
           const child = pip.children[0]!;
           pip.remove(child);
-          if ((child as THREE.Line).geometry) (child as THREE.Line).geometry.dispose();
+          this.disposeGroup(child);
         }
         if (el) {
           pip.add(this.buildPipMesh(el));
@@ -420,7 +429,7 @@ export class EntityRenderer {
         pip.visible = true;
         const offset = (i - (count - 1) * 0.5) * 0.55;
         const pipAngle = p.aimAngle + Math.PI + offset;
-        const pulseR = 42 + Math.sin(timeSec * 5 + i) * 1.5;
+        const pulseR = 44 + Math.sin(timeSec * 5 + i) * 1.6;
         pip.position.set(p.x + Math.cos(pipAngle) * pulseR, p.y + Math.sin(pipAngle) * pulseR, 3);
         pip.rotation.z = -timeSec * 2.5;
       } else {
@@ -458,10 +467,13 @@ export class EntityRenderer {
         ? 0x39ff14
         : null;
 
-      const mainLine = group.children[0] as THREE.Line | undefined;
-      if (mainLine && mainLine.material instanceof THREE.LineBasicMaterial) {
-        const baseColor = (group.userData.baseColor as number) ?? 0xff2e97;
-        mainLine.material.color.setHex(statusColor ?? baseColor);
+      const baseColor = (group.userData.baseColor as number) ?? 0xff2e97;
+      const targetColor = statusColor ?? baseColor;
+      const mainObj = group.children[0];
+      if (mainObj instanceof THREE.Mesh) {
+        setRibbonColor(mainObj, targetColor);
+      } else if (mainObj instanceof THREE.LineSegments && mainObj.material instanceof THREE.LineBasicMaterial) {
+        mainObj.material.color.setHex(targetColor).multiplyScalar(1.65);
       }
 
       if (e.archetype === 'BASTION') {
@@ -480,8 +492,7 @@ export class EntityRenderer {
         }
       }
 
-      // Telegraph line for WEAVER / WARDEN charging beam
-      const telegraph = group.userData.telegraph as THREE.Line | undefined;
+      const telegraph = group.userData.telegraph as THREE.Mesh | undefined;
       if (telegraph) {
         telegraph.visible = e.aiState === 'CHARGE';
         if (telegraph.visible) {
@@ -506,101 +517,139 @@ export class EntityRenderer {
 
     if (e.archetype === 'SWARMER') {
       baseColor = 0xff2e97;
-      const pts: THREE.Vector3[] = [];
-      for (let i = 0; i <= 8; i++) {
+      const pts: Array<{ x: number; y: number }> = [];
+      for (let i = 0; i < 8; i++) {
         const a = (i / 8) * Math.PI * 2;
         const rad = i % 2 === 0 ? r : r * 0.42;
-        pts.push(new THREE.Vector3(Math.cos(a) * rad, Math.sin(a) * rad, 1.5));
+        pts.push({ x: Math.cos(a) * rad, y: Math.sin(a) * rad });
       }
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: baseColor })));
-      group.add(createGlowSprite(baseColor, r * 2.5, 0.3));
+      group.add(
+        new THREE.Mesh(
+          buildRibbonGeometry(pts, 2.8, true, 1.8),
+          createNeonRibbonMaterial(baseColor, 2.25, 0.95)
+        )
+      );
+      group.add(createGlowSprite(baseColor, r * 2.8, 0.4));
     } else if (e.archetype === 'BASTION') {
       baseColor = 0xe6f0ff;
-      const pts: THREE.Vector3[] = [];
-      for (let i = 0; i <= 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        pts.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, 2));
+      const hexPts = createPolygonPts(6, r);
+      group.add(
+        new THREE.Mesh(
+          buildRibbonGeometry(hexPts, 3.2, true, 2.0),
+          createNeonRibbonMaterial(baseColor, 2.1, 0.95)
+        )
+      );
+      // 1: Front shield crescent ribbon
+      const arcPts: Array<{ x: number; y: number }> = [];
+      for (let i = 0; i <= 16; i++) {
+        const a = -e.shieldArc + (i / 16) * e.shieldArc * 2;
+        arcPts.push({ x: Math.cos(a) * (r + 9), y: Math.sin(a) * (r + 9) });
       }
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: baseColor })));
-      const arcPts: THREE.Vector3[] = [];
-      for (let i = 0; i <= 14; i++) {
-        const a = -e.shieldArc + (i / 14) * e.shieldArc * 2;
-        arcPts.push(new THREE.Vector3(Math.cos(a) * (r + 8), Math.sin(a) * (r + 8), 2.5));
-      }
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(arcPts), new THREE.LineBasicMaterial({ color: 0x00f5ff })));
-      group.add(createGlowSprite(baseColor, r * 2.4, 0.28));
+      group.add(
+        new THREE.Mesh(
+          buildRibbonGeometry(arcPts, 4.0, false, 2.6),
+          createNeonRibbonMaterial(0x00f5ff, 2.45, 0.95)
+        )
+      );
+      group.add(createGlowSprite(0x00f5ff, r * 2.8, 0.36));
     } else if (e.archetype === 'STALKER') {
       baseColor = 0x00f5ff;
       const pts = [
-        new THREE.Vector3(r * 1.2, 0, 2),
-        new THREE.Vector3(0, r * 0.85, 2),
-        new THREE.Vector3(-r * 1.2, 0, 2),
-        new THREE.Vector3(0, -r * 0.85, 2),
-        new THREE.Vector3(r * 1.2, 0, 2),
+        { x: r * 1.25, y: 0 },
+        { x: 0, y: r * 0.85 },
+        { x: -r * 1.25, y: 0 },
+        { x: 0, y: -r * 0.85 },
       ];
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: baseColor })));
-      const outer: THREE.Vector3[] = [];
-      for (let i = 0; i <= 16; i++) {
-        const a = (i / 16) * Math.PI * 2;
-        outer.push(new THREE.Vector3(Math.cos(a) * (r * 1.25), Math.sin(a) * (r * 1.25), 1.6));
-      }
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(outer), new THREE.LineBasicMaterial({ color: baseColor, transparent: true, opacity: 0.55 })));
-      group.add(createGlowSprite(baseColor, r * 2.4, 0.3));
+      group.add(
+        new THREE.Mesh(
+          buildRibbonGeometry(pts, 3.0, true, 2.2),
+          createNeonRibbonMaterial(baseColor, 2.35, 0.95)
+        )
+      );
+      group.add(
+        new THREE.Mesh(
+          buildRibbonGeometry(createPolygonPts(18, r * 1.25), 2.2, true, 1.6),
+          createNeonRibbonMaterial(baseColor, 1.8, 0.65)
+        )
+      );
+      group.add(createGlowSprite(baseColor, r * 2.8, 0.38));
     } else if (e.archetype === 'WEAVER') {
       baseColor = 0xb429ff;
-      const pts: THREE.Vector3[] = [];
-      for (let i = 0; i <= 8; i++) {
-        const a = (i / 8) * Math.PI * 2;
-        pts.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, 2));
-      }
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: baseColor })));
+      group.add(
+        new THREE.Mesh(
+          buildRibbonGeometry(createPolygonPts(8, r), 3.0, true, 2.0),
+          createNeonRibbonMaterial(baseColor, 2.25, 0.95)
+        )
+      );
       const tri = [
-        new THREE.Vector3(r * 0.75, 0, 2.5),
-        new THREE.Vector3(-r * 0.45, r * 0.65, 2.5),
-        new THREE.Vector3(-r * 0.45, -r * 0.65, 2.5),
-        new THREE.Vector3(r * 0.75, 0, 2.5),
+        { x: r * 0.75, y: 0 },
+        { x: -r * 0.45, y: r * 0.65 },
+        { x: -r * 0.45, y: -r * 0.65 },
       ];
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(tri), new THREE.LineBasicMaterial({ color: 0xff5e99 })));
-      group.add(createGlowSprite(baseColor, r * 2.6, 0.32));
-      const tele = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 2), new THREE.Vector3(580, 0, 2)]),
-        new THREE.LineBasicMaterial({ color: 0xb429ff, transparent: true, opacity: 0.45 })
+      group.add(
+        new THREE.Mesh(
+          buildRibbonGeometry(tri, 2.6, true, 2.5),
+          createNeonRibbonMaterial(0xff5e99, 2.3, 0.95)
+        )
+      );
+      group.add(createGlowSprite(baseColor, r * 3.0, 0.42));
+      const tele = new THREE.Mesh(
+        buildRibbonGeometry([{ x: 0, y: 0 }, { x: 580, y: 0 }], 2.4, false, 2.2),
+        createNeonRibbonMaterial(0xb429ff, 2.0, 0.55)
       );
       tele.visible = false;
       group.add(tele);
       group.userData.telegraph = tele;
     } else if (e.archetype === 'SPLITTER') {
       baseColor = 0xe8741a;
-      const box = new THREE.BoxGeometry(r * 1.4, r * 1.4, r * 1.4, 1, 1, 1);
-      group.add(new THREE.LineSegments(new THREE.WireframeGeometry(box), new THREE.LineBasicMaterial({ color: baseColor })));
+      const box = new THREE.BoxGeometry(r * 1.45, r * 1.45, r * 1.45, 2, 2, 2);
+      group.add(
+        new THREE.LineSegments(
+          new THREE.WireframeGeometry(box),
+          new THREE.LineBasicMaterial({ color: new THREE.Color(baseColor).multiplyScalar(1.65) })
+        )
+      );
       box.dispose();
-      const innerR = r * 0.52;
+      const innerR = r * 0.55;
       const inner = [
-        new THREE.Vector3(0, innerR, 3), new THREE.Vector3(innerR, 0, 3),
-        new THREE.Vector3(0, -innerR, 3), new THREE.Vector3(-innerR, 0, 3), new THREE.Vector3(0, innerR, 3),
+        { x: 0, y: innerR },
+        { x: innerR, y: 0 },
+        { x: 0, y: -innerR },
+        { x: -innerR, y: 0 },
       ];
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(inner), new THREE.LineBasicMaterial({ color: 0xb429ff })));
-      group.add(createGlowSprite(baseColor, r * 2.5, 0.3));
+      group.add(
+        new THREE.Mesh(
+          buildRibbonGeometry(inner, 2.6, true, 3.0),
+          createNeonRibbonMaterial(0xb429ff, 2.25, 0.95)
+        )
+      );
+      group.add(createGlowSprite(baseColor, r * 2.8, 0.4));
     } else {
+      // WARDEN Boss
       baseColor = 0xff2e97;
-      const corePts: THREE.Vector3[] = [];
-      for (let i = 0; i <= 12; i++) {
-        const a = (i / 12) * Math.PI * 2;
-        corePts.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, 2.5));
-      }
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(corePts), new THREE.LineBasicMaterial({ color: baseColor })));
+      group.add(
+        new THREE.Mesh(
+          buildRibbonGeometry(createPolygonPts(12, r), 4.0, true, 2.5),
+          createNeonRibbonMaterial(baseColor, 2.35, 0.98)
+        )
+      );
       for (let p = 0; p < 3; p++) {
-        const platePts: THREE.Vector3[] = [];
-        for (let i = 0; i <= 8; i++) {
-          const a = -0.45 + (i / 8) * 0.9;
-          platePts.push(new THREE.Vector3(Math.cos(a) * (r + 14), Math.sin(a) * (r + 14), 3));
+        const platePts: Array<{ x: number; y: number }> = [];
+        for (let i = 0; i <= 10; i++) {
+          const a = -0.45 + (i / 10) * 0.9;
+          platePts.push({ x: Math.cos(a) * (r + 14), y: Math.sin(a) * (r + 14) });
         }
-        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(platePts), new THREE.LineBasicMaterial({ color: 0xe6f0ff })));
+        group.add(
+          new THREE.Mesh(
+            buildRibbonGeometry(platePts, 4.2, false, 3.0),
+            createNeonRibbonMaterial(0xe6f0ff, 2.45, 0.98)
+          )
+        );
       }
-      group.add(createGlowSprite(baseColor, r * 2.8, 0.38));
-      const tele = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 2), new THREE.Vector3(620, 0, 2)]),
-        new THREE.LineBasicMaterial({ color: 0xff2e97, transparent: true, opacity: 0.5 })
+      group.add(createGlowSprite(baseColor, r * 3.2, 0.48));
+      const tele = new THREE.Mesh(
+        buildRibbonGeometry([{ x: 0, y: 0 }, { x: 620, y: 0 }], 3.0, false, 2.4),
+        createNeonRibbonMaterial(0xff2e97, 2.2, 0.65)
       );
       tele.visible = false;
       group.add(tele);
@@ -611,16 +660,21 @@ export class EntityRenderer {
     return group;
   }
 
-  private disposeGroup(group: THREE.Group): void {
-    for (const child of group.children) {
+  private disposeGroup(root: THREE.Object3D): void {
+    root.traverse((child) => {
       if (child instanceof THREE.Sprite) {
         child.material.dispose();
-        continue;
+        return;
       }
-      if (child instanceof THREE.Line || child instanceof THREE.LineLoop || child instanceof THREE.LineSegments) {
+      if (
+        child instanceof THREE.Line ||
+        child instanceof THREE.LineLoop ||
+        child instanceof THREE.LineSegments ||
+        child instanceof THREE.Mesh
+      ) {
         child.geometry.dispose();
         if (child.material instanceof THREE.Material) child.material.dispose();
       }
-    }
+    });
   }
 }

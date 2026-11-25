@@ -160,10 +160,10 @@ export class WarpingGrid {
       this.linePositions[ptr + 1] = y;
       this.linePositions[ptr + 2] = -disp * 8;
 
-      // Deep indigo at rest -> bright electric cyan/violet when warped
-      this.lineColors[ptr] = 0.08 + disp * 0.52;
-      this.lineColors[ptr + 1] = 0.14 + disp * 0.78;
-      this.lineColors[ptr + 2] = 0.45 + disp * 0.55;
+      // Deep indigo at rest -> bright HDR electric cyan/violet when warped
+      this.lineColors[ptr] = 0.09 + disp * 0.85;
+      this.lineColors[ptr + 1] = 0.16 + disp * 1.15;
+      this.lineColors[ptr + 2] = 0.55 + disp * 0.95;
       ptr += 3;
     };
 
