@@ -197,11 +197,11 @@ export class SpellVFX {
     this.particleGeometry.setAttribute('color', new THREE.BufferAttribute(this.particleColors, 3));
 
     const mat = new THREE.PointsMaterial({
-      size: 10,
+      size: 7.5,
       map: createSparkTexture(),
       vertexColors: true,
       transparent: true,
-      opacity: 0.95,
+      opacity: 0.85,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -218,7 +218,7 @@ export class SpellVFX {
       const backA = angle + Math.PI + (Math.random() - 0.5) * 0.65;
       const spd = 85 + Math.random() * 125;
       const maxLife = 0.16 + Math.random() * 0.16;
-      const col = base.clone().lerp(ember, Math.random() * 0.6).multiplyScalar(1.65);
+      const col = base.clone().lerp(ember, Math.random() * 0.6).multiplyScalar(0.95);
       this.particles.push({
         x: x - Math.cos(angle) * 16 + (Math.random() - 0.5) * 6,
         y: y - Math.sin(angle) * 16 + (Math.random() - 0.5) * 6,
@@ -243,12 +243,12 @@ export class SpellVFX {
     weightedColors: number[]
   ): void {
     const palette = weightedColors.length > 0 ? weightedColors : [0xb429ff];
-    for (let k = 0; k < 5; k++) {
+    for (let k = 0; k < 3; k++) {
       if (this.particles.length >= this.maxParticles) this.particles.shift();
       const dist = Math.random() * len;
       const lat = (Math.random() - 0.5) * width * 1.15;
       const cHex = palette[Math.floor(Math.random() * palette.length)]!;
-      const color = new THREE.Color(cHex).multiplyScalar(1.65);
+      const color = new THREE.Color(cHex).multiplyScalar(0.95);
       const spd = 480 + Math.random() * 340;
       const flutter = (Math.random() - 0.5) * 85;
       const maxLife = 0.2 + Math.random() * 0.2;
@@ -271,7 +271,7 @@ export class SpellVFX {
       const a = Math.random() * Math.PI * 2;
       const spd = (80 + Math.random() * 250) * speedScale;
       const maxLife = 0.25 + Math.random() * 0.32;
-      const col = base.clone().multiplyScalar(1.35 + Math.random() * 0.65);
+      const col = base.clone().multiplyScalar(0.85 + Math.random() * 0.2);
       this.particles.push({
         x,
         y,
@@ -323,7 +323,7 @@ export class SpellVFX {
       }
 
       const geo = buildRibbonGeometry(pts, 1.85, true, 3.3);
-      const mat = createNeonRibbonMaterial(cHex, 2.2, 0.95);
+      const mat = createNeonRibbonMaterial(cHex, 1.15, 0.95);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(x, y, 0);
       const a = dirAngle !== undefined ? dirAngle + (Math.random() - 0.5) * 0.95 : Math.random() * Math.PI * 2;
@@ -349,7 +349,7 @@ export class SpellVFX {
     const pts = createPolygonPoints(32, radius);
     const mesh = new THREE.Mesh(
       buildRibbonGeometry(pts, 4.2, true, 2.6),
-      createNeonRibbonMaterial(colorHex, 2.35, 1.0)
+      createNeonRibbonMaterial(colorHex, 1.25, 1.0)
     );
     mesh.position.set(x, y, 0);
     mesh.scale.set(0.25, 0.25, 1);
@@ -373,7 +373,7 @@ export class SpellVFX {
     beamGeo.translate(0, 0, 95);
     const beam = new THREE.Mesh(
       beamGeo,
-      createNeonRibbonMaterial(secondaryColorHex, 2.4, 0.85)
+      createNeonRibbonMaterial(secondaryColorHex, 1.25, 0.85)
     );
     group.add(beam);
 
@@ -415,7 +415,7 @@ export class SpellVFX {
     for (let i = 0; i < count; i++) {
       if (this.particles.length >= this.maxParticles) this.particles.shift();
       const cHex = palette[i % palette.length]!;
-      const color = new THREE.Color(cHex).multiplyScalar(1.55);
+      const color = new THREE.Color(cHex).multiplyScalar(0.95);
       const a = isNova ? Math.random() * Math.PI * 2 : angle + (Math.random() - 0.5) * spread;
       const spd = range * (1.8 + Math.random() * 1.55);
       const maxLife = 0.26 + Math.random() * 0.22;
@@ -430,7 +430,7 @@ export class SpellVFX {
       });
     }
 
-    // Thick HDR neon curved crescent wave arcs (images/flux.svg style)
+    // Thick neon curved crescent wave arcs (images/flux.svg style)
     const arcCount = isNova ? 5 : 2;
     for (let i = 0; i < arcCount; i++) {
       const a = isNova ? angle + (i / arcCount) * Math.PI * 2 : angle + (i - 0.5) * 0.08;
@@ -440,7 +440,7 @@ export class SpellVFX {
       const pts = createArcPoints(-arcSpan * 0.5, arcSpan * 0.5, layerR, 16);
       const mesh = new THREE.Mesh(
         buildRibbonGeometry(pts, i === 0 ? 3.8 : 2.6, false, 2.6),
-        createNeonRibbonMaterial(cHex, 2.2, i === 0 ? 0.95 : 0.72)
+        createNeonRibbonMaterial(cHex, 1.2, i === 0 ? 0.95 : 0.72)
       );
       mesh.position.set(x, y, 0);
       mesh.rotation.z = a;
@@ -483,18 +483,18 @@ export class SpellVFX {
     jagged.push({ x: last.x, y: last.y });
 
     const group = new THREE.Group();
-    // Primary glowing HDR outer bolt
+    // Primary glowing outer bolt
     group.add(
       new THREE.Mesh(
-        buildRibbonGeometry(jagged, 7.2, false, 3.8),
-        createNeonRibbonMaterial(palette[0]!, 2.45, 0.95)
+        buildRibbonGeometry(jagged, 5.5, false, 3.8),
+        createNeonRibbonMaterial(palette[0]!, 1.25, 0.95)
       )
     );
-    // White-hot crisp inner arc
+    // Crisp inner arc
     group.add(
       new THREE.Mesh(
-        buildRibbonGeometry(jagged, 2.5, false, 4.1),
-        createNeonRibbonMaterial(0xffffff, 2.9, 1.0)
+        buildRibbonGeometry(jagged, 1.8, false, 4.1),
+        createNeonRibbonMaterial(0xffffff, 1.35, 1.0)
       )
     );
 
@@ -505,8 +505,8 @@ export class SpellVFX {
       }));
       group.add(
         new THREE.Mesh(
-          buildRibbonGeometry(offsetPts, 4.4, false, 3.5),
-          createNeonRibbonMaterial(palette[1]!, 2.2, 0.85)
+          buildRibbonGeometry(offsetPts, 3.5, false, 3.5),
+          createNeonRibbonMaterial(palette[1]!, 1.15, 0.85)
         )
       );
     }
@@ -696,8 +696,7 @@ export class SpellVFX {
           const s = p.radius * 1.5;
           const box = new THREE.BoxGeometry(s, s, s, 2, 2, 2);
           const wire = new THREE.WireframeGeometry(box);
-          // Subdivided HDR glowing wire cube (matching Gemini_Generated_Image(3).jpeg)
-          const colBright = new THREE.Color(p.colorHex).multiplyScalar(1.85);
+          const colBright = new THREE.Color(p.colorHex).multiplyScalar(1.15);
           g.add(new THREE.LineSegments(wire, new THREE.LineBasicMaterial({ color: colBright })));
           g.add(
             new THREE.Mesh(
@@ -705,12 +704,12 @@ export class SpellVFX {
               new THREE.MeshBasicMaterial({
                 color: p.colorHex,
                 transparent: true,
-                opacity: 0.28,
+                opacity: 0.24,
                 blending: THREE.AdditiveBlending,
               })
             )
           );
-          g.add(createGlowSprite(p.colorHex, s * 2.8, 0.48));
+          g.add(createGlowSprite(p.colorHex, s * 2.5, 0.24));
           if (secondary !== p.colorHex) {
             const oct = new THREE.OctahedronGeometry(p.radius * 0.72, 0);
             const octWire = new THREE.WireframeGeometry(oct);
@@ -718,7 +717,7 @@ export class SpellVFX {
             g.add(
               new THREE.LineSegments(
                 octWire,
-                new THREE.LineBasicMaterial({ color: new THREE.Color(secondary).multiplyScalar(1.6) })
+                new THREE.LineBasicMaterial({ color: new THREE.Color(secondary).multiplyScalar(1.1) })
               )
             );
           }
@@ -749,7 +748,7 @@ export class SpellVFX {
           const bladeMat = createCrystalBladeMaterial(p.colorHex, secondary);
           g.add(new THREE.Mesh(bladeGeo, bladeMat));
 
-          // Crisp HDR edge ribbon + tapered contrail wake
+          // Crisp edge ribbon + tapered contrail wake
           const edgePts = [
             { x: tip, y: 0 },
             { x: -r * 0.15, y: w },
@@ -758,8 +757,8 @@ export class SpellVFX {
           ];
           g.add(
             new THREE.Mesh(
-              buildRibbonGeometry(edgePts, 2.2, true, 3.0),
-              createNeonRibbonMaterial(0xffffff, 2.2, 0.88)
+              buildRibbonGeometry(edgePts, 2.0, true, 3.0),
+              createNeonRibbonMaterial(0xffffff, 1.25, 0.85)
             )
           );
           const contrail = [
@@ -769,10 +768,10 @@ export class SpellVFX {
           g.add(
             new THREE.Mesh(
               buildRibbonGeometry(contrail, r * 0.42, false, 2.4),
-              createNeonRibbonMaterial(p.colorHex, 1.9, 0.65)
+              createNeonRibbonMaterial(p.colorHex, 1.05, 0.62)
             )
           );
-          g.add(createGlowSprite(p.colorHex, r * 3.0, 0.42));
+          g.add(createGlowSprite(p.colorHex, r * 2.6, 0.22));
         }
         this.projMeshes.set(p.id, g);
         this.scene.add(g);
@@ -813,19 +812,14 @@ export class SpellVFX {
       if (!group) {
         group = new THREE.Group();
         const stripW = Math.max(36, b.width * 2.2);
-        // 0: Volumetric HDR braided plasma strip
+        // 0: Volumetric braided plasma strip
         const beamPlane = new THREE.PlaneGeometry(1, stripW);
         beamPlane.translate(0.5, 0, 0);
         const beamMat = createBraidedBeamMaterial(cA, cB, cC);
         const beamMesh = new THREE.Mesh(beamPlane, beamMat);
         group.add(beamMesh);
 
-        // 1: Crisp HDR inner spine filament
-        const corePlane = new THREE.PlaneGeometry(1, Math.max(5, b.width * 0.35));
-        corePlane.translate(0.5, 0, 0);
-        group.add(new THREE.Mesh(corePlane, createNeonRibbonMaterial(cA, 2.6, 0.85)));
-
-        // 2: End impact shard crystal (no muzzle white blob)
+        // 1: End impact shard crystal (no muzzle white blob)
         const impactDiamond = [
           { x: 14, y: 0 },
           { x: 0, y: 10 },
@@ -834,12 +828,12 @@ export class SpellVFX {
         ];
         const impactMesh = new THREE.Mesh(
           buildRibbonGeometry(impactDiamond, 2.8, true, 3.6),
-          createNeonRibbonMaterial(cB, 2.6, 0.92)
+          createNeonRibbonMaterial(cB, 1.25, 0.92)
         );
         group.add(impactMesh);
 
-        // 3: Subtle end impact halo
-        group.add(createGlowSprite(cB, 38, 0.45));
+        // 2: Subtle end impact halo
+        group.add(createGlowSprite(cB, 30, 0.22));
 
         this.beamMeshes.set(b.id, group);
         this.scene.add(group);
@@ -853,16 +847,11 @@ export class SpellVFX {
       setShaderUniform(beamMesh.material, 'uLength', len / 22);
       setShaderUniform(beamMesh.material, 'uFade', Math.min(1, (b.life / Math.max(0.05, b.maxLife)) * 2.5));
 
-      const spineMesh = group.children[1] as THREE.Mesh;
-      spineMesh.position.set(b.x, b.y, 3.2);
-      spineMesh.rotation.z = b.angle;
-      spineMesh.scale.set(len, 1, 1);
-
-      const impactMesh = group.children[2] as THREE.Mesh;
+      const impactMesh = group.children[1] as THREE.Mesh;
       impactMesh.position.set(b.x + cos * len, b.y + sin * len, 0);
       impactMesh.rotation.z = timeSec * 11 + b.id;
 
-      group.children[3]!.position.set(b.x + cos * len, b.y + sin * len, 3.1);
+      group.children[2]!.position.set(b.x + cos * len, b.y + sin * len, 3.1);
 
       // Stream dense glowing plasma sparks & directional geometric shards along full beam length
       this.spawnBeamFlowParticle(b.x, b.y, cos, sin, nx, ny, len, b.width, b.composition.weightedColors);
@@ -902,7 +891,7 @@ export class SpellVFX {
         g.add(
           new THREE.LineSegments(
             wire,
-            new THREE.LineBasicMaterial({ color: new THREE.Color(barrierColor).multiplyScalar(1.6) })
+            new THREE.LineBasicMaterial({ color: new THREE.Color(barrierColor).multiplyScalar(1.12) })
           )
         );
         g.add(
@@ -911,18 +900,18 @@ export class SpellVFX {
             new THREE.MeshBasicMaterial({
               color: p1,
               transparent: true,
-              opacity: 0.28,
+              opacity: 0.22,
               blending: THREE.AdditiveBlending,
             })
           )
         );
-        // Base HDR neon ring around fortress obelisk
+        // Base neon ring around fortress obelisk
         const baseRing = new THREE.Mesh(
           buildRibbonGeometry(createPolygonPoints(6, w.radius * 1.05), 3.0, true, -20),
-          createNeonRibbonMaterial(p2, 2.2, 0.9)
+          createNeonRibbonMaterial(p2, 1.15, 0.9)
         );
         g.add(baseRing);
-        g.add(createGlowSprite(p1, w.radius * 3.0, 0.45));
+        g.add(createGlowSprite(p1, w.radius * 2.6, 0.24));
         g.position.set(w.x, w.y, 23);
         this.wallMeshes.set(w.id, g);
         this.scene.add(g);
@@ -979,12 +968,12 @@ export class SpellVFX {
         ico.dispose();
         const pod = new THREE.LineSegments(
           wire,
-          new THREE.LineBasicMaterial({ color: new THREE.Color(barrierColor).multiplyScalar(1.7) })
+          new THREE.LineBasicMaterial({ color: new THREE.Color(barrierColor).multiplyScalar(1.12) })
         );
         pod.position.set(0, 0, 10);
         g.add(pod);
 
-        // HDR spiked cross blades
+        // Spiked cross blades
         const spike1 = [
           { x: -m.radius * 0.95, y: 0 },
           { x: m.radius * 0.95, y: 0 },
@@ -995,20 +984,20 @@ export class SpellVFX {
         ];
         const crossGroup = new THREE.Group();
         crossGroup.add(
-          new THREE.Mesh(buildRibbonGeometry(spike1, 3.0, false, 10), createNeonRibbonMaterial(p2, 2.3, 0.95)),
-          new THREE.Mesh(buildRibbonGeometry(spike2, 3.0, false, 10), createNeonRibbonMaterial(p2, 2.3, 0.95))
+          new THREE.Mesh(buildRibbonGeometry(spike1, 3.0, false, 10), createNeonRibbonMaterial(p2, 1.2, 0.95)),
+          new THREE.Mesh(buildRibbonGeometry(spike2, 3.0, false, 10), createNeonRibbonMaterial(p2, 1.2, 0.95))
         );
         g.add(crossGroup);
 
-        const glow = createGlowSprite(p1, 30, 0.65);
+        const glow = createGlowSprite(p1, 26, 0.28);
         glow.position.set(0, 0, 10);
         g.add(glow);
 
-        // Trigger proximity ring as glowing HDR ribbon
+        // Trigger proximity ring as glowing ribbon
         g.add(
           new THREE.Mesh(
             buildRibbonGeometry(createPolygonPoints(24, m.triggerRadius), 2.2, true, 0.9),
-            createNeonRibbonMaterial(p1, 1.9, payloadColors.length >= 2 ? 0.7 : 0.45)
+            createNeonRibbonMaterial(p1, 1.05, payloadColors.length >= 2 ? 0.65 : 0.42)
           )
         );
 
@@ -1020,7 +1009,7 @@ export class SpellVFX {
       g.children[0]!.rotation.y = timeSec * 1.7;
       g.children[1]!.rotation.z = -timeSec * 3.8;
       const pulse = 0.85 + Math.sin(timeSec * 9 + m.id) * 0.2;
-      g.children[2]!.scale.set(30 * pulse, 30 * pulse, 1);
+      g.children[2]!.scale.set(26 * pulse, 26 * pulse, 1);
     }
     this.pruneMap(this.mineMeshes, alive);
   }
@@ -1045,11 +1034,11 @@ export class SpellVFX {
         vortexMesh.position.z = 1.2;
         g.add(vortexMesh);
 
-        // 1: Crisp HDR octagon ring
+        // 1: Crisp octagon ring
         g.add(
           new THREE.Mesh(
             buildRibbonGeometry(createPolygonPoints(8, s.radius * 0.64), 3.2, true, 1.8),
-            createNeonRibbonMaterial(payloadColor, 2.2, 0.9)
+            createNeonRibbonMaterial(payloadColor, 1.2, 0.9)
           )
         );
 
@@ -1087,7 +1076,7 @@ export class SpellVFX {
           g.add(
             new THREE.Mesh(
               buildRibbonGeometry(createPolygonPoints(36, s.radius), 3.4, true, 2.7),
-              createNeonRibbonMaterial(s.colorHex, 2.3, 0.9)
+              createNeonRibbonMaterial(s.colorHex, 1.2, 0.9)
             )
           );
         } else {
@@ -1123,7 +1112,7 @@ export class SpellVFX {
             new THREE.LineSegments(
               new THREE.BufferGeometry().setFromPoints(wirePts),
               new THREE.LineBasicMaterial({
-                color: new THREE.Color(secondary).multiplyScalar(1.55),
+                color: new THREE.Color(secondary).multiplyScalar(1.12),
                 transparent: true,
                 opacity: 0.85,
               })
@@ -1156,7 +1145,7 @@ export class SpellVFX {
           g.add(
             new THREE.Mesh(
               buildRibbonGeometry(createArcPoints(-s.arc, s.arc, s.radius * 1.04, 24), 3.4, false, 3.2),
-              createNeonRibbonMaterial(s.colorHex, 2.4, 0.95)
+              createNeonRibbonMaterial(s.colorHex, 1.25, 0.95)
             )
           );
         }
@@ -1195,11 +1184,11 @@ export class SpellVFX {
           g.add(
             new THREE.Mesh(
               buildRibbonGeometry(pts, ring === 0 ? 3.4 : 2.5, true, 0.6 + ring * 0.25),
-              createNeonRibbonMaterial(p.colorHex, ring === 0 ? 2.15 : 1.75, 0.85 - ring * 0.15)
+              createNeonRibbonMaterial(p.colorHex, ring === 0 ? 1.2 : 1.0, 0.85 - ring * 0.15)
             )
           );
         }
-        g.add(createGlowSprite(p.colorHex, p.radius * 2.1, 0.28));
+        g.add(createGlowSprite(p.colorHex, p.radius * 1.9, 0.16));
         g.position.set(p.x, p.y, 0);
         this.poolMeshes.set(p.id, g);
         this.scene.add(g);
@@ -1211,7 +1200,7 @@ export class SpellVFX {
         const child = g.children[r] as THREE.Mesh;
         setShaderUniform(child.material, 'uOpacity', (0.85 - r * 0.15) * fade);
       }
-      (g.children[3] as THREE.Sprite).material.opacity = 0.28 * fade;
+      (g.children[3] as THREE.Sprite).material.opacity = 0.16 * fade;
     }
     this.pruneMap(this.poolMeshes, alive);
   }
@@ -1228,11 +1217,11 @@ export class SpellVFX {
         const bladeGeo = createCurvedStripGeometry(s.radius * 0.56, s.radius * 1.05, -s.arc, s.arc, 24, 3.4);
         g.add(new THREE.Mesh(bladeGeo, createSlashMaterial(s.colorHex, secondary)));
 
-        // Sharp outer HDR neon cutting arc
+        // Sharp outer neon cutting arc
         g.add(
           new THREE.Mesh(
             buildRibbonGeometry(createArcPoints(-s.arc, s.arc, s.radius, 20), 4.0, false, 3.8),
-            createNeonRibbonMaterial(0xffffff, 2.5, 0.95)
+            createNeonRibbonMaterial(0xffffff, 1.3, 0.95)
           )
         );
         g.position.set(s.x, s.y, 0);
@@ -1260,7 +1249,7 @@ export class SpellVFX {
         g.add(
           new THREE.LineSegments(
             wire,
-            new THREE.LineBasicMaterial({ color: new THREE.Color(0x1a6bff).multiplyScalar(1.45), transparent: true, opacity: 0.85 })
+            new THREE.LineBasicMaterial({ color: new THREE.Color(0x1a6bff).multiplyScalar(1.1), transparent: true, opacity: 0.85 })
           )
         );
         g.add(
@@ -1269,7 +1258,7 @@ export class SpellVFX {
             new THREE.MeshBasicMaterial({
               color: 0x00f5ff,
               transparent: true,
-              opacity: 0.11,
+              opacity: 0.09,
               blending: THREE.AdditiveBlending,
             })
           )
@@ -1277,7 +1266,7 @@ export class SpellVFX {
         g.add(
           new THREE.Mesh(
             buildRibbonGeometry(createPolygonPoints(p.sides, p.radius * 1.03), 3.0, true, -21),
-            createNeonRibbonMaterial(0x00f5ff, 1.9, 0.78)
+            createNeonRibbonMaterial(0x00f5ff, 1.05, 0.78)
           )
         );
         g.position.set(p.x, p.y, 23);
@@ -1304,16 +1293,16 @@ export class SpellVFX {
         g.add(
           new THREE.Mesh(
             buildRibbonGeometry(createPolygonPoints(16, r.radius), 3.2, true, 1.6),
-            createNeonRibbonMaterial(0xb429ff, 2.2, 0.92)
+            createNeonRibbonMaterial(0xb429ff, 1.2, 0.92)
           )
         );
         g.add(
           new THREE.Mesh(
             buildRibbonGeometry(createPolygonPoints(8, r.radius), 2.8, true, 2.1),
-            createNeonRibbonMaterial(0x00f5ff, 2.1, 0.95)
+            createNeonRibbonMaterial(0x00f5ff, 1.15, 0.95)
           )
         );
-        g.add(createGlowSprite(0xb429ff, r.radius * 2.3, 0.35));
+        g.add(createGlowSprite(0xb429ff, r.radius * 2.0, 0.18));
         g.position.set(r.x, r.y, 0);
         this.riftMeshes.set(r.id, g);
         this.scene.add(g);
@@ -1336,13 +1325,13 @@ export class SpellVFX {
         g.add(
           new THREE.Mesh(
             buildRibbonGeometry(createPolygonPoints(24, h.radius), 3.2, true, 1.2),
-            createNeonRibbonMaterial(h.colorHex, 2.2, 0.9)
+            createNeonRibbonMaterial(h.colorHex, 1.2, 0.9)
           )
         );
         g.add(
           new THREE.Mesh(
             buildRibbonGeometry(createPolygonPoints(24, h.radius), 2.6, true, 1.6),
-            createNeonRibbonMaterial(0xff1e2d, 2.2, 0.85)
+            createNeonRibbonMaterial(0xff1e2d, 1.2, 0.85)
           )
         );
         g.position.set(h.x, h.y, 0);
@@ -1373,17 +1362,17 @@ export class SpellVFX {
       g.add(
         new THREE.Mesh(
           buildRibbonGeometry(archPts, 4.0, false, 2.2),
-          createNeonRibbonMaterial(color, gate.open ? 2.35 : 1.2, gate.open ? 0.95 : 0.45)
+          createNeonRibbonMaterial(color, gate.open ? 1.25 : 0.85, gate.open ? 0.95 : 0.45)
         )
       );
       if (gate.open) {
         g.add(
           new THREE.Mesh(
             buildRibbonGeometry(createPolygonPoints(24, gate.radius * 0.52), 3.2, true, 2.6),
-            createNeonRibbonMaterial(0x00f5ff, 2.3, 0.9)
+            createNeonRibbonMaterial(0x00f5ff, 1.2, 0.9)
           )
         );
-        g.add(createGlowSprite(0x39ff14, gate.radius * 2.2, 0.35));
+        g.add(createGlowSprite(0x39ff14, gate.radius * 2.0, 0.2));
       }
       g.position.set(gate.x, gate.y, 0);
       this.gateGroup = g;

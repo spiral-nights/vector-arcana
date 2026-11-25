@@ -61,11 +61,11 @@ export class EntityRenderer {
   constructor(scene: THREE.Scene) {
     this.scene = scene;
 
-    // 3 Nested Concentric Chevrons rendered as thick HDR glowing neon ribbons
+    // 3 Nested Concentric Chevrons rendered as thick saturated neon ribbons
     const chevronDefs: Array<{ pts: Array<{ x: number; y: number }>; width: number; z: number; boost: number }> = [
-      { pts: [{ x: 25, y: 0 }, { x: -15, y: 16.5 }, { x: -9, y: 0 }, { x: -15, y: -16.5 }], width: 3.4, z: 2.0, boost: 2.4 },
-      { pts: [{ x: 16.5, y: 0 }, { x: -11, y: 11 }, { x: -6, y: 0 }, { x: -11, y: -11 }], width: 2.8, z: 2.3, boost: 2.15 },
-      { pts: [{ x: 9.5, y: 0 }, { x: -7, y: 6.5 }, { x: -3, y: 0 }, { x: -7, y: -6.5 }], width: 2.2, z: 2.6, boost: 2.0 },
+      { pts: [{ x: 25, y: 0 }, { x: -15, y: 16.5 }, { x: -9, y: 0 }, { x: -15, y: -16.5 }], width: 2.8, z: 2.0, boost: 1.2 },
+      { pts: [{ x: 16.5, y: 0 }, { x: -11, y: 11 }, { x: -6, y: 0 }, { x: -11, y: -11 }], width: 2.2, z: 2.3, boost: 1.1 },
+      { pts: [{ x: 9.5, y: 0 }, { x: -7, y: 6.5 }, { x: -3, y: 0 }, { x: -7, y: -6.5 }], width: 1.8, z: 2.6, boost: 1.0 },
     ];
     for (const def of chevronDefs) {
       const ribbon = new THREE.Mesh(
@@ -85,70 +85,70 @@ export class EntityRenderer {
     this.noseTipMesh = new THREE.Mesh(
       tipGeo,
       new THREE.MeshBasicMaterial({
-        color: new THREE.Color(0x00f5ff).multiplyScalar(1.65),
+        color: new THREE.Color(0x00f5ff).multiplyScalar(1.05),
         transparent: true,
-        opacity: 0.72,
+        opacity: 0.45,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
       })
     );
     this.playerGroup.add(this.noseTipMesh);
 
-    this.shipGlow = createGlowSprite(0x00f5ff, 54, 0.36);
+    this.shipGlow = createGlowSprite(0x00f5ff, 40, 0.16);
     this.playerGroup.add(this.shipGlow);
 
-    // Very crisp tiny 4-point HDR muzzle sparkle ONLY when actively shooting
+    // Very crisp tiny 4-point muzzle sparkle ONLY when actively shooting
     this.muzzleSparkle = new THREE.Group();
     this.muzzleSparkle.add(
       new THREE.Mesh(
-        buildRibbonGeometry([{ x: -7, y: 0 }, { x: 7, y: 0 }], 2.0, false, 3.6),
-        createNeonRibbonMaterial(0xffffff, 2.6, 0.9)
+        buildRibbonGeometry([{ x: -7, y: 0 }, { x: 7, y: 0 }], 1.6, false, 3.6),
+        createNeonRibbonMaterial(0xffffff, 1.35, 0.9)
       ),
       new THREE.Mesh(
-        buildRibbonGeometry([{ x: 0, y: -7 }, { x: 0, y: 7 }], 2.0, false, 3.6),
-        createNeonRibbonMaterial(0xffffff, 2.6, 0.9)
+        buildRibbonGeometry([{ x: 0, y: -7 }, { x: 0, y: 7 }], 1.6, false, 3.6),
+        createNeonRibbonMaterial(0xffffff, 1.35, 0.9)
       )
     );
     this.muzzleSparkle.position.set(26, 0, 0);
     this.muzzleSparkle.visible = false;
     this.playerGroup.add(this.muzzleSparkle);
 
-    // Vivid HDR Thruster Wake
+    // Vivid Thruster Wake
     const thrustPts = [
       { x: -12, y: 4.5 },
       { x: -28, y: 0 },
       { x: -12, y: -4.5 },
     ];
     this.thrusterMesh = new THREE.Mesh(
-      buildRibbonGeometry(thrustPts, 3.0, false, 1.4),
-      createNeonRibbonMaterial(0x00f5ff, 2.3, 0.95)
+      buildRibbonGeometry(thrustPts, 2.6, false, 1.4),
+      createNeonRibbonMaterial(0x00f5ff, 1.2, 0.95)
     );
     this.playerGroup.add(this.thrusterMesh);
 
     // Diegetic Rear Double Halo (outer bracket + inner hull integrity arc)
     this.rearHaloMesh = new THREE.Mesh(
-      buildRibbonGeometry(createArcPts(32, Math.PI * 1.15, 26), 2.8, false, 1.5),
-      createNeonRibbonMaterial(0x00f5ff, 1.9, 0.65)
+      buildRibbonGeometry(createArcPts(32, Math.PI * 1.15, 26), 2.4, false, 1.5),
+      createNeonRibbonMaterial(0x00f5ff, 1.0, 0.65)
     );
     this.playerGroup.add(this.rearHaloMesh);
 
     this.hullArcMesh = new THREE.Mesh(
-      buildRibbonGeometry(createArcPts(28, Math.PI * 0.95, 26), 3.2, false, 1.8),
-      createNeonRibbonMaterial(0x39ff14, 2.2, 0.95)
+      buildRibbonGeometry(createArcPts(28, Math.PI * 0.95, 26), 2.8, false, 1.8),
+      createNeonRibbonMaterial(0x39ff14, 1.15, 0.95)
     );
     this.playerGroup.add(this.hullArcMesh);
 
     // Diegetic Ward Arcs
     this.wardArcMesh = new THREE.Mesh(
-      buildRibbonGeometry(createArcPts(37, Math.PI * 1.05, 26), 3.4, false, 2.0),
-      createNeonRibbonMaterial(0xe6f0ff, 2.3, 0.92)
+      buildRibbonGeometry(createArcPts(37, Math.PI * 1.05, 26), 3.0, false, 2.0),
+      createNeonRibbonMaterial(0xe6f0ff, 1.2, 0.92)
     );
     this.wardArcMesh.visible = false;
     this.playerGroup.add(this.wardArcMesh);
 
     this.wardInnerArcMesh = new THREE.Mesh(
-      buildRibbonGeometry(createArcPts(33.5, Math.PI * 1.05, 26), 2.8, false, 2.1),
-      createNeonRibbonMaterial(0x00f5ff, 2.1, 0.92)
+      buildRibbonGeometry(createArcPts(33.5, Math.PI * 1.05, 26), 2.5, false, 2.1),
+      createNeonRibbonMaterial(0x00f5ff, 1.15, 0.92)
     );
     this.wardInnerArcMesh.visible = false;
     this.playerGroup.add(this.wardInnerArcMesh);
@@ -160,20 +160,20 @@ export class EntityRenderer {
       chPts.push({ x: Math.cos(a) * 28, y: Math.sin(a) * 28 });
     }
     this.channelArcMesh = new THREE.Mesh(
-      buildRibbonGeometry(chPts, 3.2, false, 2.3),
-      createNeonRibbonMaterial(0xffffff, 2.4, 0.92)
+      buildRibbonGeometry(chPts, 2.8, false, 2.3),
+      createNeonRibbonMaterial(0xffffff, 1.2, 0.92)
     );
     this.channelArcMesh.visible = false;
     this.playerGroup.add(this.channelArcMesh);
 
     // Forward Charge Indicator
     this.chargeCore = new THREE.Mesh(
-      buildRibbonGeometry(createPolygonPts(4, 9.5, Math.PI / 4), 2.8, true, 2.6),
-      createNeonRibbonMaterial(0xe8741a, 2.3, 0.95)
+      buildRibbonGeometry(createPolygonPts(4, 9.5, Math.PI / 4), 2.5, true, 2.6),
+      createNeonRibbonMaterial(0xe8741a, 1.2, 0.95)
     );
     this.chargeRing = new THREE.Mesh(
-      buildRibbonGeometry(createPolygonPts(18, 12.5), 2.4, true, 2.3),
-      createNeonRibbonMaterial(0xffffff, 2.0, 0.8)
+      buildRibbonGeometry(createPolygonPts(18, 12.5), 2.2, true, 2.3),
+      createNeonRibbonMaterial(0xffffff, 1.05, 0.8)
     );
     this.chargeGroup.add(this.chargeCore, this.chargeRing);
     this.chargeGroup.position.set(29, 0, 0);
@@ -182,8 +182,8 @@ export class EntityRenderer {
 
     // Kinetic Self-Cast Armor Cage
     this.armorCage = new THREE.Mesh(
-      buildRibbonGeometry(createPolygonPts(6, 26), 3.0, true, 2.2),
-      createNeonRibbonMaterial(0xe8741a, 2.1, 0.9)
+      buildRibbonGeometry(createPolygonPts(6, 26), 2.6, true, 2.2),
+      createNeonRibbonMaterial(0xe8741a, 1.1, 0.9)
     );
     this.armorCage.visible = false;
     this.playerGroup.add(this.armorCage);
@@ -198,18 +198,18 @@ export class EntityRenderer {
       this.pipMeshes.push(g);
     }
 
-    // Aim reticle (crisp HDR cyan crosshairs)
+    // Aim reticle (crisp cyan crosshairs)
     const retSegments: Array<[Array<{ x: number; y: number }>, number]> = [
-      [[{ x: -10, y: 0 }, { x: -3.5, y: 0 }], 2.2],
-      [[{ x: 3.5, y: 0 }, { x: 10, y: 0 }], 2.2],
-      [[{ x: 0, y: -10 }, { x: 0, y: -3.5 }], 2.2],
-      [[{ x: 0, y: 3.5 }, { x: 0, y: 10 }], 2.2],
+      [[{ x: -10, y: 0 }, { x: -3.5, y: 0 }], 2.0],
+      [[{ x: 3.5, y: 0 }, { x: 10, y: 0 }], 2.0],
+      [[{ x: 0, y: -10 }, { x: 0, y: -3.5 }], 2.0],
+      [[{ x: 0, y: 3.5 }, { x: 0, y: 10 }], 2.0],
     ];
     for (const [pts, w] of retSegments) {
       this.reticleGroup.add(
         new THREE.Mesh(
           buildRibbonGeometry(pts, w, false, 3.0),
-          createNeonRibbonMaterial(0x00e5ff, 2.1, 0.9)
+          createNeonRibbonMaterial(0x00e5ff, 1.1, 0.9)
         )
       );
     }
@@ -224,12 +224,12 @@ export class EntityRenderer {
     ];
     this.waypointGroup.add(
       new THREE.Mesh(
-        buildRibbonGeometry(wpDiamond, 2.8, true, 1.8),
-        createNeonRibbonMaterial(0x00f5ff, 2.2, 0.9)
+        buildRibbonGeometry(wpDiamond, 2.4, true, 1.8),
+        createNeonRibbonMaterial(0x00f5ff, 1.15, 0.9)
       ),
       new THREE.Mesh(
-        buildRibbonGeometry(createPolygonPts(16, 15), 2.2, true, 1.4),
-        createNeonRibbonMaterial(0x1a6bff, 1.9, 0.65)
+        buildRibbonGeometry(createPolygonPts(16, 15), 2.0, true, 1.4),
+        createNeonRibbonMaterial(0x1a6bff, 1.0, 0.65)
       )
     );
     this.waypointGroup.visible = false;
@@ -243,8 +243,8 @@ export class EntityRenderer {
       { x: -4.5, y: -6.5 },
     ];
     this.gatePointer = new THREE.Mesh(
-      buildRibbonGeometry(ptrPts, 2.8, true, 3.2),
-      createNeonRibbonMaterial(0x39ff14, 2.35, 0.95)
+      buildRibbonGeometry(ptrPts, 2.4, true, 3.2),
+      createNeonRibbonMaterial(0x39ff14, 1.25, 0.95)
     );
     this.gatePointer.visible = false;
     this.scene.add(this.gatePointer);
@@ -269,15 +269,15 @@ export class EntityRenderer {
     const ringPts = createPolygonPts(sides, 7.2, el === 'THERMAL' ? Math.PI / 2 : 0);
     group.add(
       new THREE.Mesh(
-        buildRibbonGeometry(ringPts, 2.6, true, 2.2),
-        createNeonRibbonMaterial(meta.colorHex, 2.35, 0.95)
+        buildRibbonGeometry(ringPts, 2.4, true, 2.2),
+        createNeonRibbonMaterial(meta.colorHex, 1.25, 0.95)
       )
     );
 
     if (el === 'NANO') {
       group.add(
-        new THREE.Mesh(buildRibbonGeometry([{ x: -4.5, y: 0 }, { x: 4.5, y: 0 }], 2.2, false, 2.4), createNeonRibbonMaterial(meta.colorHex, 2.4, 0.95)),
-        new THREE.Mesh(buildRibbonGeometry([{ x: 0, y: -4.5 }, { x: 0, y: 4.5 }], 2.2, false, 2.4), createNeonRibbonMaterial(meta.colorHex, 2.4, 0.95))
+        new THREE.Mesh(buildRibbonGeometry([{ x: -4.5, y: 0 }, { x: 4.5, y: 0 }], 2.0, false, 2.4), createNeonRibbonMaterial(meta.colorHex, 1.25, 0.95)),
+        new THREE.Mesh(buildRibbonGeometry([{ x: 0, y: -4.5 }, { x: 0, y: 4.5 }], 2.0, false, 2.4), createNeonRibbonMaterial(meta.colorHex, 1.25, 0.95))
       );
     } else if (el === 'VOLT') {
       const bolt = [
@@ -286,9 +286,9 @@ export class EntityRenderer {
         { x: 2.2, y: -0.6 },
         { x: -2.2, y: -5.2 },
       ];
-      group.add(new THREE.Mesh(buildRibbonGeometry(bolt, 2.2, false, 2.4), createNeonRibbonMaterial(meta.colorHex, 2.4, 0.95)));
+      group.add(new THREE.Mesh(buildRibbonGeometry(bolt, 2.0, false, 2.4), createNeonRibbonMaterial(meta.colorHex, 1.25, 0.95)));
     }
-    group.add(createGlowSprite(meta.colorHex, 22, 0.48));
+    group.add(createGlowSprite(meta.colorHex, 20, 0.2));
     return group;
   }
 
@@ -308,7 +308,7 @@ export class EntityRenderer {
     for (const ch of this.shipChevrons) {
       setRibbonColor(ch, activeColor);
     }
-    (this.noseTipMesh.material as THREE.MeshBasicMaterial).color.setHex(activeColor).multiplyScalar(1.65);
+    (this.noseTipMesh.material as THREE.MeshBasicMaterial).color.setHex(activeColor).multiplyScalar(1.05);
     this.shipGlow.material.color.setHex(activeColor);
     setRibbonColor(this.rearHaloMesh, activeColor);
     setRibbonColor(this.thrusterMesh, activeColor);
@@ -473,7 +473,7 @@ export class EntityRenderer {
       if (mainObj instanceof THREE.Mesh) {
         setRibbonColor(mainObj, targetColor);
       } else if (mainObj instanceof THREE.LineSegments && mainObj.material instanceof THREE.LineBasicMaterial) {
-        mainObj.material.color.setHex(targetColor).multiplyScalar(1.65);
+        mainObj.material.color.setHex(targetColor).multiplyScalar(1.15);
       }
 
       if (e.archetype === 'BASTION') {
@@ -525,18 +525,18 @@ export class EntityRenderer {
       }
       group.add(
         new THREE.Mesh(
-          buildRibbonGeometry(pts, 2.8, true, 1.8),
-          createNeonRibbonMaterial(baseColor, 2.25, 0.95)
+          buildRibbonGeometry(pts, 2.6, true, 1.8),
+          createNeonRibbonMaterial(baseColor, 1.2, 0.95)
         )
       );
-      group.add(createGlowSprite(baseColor, r * 2.8, 0.4));
+      group.add(createGlowSprite(baseColor, r * 2.4, 0.22));
     } else if (e.archetype === 'BASTION') {
       baseColor = 0xe6f0ff;
       const hexPts = createPolygonPts(6, r);
       group.add(
         new THREE.Mesh(
-          buildRibbonGeometry(hexPts, 3.2, true, 2.0),
-          createNeonRibbonMaterial(baseColor, 2.1, 0.95)
+          buildRibbonGeometry(hexPts, 3.0, true, 2.0),
+          createNeonRibbonMaterial(baseColor, 1.15, 0.95)
         )
       );
       // 1: Front shield crescent ribbon
@@ -547,11 +547,11 @@ export class EntityRenderer {
       }
       group.add(
         new THREE.Mesh(
-          buildRibbonGeometry(arcPts, 4.0, false, 2.6),
-          createNeonRibbonMaterial(0x00f5ff, 2.45, 0.95)
+          buildRibbonGeometry(arcPts, 3.6, false, 2.6),
+          createNeonRibbonMaterial(0x00f5ff, 1.25, 0.95)
         )
       );
-      group.add(createGlowSprite(0x00f5ff, r * 2.8, 0.36));
+      group.add(createGlowSprite(0x00f5ff, r * 2.4, 0.2));
     } else if (e.archetype === 'STALKER') {
       baseColor = 0x00f5ff;
       const pts = [
@@ -562,23 +562,23 @@ export class EntityRenderer {
       ];
       group.add(
         new THREE.Mesh(
-          buildRibbonGeometry(pts, 3.0, true, 2.2),
-          createNeonRibbonMaterial(baseColor, 2.35, 0.95)
+          buildRibbonGeometry(pts, 2.8, true, 2.2),
+          createNeonRibbonMaterial(baseColor, 1.2, 0.95)
         )
       );
       group.add(
         new THREE.Mesh(
-          buildRibbonGeometry(createPolygonPts(18, r * 1.25), 2.2, true, 1.6),
-          createNeonRibbonMaterial(baseColor, 1.8, 0.65)
+          buildRibbonGeometry(createPolygonPts(18, r * 1.25), 2.0, true, 1.6),
+          createNeonRibbonMaterial(baseColor, 1.05, 0.65)
         )
       );
-      group.add(createGlowSprite(baseColor, r * 2.8, 0.38));
+      group.add(createGlowSprite(baseColor, r * 2.4, 0.22));
     } else if (e.archetype === 'WEAVER') {
       baseColor = 0xb429ff;
       group.add(
         new THREE.Mesh(
-          buildRibbonGeometry(createPolygonPts(8, r), 3.0, true, 2.0),
-          createNeonRibbonMaterial(baseColor, 2.25, 0.95)
+          buildRibbonGeometry(createPolygonPts(8, r), 2.8, true, 2.0),
+          createNeonRibbonMaterial(baseColor, 1.15, 0.95)
         )
       );
       const tri = [
@@ -588,14 +588,14 @@ export class EntityRenderer {
       ];
       group.add(
         new THREE.Mesh(
-          buildRibbonGeometry(tri, 2.6, true, 2.5),
-          createNeonRibbonMaterial(0xff5e99, 2.3, 0.95)
+          buildRibbonGeometry(tri, 2.4, true, 2.5),
+          createNeonRibbonMaterial(0xff5e99, 1.2, 0.95)
         )
       );
-      group.add(createGlowSprite(baseColor, r * 3.0, 0.42));
+      group.add(createGlowSprite(baseColor, r * 2.5, 0.22));
       const tele = new THREE.Mesh(
-        buildRibbonGeometry([{ x: 0, y: 0 }, { x: 580, y: 0 }], 2.4, false, 2.2),
-        createNeonRibbonMaterial(0xb429ff, 2.0, 0.55)
+        buildRibbonGeometry([{ x: 0, y: 0 }, { x: 580, y: 0 }], 2.2, false, 2.2),
+        createNeonRibbonMaterial(0xb429ff, 1.1, 0.55)
       );
       tele.visible = false;
       group.add(tele);
@@ -606,7 +606,7 @@ export class EntityRenderer {
       group.add(
         new THREE.LineSegments(
           new THREE.WireframeGeometry(box),
-          new THREE.LineBasicMaterial({ color: new THREE.Color(baseColor).multiplyScalar(1.65) })
+          new THREE.LineBasicMaterial({ color: new THREE.Color(baseColor).multiplyScalar(1.15) })
         )
       );
       box.dispose();
@@ -619,18 +619,18 @@ export class EntityRenderer {
       ];
       group.add(
         new THREE.Mesh(
-          buildRibbonGeometry(inner, 2.6, true, 3.0),
-          createNeonRibbonMaterial(0xb429ff, 2.25, 0.95)
+          buildRibbonGeometry(inner, 2.4, true, 3.0),
+          createNeonRibbonMaterial(0xb429ff, 1.2, 0.95)
         )
       );
-      group.add(createGlowSprite(baseColor, r * 2.8, 0.4));
+      group.add(createGlowSprite(baseColor, r * 2.4, 0.22));
     } else {
       // WARDEN Boss
       baseColor = 0xff2e97;
       group.add(
         new THREE.Mesh(
-          buildRibbonGeometry(createPolygonPts(12, r), 4.0, true, 2.5),
-          createNeonRibbonMaterial(baseColor, 2.35, 0.98)
+          buildRibbonGeometry(createPolygonPts(12, r), 3.6, true, 2.5),
+          createNeonRibbonMaterial(baseColor, 1.25, 0.98)
         )
       );
       for (let p = 0; p < 3; p++) {
@@ -641,15 +641,15 @@ export class EntityRenderer {
         }
         group.add(
           new THREE.Mesh(
-            buildRibbonGeometry(platePts, 4.2, false, 3.0),
-            createNeonRibbonMaterial(0xe6f0ff, 2.45, 0.98)
+            buildRibbonGeometry(platePts, 3.8, false, 3.0),
+            createNeonRibbonMaterial(0xe6f0ff, 1.25, 0.98)
           )
         );
       }
-      group.add(createGlowSprite(baseColor, r * 3.2, 0.48));
+      group.add(createGlowSprite(baseColor, r * 2.8, 0.26));
       const tele = new THREE.Mesh(
-        buildRibbonGeometry([{ x: 0, y: 0 }, { x: 620, y: 0 }], 3.0, false, 2.4),
-        createNeonRibbonMaterial(0xff2e97, 2.2, 0.65)
+        buildRibbonGeometry([{ x: 0, y: 0 }, { x: 620, y: 0 }], 2.8, false, 2.4),
+        createNeonRibbonMaterial(0xff2e97, 1.15, 0.65)
       );
       tele.visible = false;
       group.add(tele);

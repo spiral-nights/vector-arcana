@@ -39,13 +39,13 @@ export class SceneManager {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(width, height);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.0;
     container.appendChild(this.renderer.domElement);
 
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
 
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 1.05, 0.52, 0.44);
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.42, 0.32, 0.72);
     this.composer.addPass(this.bloomPass);
     this.composer.addPass(new OutputPass());
 
