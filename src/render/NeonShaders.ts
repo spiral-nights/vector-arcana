@@ -269,15 +269,14 @@ export function createBeamCoreMaterial(
           float alpha = clamp((darkMask * 0.98 + rimMask * 0.92 + outerGlow) * env, 0.0, 0.99);
           gl_FragColor = vec4(col, alpha);
         } else {
-          float whiteMask = smoothstep(0.20, 0.055, ay);
-          float rimMask = exp(-pow((ay - 0.20) * 14.0, 2.0));
-          float outerGlow = exp(-ay * ay * 9.0) * 0.55;
-          float softSurge = 0.92 + 0.08 * sin(x * 6.0 - uTime * 34.0);
+          float coreSoft = exp(-ay * ay * 6.2);
+          float midGlow = exp(-ay * ay * 2.2);
+          float softSurge = 0.94 + 0.06 * sin(x * 5.0 - uTime * 28.0);
 
           vec3 edgeTint = mix(uColorA, uColorB, 0.45 + 0.35 * sin(x * 3.5 - uTime * 16.0));
-          vec3 whiteCore = mix(edgeTint, vec3(0.92, 0.96, 0.94), 0.65) * (0.84 * softSurge);
-          vec3 col = mix(edgeTint * 0.85, whiteCore, whiteMask);
-          float alpha = clamp((whiteMask * 0.92 + rimMask * 0.78 + outerGlow) * env, 0.0, 0.94);
+          vec3 centerCol = mix(edgeTint, vec3(0.86, 0.94, 0.90), 0.42);
+          vec3 col = mix(edgeTint * 0.52, centerCol * (0.64 * softSurge), coreSoft);
+          float alpha = clamp((coreSoft * 0.72 + midGlow * 0.44) * env, 0.0, 0.86);
           gl_FragColor = vec4(col, alpha);
         }
       }
@@ -355,8 +354,8 @@ export function createBraidedBeamMaterial(
         float centerCutout = mix(1.0, smoothstep(0.11, 0.27, abs(yy)), uIsVoid);
 
         // Layer 1: Soft glowing outer volume
-        float volWide = exp(-yy * yy * 2.1) * 0.24 * centerCutout;
-        float volInner = exp(-yy * yy * 8.5) * 0.20 * centerCutout;
+        float volWide = exp(-yy * yy * 2.1) * mix(0.18, 0.24, uIsVoid) * centerCutout;
+        float volInner = exp(-yy * yy * 8.5) * mix(0.13, 0.20, uIsVoid) * centerCutout;
         vec3 baseTint = mix(uColorA, uColorB, 0.5 + 0.5 * sin(x * 0.65 - uTime * 4.0));
         vec3 col = baseTint * volWide + mix(uColorA, uColorB, 0.35) * volInner;
 
@@ -364,7 +363,7 @@ export function createBraidedBeamMaterial(
         float beamCore = exp(-yy * yy * 26.0) * (1.0 - uIsVoid);
         float surge = 0.82 + 0.18 * sin(x * 4.2 - uTime * 30.0);
         vec3 coreTint = mix(uColorA, vec3(0.95, 1.0, 0.96), 0.45);
-        col += coreTint * beamCore * surge * 0.22;
+        col += coreTint * beamCore * surge * 0.06;
 
         // Layer 2: 5 intertwined braided organic silk ribbons (or jagged void tendrils)
         float freq = mix(1.85, 2.9, uIsVoid);
@@ -393,7 +392,7 @@ export function createBraidedBeamMaterial(
         float fil1 = exp(-pow((yy - s1) * 34.0, 2.0)) * centerCutout;
         float fil2 = exp(-pow((yy - s2) * 36.0, 2.0)) * centerCutout;
         vec3 filamentCol = mix(mix(uColorA, vec3(0.95), 0.45), mix(uColorA, vec3(1.0), 0.25), uIsVoid);
-        col += filamentCol * (fil0 + fil1 + fil2 * 0.8) * 0.35;
+        col += filamentCol * (fil0 + fil1 + fil2 * 0.8) * mix(0.22, 0.35, uIsVoid);
 
         // Layer 4: Intersection node hotspot flares where ribbons cross
         float cross01 = exp(-pow((yy - s0) * 16.0, 2.0) - pow((yy - s1) * 16.0, 2.0)) * centerCutout;
@@ -410,8 +409,9 @@ export function createBraidedBeamMaterial(
 
         // Clean luminance cap so center never washes out to harsh white
         float peak = max(col.r, max(col.g, col.b));
-        if (peak > 1.08) {
-          col *= (1.08 + (peak - 1.08) * 0.14) / peak;
+        float maxPeak = mix(0.84, 1.08, uIsVoid);
+        if (peak > maxPeak) {
+          col *= (maxPeak + (peak - maxPeak) * 0.14) / peak;
         }
 
         col *= env;

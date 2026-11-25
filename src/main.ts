@@ -241,7 +241,20 @@ function frame(now: number): void {
     } else if (ev.type === 'vfx_lightning') {
       spellVFX.spawnLightning(ev.points, ev.colors);
     } else if (ev.type === 'vfx_spray') {
-      spellVFX.spawnSpray(ev.x, ev.y, ev.angle, ev.spread, ev.range, ev.colors, ev.isNova);
+      spellVFX.spawnSpray(ev.x, ev.y, ev.angle, ev.spread, ev.range, ev.colors, ev.isNova, ev.elements);
+    } else if (ev.type === 'vfx_element_explosion') {
+      spellVFX.spawnElementExplosion(ev.x, ev.y, ev.radius, ev.elements, ev.colors, ev.power);
+    } else if (ev.type === 'vfx_enemy_death') {
+      spellVFX.spawnEnemyDeath(
+        ev.x,
+        ev.y,
+        ev.radius,
+        ev.colorHex,
+        ev.secondaryColorHex,
+        ev.isBoss,
+        ev.statuses
+      );
+      sceneManager.addScreenShake(ev.isBoss ? 12 : 3.5);
     } else if (ev.type === 'damage_number') {
       const pt = sceneManager.worldToScreen(ev.x, ev.y, 28);
       if (pt.visible) {

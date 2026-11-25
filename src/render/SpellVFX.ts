@@ -31,6 +31,7 @@ import {
   SimSnapshot,
   SlashArcEntity,
   SpawnRiftEntity,
+  StatusType,
   StormEntity,
   WallPylonEntity,
 } from '../sim/types';
@@ -190,21 +191,136 @@ function createStarSparkTexture(): THREE.CanvasTexture {
   const ctx = canvas.getContext('2d')!;
   const half = size * 0.5;
 
-  const grad = ctx.createRadialGradient(half, half, 0, half, half, half * 0.65);
+  const grad = ctx.createRadialGradient(half, half, 0, half, half, half * 0.72);
   grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.3, 'rgba(255,255,255,0.55)');
+  grad.addColorStop(0.35, 'rgba(255,255,255,0.62)');
   grad.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
 
   ctx.fillStyle = '#ffffff';
   ctx.beginPath();
-  ctx.moveTo(half, 4);
-  ctx.quadraticCurveTo(half, half, size - 4, half);
-  ctx.quadraticCurveTo(half, half, half, size - 4);
-  ctx.quadraticCurveTo(half, half, 4, half);
-  ctx.quadraticCurveTo(half, half, half, 4);
+  ctx.moveTo(half, 3);
+  ctx.quadraticCurveTo(half + 5, half - 5, size - 3, half);
+  ctx.quadraticCurveTo(half + 5, half + 5, half, size - 3);
+  ctx.quadraticCurveTo(half - 5, half + 5, 3, half);
+  ctx.quadraticCurveTo(half - 5, half - 5, half, 3);
   ctx.fill();
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function createFireFlameTexture(): THREE.CanvasTexture {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const c = size * 0.5;
+
+  // Soft outer glow
+  const grad = ctx.createRadialGradient(c, c + 6, 4, c, c + 4, 28);
+  grad.addColorStop(0, 'rgba(255,255,255,0.65)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  // Flickering flame tongue silhouette
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.beginPath();
+  ctx.moveTo(c, 5);
+  ctx.bezierCurveTo(c + 11, 20, c + 21, 35, c + 12, 51);
+  ctx.quadraticCurveTo(c, 59, c - 12, 51);
+  ctx.bezierCurveTo(c - 21, 35, c - 11, 20, c, 5);
+  ctx.fill();
+
+  // Inner teardrop flare
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(c, 19);
+  ctx.bezierCurveTo(c + 7, 30, c + 10, 42, c, 51);
+  ctx.bezierCurveTo(c - 10, 42, c - 7, 30, c, 19);
+  ctx.fill();
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function createWaterDropletTexture(): THREE.CanvasTexture {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const c = size * 0.5;
+
+  // Plump liquid teardrop
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  ctx.beginPath();
+  ctx.moveTo(c, 8);
+  ctx.bezierCurveTo(c + 16, 26, c + 18, 46, c, 54);
+  ctx.bezierCurveTo(c - 18, 46, c - 16, 26, c, 8);
+  ctx.fill();
+
+  // Crisp upper-left white specular reflection crescent
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 3.6;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(c - 2, c + 7, 9, Math.PI * 0.85, Math.PI * 1.45);
+  ctx.stroke();
+
+  // Outer splash halo ring
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.arc(c, c + 6, 20, Math.PI * 0.12, Math.PI * 0.88);
+  ctx.stroke();
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function createPlasmaSteamTexture(): THREE.CanvasTexture {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const c = size * 0.5;
+
+  // Billowy superheated Fire+Water plasma/vapor puffs
+  const puffs = [
+    { x: c - 9, y: c + 3, r: 15 },
+    { x: c + 9, y: c + 3, r: 15 },
+    { x: c, y: c - 7, r: 17 },
+    { x: c, y: c + 6, r: 14 },
+  ];
+  for (const puff of puffs) {
+    const g = ctx.createRadialGradient(puff.x, puff.y, 1, puff.x, puff.y, puff.r);
+    g.addColorStop(0, 'rgba(255,255,255,0.92)');
+    g.addColorStop(0.55, 'rgba(255,255,255,0.48)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(puff.x, puff.y, puff.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Distinct ionized vortex arc around vapor cloud
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 3.2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(c, c, 21, -0.35, Math.PI * 1.15);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(c, c, 21, Math.PI - 0.15, Math.PI * 1.85);
+  ctx.stroke();
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
@@ -220,7 +336,7 @@ function createSnowflakeTexture(): THREE.CanvasTexture {
   const c = size * 0.5;
 
   ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 5.0;
   ctx.lineCap = 'round';
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2;
@@ -228,19 +344,23 @@ function createSnowflakeTexture(): THREE.CanvasTexture {
     const sin = Math.sin(a);
     ctx.beginPath();
     ctx.moveTo(c, c);
-    ctx.lineTo(c + cos * 24, c + sin * 24);
+    ctx.lineTo(c + cos * 26, c + sin * 26);
     ctx.stroke();
 
-    // Small crystal side branches
-    const bx = c + cos * 14;
-    const by = c + sin * 14;
-    for (const off of [-0.65, 0.65]) {
+    const bx = c + cos * 15;
+    const by = c + sin * 15;
+    for (const off of [-0.68, 0.68]) {
       ctx.beginPath();
       ctx.moveTo(bx, by);
-      ctx.lineTo(bx + Math.cos(a + off) * 8, by + Math.sin(a + off) * 8);
+      ctx.lineTo(bx + Math.cos(a + off) * 10, by + Math.sin(a + off) * 10);
       ctx.stroke();
     }
   }
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(c, c, 5, 0, Math.PI * 2);
+  ctx.fill();
+
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
   return tex;
@@ -261,8 +381,8 @@ function createCrossTexture(): THREE.CanvasTexture {
   ctx.fillRect(0, 0, size, size);
 
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(c - 5, c - 20, 10, 40);
-  ctx.fillRect(c - 20, c - 5, 40, 10);
+  ctx.fillRect(c - 7, c - 22, 14, 44);
+  ctx.fillRect(c - 22, c - 7, 44, 14);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
@@ -385,13 +505,20 @@ export class SpellVFX {
   private readonly scene: THREE.Scene;
   private readonly orbTexture: THREE.CanvasTexture;
   private readonly starTexture: THREE.CanvasTexture;
+  private readonly fireTexture: THREE.CanvasTexture;
+  private readonly waterTexture: THREE.CanvasTexture;
+  private readonly plasmaTexture: THREE.CanvasTexture;
   private readonly snowflakeTexture: THREE.CanvasTexture;
   private readonly crossTexture: THREE.CanvasTexture;
   private currentThemeIdx = 0;
 
   private readonly orbPool: ParticlePool;
+  private readonly firePool: ParticlePool;
+  private readonly waterPool: ParticlePool;
+  private readonly plasmaPool: ParticlePool;
   private readonly snowPool: ParticlePool;
   private readonly crossPool: ParticlePool;
+  private readonly sparkPool: ParticlePool;
 
   private readonly projMeshes = new Map<number, THREE.Group>();
   private readonly beamMeshes = new Map<number, THREE.Group>();
@@ -422,12 +549,54 @@ export class SpellVFX {
     this.scene = scene;
     this.orbTexture = createSoftOrbTexture();
     this.starTexture = createStarSparkTexture();
+    this.fireTexture = createFireFlameTexture();
+    this.waterTexture = createWaterDropletTexture();
+    this.plasmaTexture = createPlasmaSteamTexture();
     this.snowflakeTexture = createSnowflakeTexture();
     this.crossTexture = createCrossTexture();
 
-    this.orbPool = new ParticlePool(scene, 2200, 8.2, this.orbTexture, 0.9);
-    this.snowPool = new ParticlePool(scene, 720, 14, this.snowflakeTexture, 0.92);
-    this.crossPool = new ParticlePool(scene, 720, 13, this.crossTexture, 0.92);
+    this.orbPool = new ParticlePool(scene, 2400, 18, this.orbTexture, 0.9);
+    this.firePool = new ParticlePool(scene, 900, 30, this.fireTexture, 0.94);
+    this.waterPool = new ParticlePool(scene, 900, 26, this.waterTexture, 0.92);
+    this.plasmaPool = new ParticlePool(scene, 900, 34, this.plasmaTexture, 0.9);
+    this.snowPool = new ParticlePool(scene, 900, 30, this.snowflakeTexture, 0.94);
+    this.crossPool = new ParticlePool(scene, 800, 28, this.crossTexture, 0.94);
+    this.sparkPool = new ParticlePool(scene, 1200, 24, this.starTexture, 0.94);
+  }
+
+  private addElementParticle(
+    el: QueueElement,
+    pos: { x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; maxLife: number },
+    overrideColor?: number
+  ): void {
+    const colHex =
+      overrideColor ??
+      (el === 'THERMAL'
+        ? Math.random() < 0.55
+          ? 0xff6a00
+          : 0xffb822
+        : el === 'PLASMA'
+        ? Math.random() < 0.55
+          ? ELEMENT_META.PLASMA.colorHex
+          : 0xffb4d4
+        : el === 'FLUX'
+        ? Math.random() < 0.55
+          ? 0x2688ff
+          : 0x70d0ff
+        : el === 'CRYO' || el === 'CRYSTAL'
+        ? Math.random() < 0.5
+          ? 0x80ffff
+          : 0x00f5ff
+        : ELEMENT_META[el].colorHex);
+    const particle: Particle = { ...pos, color: new THREE.Color(colHex) };
+
+    if (el === 'THERMAL') this.firePool.add(particle);
+    else if (el === 'PLASMA') this.plasmaPool.add(particle);
+    else if (el === 'FLUX') this.waterPool.add(particle);
+    else if (el === 'CRYO' || el === 'CRYSTAL') this.snowPool.add(particle);
+    else if (el === 'NANO') this.crossPool.add(particle);
+    else if (el === 'VOLT' || el === 'VOID' || el === 'KINETIC') this.sparkPool.add(particle);
+    else this.orbPool.add(particle);
   }
 
   private getVoidPalette(
@@ -480,69 +649,19 @@ export class SpellVFX {
       if (el === 'VOID' && hasVoid && hasNonVoid) continue;
       const ox = x + (Math.random() - 0.5) * radius * 2;
       const oy = y + (Math.random() - 0.5) * radius * 2;
-      if (el === 'THERMAL' || el === 'PLASMA') {
-        const flameCol = new THREE.Color(Math.random() < 0.5 ? 0xff6a00 : 0xffaa1d);
-        this.orbPool.add({
-          x: ox,
-          y: oy,
-          z: z + Math.random() * 8,
-          vx: (Math.random() - 0.5) * 24,
-          vy: (Math.random() - 0.5) * 24,
-          vz: 45 + Math.random() * 65,
-          life: 0.35 + Math.random() * 0.25,
-          maxLife: 0.6,
-          color: flameCol,
-        });
-      } else if (el === 'CRYO' || el === 'CRYSTAL') {
-        this.snowPool.add({
-          x: ox,
-          y: oy,
-          z: z + 4 + Math.random() * 14,
-          vx: (Math.random() - 0.5) * 32,
-          vy: (Math.random() - 0.5) * 32,
-          vz: 14 + Math.random() * 24,
-          life: 0.45 + Math.random() * 0.3,
-          maxLife: 0.75,
-          color: new THREE.Color(0x80ffff),
-        });
-      } else if (el === 'NANO') {
-        this.crossPool.add({
-          x: ox,
-          y: oy,
-          z: z + Math.random() * 12,
-          vx: (Math.random() - 0.5) * 22,
-          vy: (Math.random() - 0.5) * 22,
-          vz: 38 + Math.random() * 44,
-          life: 0.42 + Math.random() * 0.28,
-          maxLife: 0.7,
-          color: new THREE.Color(0x39ff14),
-        });
-      } else if (el === 'VOLT') {
-        this.orbPool.add({
-          x: ox,
-          y: oy,
-          z: z + Math.random() * 12,
-          vx: (Math.random() - 0.5) * 110,
-          vy: (Math.random() - 0.5) * 110,
-          vz: 15 + Math.random() * 30,
-          life: 0.16 + Math.random() * 0.14,
-          maxLife: 0.3,
-          color: new THREE.Color(0xfff733),
-        });
-      } else {
-        const col = new THREE.Color(ELEMENT_META[el].colorHex);
-        this.orbPool.add({
-          x: ox,
-          y: oy,
-          z: z + Math.random() * 10,
-          vx: (Math.random() - 0.5) * 28,
-          vy: (Math.random() - 0.5) * 28,
-          vz: 24 + Math.random() * 35,
-          life: 0.35 + Math.random() * 0.25,
-          maxLife: 0.6,
-          color: col,
-        });
-      }
+      const vz = el === 'THERMAL' || el === 'PLASMA' ? 50 + Math.random() * 65 : 22 + Math.random() * 38;
+      const spd = el === 'VOLT' ? 110 : 30;
+      const maxLife = el === 'VOLT' ? 0.3 : 0.68;
+      this.addElementParticle(el, {
+        x: ox,
+        y: oy,
+        z: z + Math.random() * 12,
+        vx: (Math.random() - 0.5) * spd,
+        vy: (Math.random() - 0.5) * spd,
+        vz,
+        life: maxLife * (0.65 + Math.random() * 0.35),
+        maxLife,
+      });
     }
   }
 
@@ -552,81 +671,45 @@ export class SpellVFX {
     const by = -p.vy / spd;
     const nx = -by;
     const ny = bx;
-    const r = p.radius * 0.9;
+    const r = p.radius * 0.95;
     const els = p.elements;
     const vp = this.getVoidPalette(els, p.colors);
+    const hasNonVoid = els.some((e) => e !== 'VOID' && e !== 'BARRIER');
 
-    const addOrb = (colHex: number, count: number, zDrift = 38): void => {
+    const emitElementWake = (el: QueueElement, count: number, zDrift = 40, overrideCol?: number): void => {
       for (let i = 0; i < count; i++) {
-        const lat = (Math.random() - 0.5) * r * 1.8;
+        const lat = (Math.random() - 0.5) * r * 1.9;
         const back = Math.random() * r * 0.9;
         const slip = 55 + Math.random() * 95;
-        const maxLife = 0.24 + Math.random() * 0.24;
-        this.orbPool.add({
-          x: p.x + bx * back + nx * lat,
-          y: p.y + by * back + ny * lat,
-          z: 10 + Math.random() * 12,
-          vx: bx * slip + (Math.random() - 0.5) * 45,
-          vy: by * slip + (Math.random() - 0.5) * 45,
-          vz: (Math.random() - 0.25) * zDrift,
-          life: maxLife,
-          maxLife,
-          color: new THREE.Color(colHex),
-        });
+        const maxLife = 0.28 + Math.random() * 0.26;
+        this.addElementParticle(
+          el,
+          {
+            x: p.x + bx * back + nx * lat,
+            y: p.y + by * back + ny * lat,
+            z: 10 + Math.random() * 14,
+            vx: bx * slip + (Math.random() - 0.5) * 45,
+            vy: by * slip + (Math.random() - 0.5) * 45,
+            vz: (Math.random() - 0.2) * zDrift,
+            life: maxLife,
+            maxLife,
+          },
+          overrideCol
+        );
       }
     };
 
-    if (els.includes('THERMAL') || els.includes('PLASMA')) {
-      addOrb(0xff6a00, 3, 68);
-      addOrb(0xffbb22, 2, 75);
+    for (const el of els) {
+      if (el === 'BARRIER' || el === 'KINETIC') continue;
+      if (el === 'VOID' && hasNonVoid) continue;
+      emitElementWake(el, 5, el === 'THERMAL' || el === 'PLASMA' ? 68 : 38);
     }
-    if (els.includes('CRYO') || els.includes('CRYSTAL')) {
-      for (let i = 0; i < 4; i++) {
-        const lat = (Math.random() - 0.5) * r * 1.9;
-        this.snowPool.add({
-          x: p.x + nx * lat,
-          y: p.y + ny * lat,
-          z: 12 + Math.random() * 12,
-          vx: bx * (45 + Math.random() * 70) + (Math.random() - 0.5) * 35,
-          vy: by * (45 + Math.random() * 70) + (Math.random() - 0.5) * 35,
-          vz: 10 + Math.random() * 25,
-          life: 0.35 + Math.random() * 0.22,
-          maxLife: 0.57,
-          color: new THREE.Color(0x80ffff),
-        });
-      }
-      addOrb(0x00f5ff, 3, 30);
-    }
-    if (els.includes('NANO')) {
-      for (let i = 0; i < 4; i++) {
-        const lat = (Math.random() - 0.5) * r * 1.8;
-        this.crossPool.add({
-          x: p.x + nx * lat,
-          y: p.y + ny * lat,
-          z: 12 + Math.random() * 12,
-          vx: bx * (40 + Math.random() * 65) + (Math.random() - 0.5) * 30,
-          vy: by * (40 + Math.random() * 65) + (Math.random() - 0.5) * 30,
-          vz: 20 + Math.random() * 35,
-          life: 0.32 + Math.random() * 0.2,
-          maxLife: 0.52,
-          color: new THREE.Color(0x39ff14),
-        });
-      }
-      addOrb(0x39ff14, 2, 35);
-    }
-    if (els.includes('FLUX')) {
-      addOrb(0x1a6bff, 3, 30);
-      addOrb(0x66b2ff, 2, 30);
-    }
-    if (els.includes('VOID')) {
-      for (let i = 0; i < 5; i++) {
-        const col = vp.particleColors[i % vp.particleColors.length]!;
-        addOrb(col, 1, 35);
-      }
+    if (vp.isVoid && hasNonVoid) {
+      emitElementWake('VOID', 3, 35, vp.outlineA);
     }
 
     // Always shed earthy stone sparks + occasional geometric stone chips
-    addOrb(vp.isVoid ? vp.outlineA : ELEMENT_META.KINETIC.colorHex, 3, 45);
+    emitElementWake('KINETIC', 3, 45, vp.isVoid ? vp.outlineA : ELEMENT_META.KINETIC.colorHex);
     if (Math.random() < 0.28) {
       const chipColors = vp.isVoid ? vp.particleColors : [ELEMENT_META.KINETIC.colorHex, ...p.colors];
       this.spawnShards(p.x, p.y, chipColors, 1, 0.45, Math.atan2(by, bx));
@@ -668,14 +751,45 @@ export class SpellVFX {
     elements: readonly QueueElement[]
   ): void {
     const palette = weightedColors.length > 0 ? weightedColors : [0xf59e0b];
-    for (let k = 0; k < 4; k++) {
+    const lenFactor = Math.max(1, Math.min(2.0, len / 380));
+    const hasNonVoid = elements.some((e) => e !== 'VOID' && e !== 'BARRIER');
+    const flowEls = elements.filter((e) => e !== 'BARRIER' && !(e === 'VOID' && hasNonVoid));
+
+    // Dense shaped elemental particles streaming along the beam
+    const perElCount = Math.round(4 * lenFactor);
+    for (const el of flowEls) {
+      for (let k = 0; k < perElCount; k++) {
+        const dist = Math.random() * len;
+        const edgeSide = el === 'VOID' ? (Math.random() < 0.5 ? -1 : 1) * width * 0.42 : (Math.random() - 0.5) * width * 1.1;
+        const spd = 460 + Math.random() * 340;
+        const flutter = (Math.random() - 0.5) * 65;
+        const maxLife = 0.24 + Math.random() * 0.16;
+        const overrideCol = el === 'VOID' ? palette[k % palette.length] : undefined;
+        this.addElementParticle(
+          el,
+          {
+            x: bx + cos * dist + nx * edgeSide,
+            y: by + sin * dist + ny * edgeSide,
+            z: 15 + (Math.random() - 0.5) * 8,
+            vx: cos * spd + nx * flutter,
+            vy: sin * spd + ny * flutter,
+            vz: (Math.random() - 0.5) * 28,
+            life: maxLife,
+            maxLife,
+          },
+          overrideCol
+        );
+      }
+    }
+
+    // Soft colored background stream glints
+    for (let k = 0; k < 3; k++) {
       const dist = Math.random() * len;
       const lat = (Math.random() - 0.5) * width * 0.95;
       const cHex = palette[Math.floor(Math.random() * palette.length)]!;
-      const color = new THREE.Color(cHex).lerp(new THREE.Color(0xffffff), Math.random() * 0.3).multiplyScalar(0.95);
-      const spd = 460 + Math.random() * 320;
-      const flutter = (Math.random() - 0.5) * 75;
-      const maxLife = 0.18 + Math.random() * 0.18;
+      const spd = 480 + Math.random() * 300;
+      const flutter = (Math.random() - 0.5) * 70;
+      const maxLife = 0.18 + Math.random() * 0.16;
       this.orbPool.add({
         x: bx + cos * dist + nx * lat,
         y: by + sin * dist + ny * lat,
@@ -685,39 +799,154 @@ export class SpellVFX {
         vz: (Math.random() - 0.5) * 35,
         life: maxLife,
         maxLife,
-        color,
+        color: new THREE.Color(cHex).multiplyScalar(0.95),
+      });
+    }
+  }
+
+  public spawnElementExplosion(
+    x: number,
+    y: number,
+    radius: number,
+    elements: readonly QueueElement[],
+    colors: number[],
+    power: number
+  ): void {
+    const vp = this.getVoidPalette(elements, colors);
+    const hasNonVoid = elements.some((e) => e !== 'VOID' && e !== 'BARRIER');
+    const burstEls = elements.filter((e) => e !== 'BARRIER' && !(e === 'VOID' && hasNonVoid));
+    const perElCount = Math.round(18 + power * 6);
+
+    for (const el of burstEls) {
+      for (let i = 0; i < perElCount; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const spd = radius * (1.1 + Math.random() * 1.7);
+        const maxLife = 0.3 + Math.random() * 0.3;
+        const overrideCol = el === 'VOID' ? vp.particleColors[i % vp.particleColors.length] : undefined;
+        this.addElementParticle(
+          el,
+          {
+            x: x + Math.cos(a) * (4 + Math.random() * 12),
+            y: y + Math.sin(a) * (4 + Math.random() * 12),
+            z: 10 + Math.random() * 14,
+            vx: Math.cos(a) * spd,
+            vy: Math.sin(a) * spd,
+            vz: 28 + Math.random() * 75,
+            life: maxLife,
+            maxLife,
+          },
+          overrideCol
+        );
+      }
+      if (el !== 'KINETIC') {
+        this.spawnRing(x, y, radius * 0.88, ELEMENT_META[el].colorHex, 0.28);
+      }
+    }
+
+    if (vp.isVoid && hasNonVoid) {
+      for (let i = 0; i < 12; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const spd = radius * (1.0 + Math.random() * 1.4);
+        this.addElementParticle(
+          'VOID',
+          {
+            x,
+            y,
+            z: 12,
+            vx: Math.cos(a) * spd,
+            vy: Math.sin(a) * spd,
+            vz: 24 + Math.random() * 55,
+            life: 0.35,
+            maxLife: 0.35,
+          },
+          vp.outlineA
+        );
+      }
+    }
+  }
+
+  public spawnEnemyDeath(
+    x: number,
+    y: number,
+    radius: number,
+    colorHex: number,
+    secondaryColorHex: number,
+    isBoss: boolean,
+    statuses: readonly StatusType[]
+  ): void {
+    const orbCount = isBoss ? 85 : 36;
+    const sparkCount = isBoss ? 50 : 22;
+    const shardCount = isBoss ? 34 : 14;
+    const c1 = new THREE.Color(colorHex);
+    const c2 = new THREE.Color(secondaryColorHex);
+    const white = new THREE.Color(0xffffff);
+
+    for (let i = 0; i < orbCount; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = (90 + Math.random() * 290) * (isBoss ? 1.45 : 1.0);
+      const maxLife = 0.32 + Math.random() * 0.36;
+      const base = i % 3 === 0 ? white : i % 2 === 0 ? c2 : c1;
+      this.orbPool.add({
+        x: x + (Math.random() - 0.5) * radius * 0.9,
+        y: y + (Math.random() - 0.5) * radius * 0.9,
+        z: 10 + Math.random() * 14,
+        vx: Math.cos(a) * spd,
+        vy: Math.sin(a) * spd,
+        vz: 40 + Math.random() * 120,
+        life: maxLife,
+        maxLife,
+        color: base.clone(),
       });
     }
 
-    if (elements.includes('NANO') && Math.random() < 0.45) {
-      const dist = Math.random() * len;
-      const lat = (Math.random() - 0.5) * width * 0.85;
-      this.crossPool.add({
-        x: bx + cos * dist + nx * lat,
-        y: by + sin * dist + ny * lat,
-        z: 16,
-        vx: cos * 380,
-        vy: sin * 380,
-        vz: 18,
-        life: 0.25,
-        maxLife: 0.25,
-        color: new THREE.Color(0x39ff14),
+    for (let i = 0; i < sparkCount; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = (160 + Math.random() * 300) * (isBoss ? 1.4 : 1.0);
+      const maxLife = 0.24 + Math.random() * 0.28;
+      this.sparkPool.add({
+        x,
+        y,
+        z: 12 + Math.random() * 14,
+        vx: Math.cos(a) * spd,
+        vy: Math.sin(a) * spd,
+        vz: 35 + Math.random() * 90,
+        life: maxLife,
+        maxLife,
+        color: (i % 2 === 0 ? c1 : c2).clone(),
       });
     }
-    if ((elements.includes('CRYO') || elements.includes('CRYSTAL')) && Math.random() < 0.45) {
-      const dist = Math.random() * len;
-      const lat = (Math.random() - 0.5) * width * 0.85;
-      this.snowPool.add({
-        x: bx + cos * dist + nx * lat,
-        y: by + sin * dist + ny * lat,
-        z: 16,
-        vx: cos * 340,
-        vy: sin * 340,
-        vz: 14,
-        life: 0.28,
-        maxLife: 0.28,
-        color: new THREE.Color(0x80ffff),
-      });
+
+    this.spawnShards(x, y, [colorHex, secondaryColorHex, 0xffffff], shardCount, isBoss ? 1.55 : 1.18);
+    this.spawnRing(x, y, radius * (isBoss ? 2.4 : 1.9), 0xffffff, 0.22);
+    this.spawnRing(x, y, radius * (isBoss ? 3.5 : 2.7), colorHex, 0.34);
+
+    for (const st of statuses) {
+      const el: QueueElement | null =
+        st === 'IGNITED'
+          ? 'THERMAL'
+          : st === 'FROZEN' || st === 'CHILLED'
+          ? 'CRYO'
+          : st === 'PRIMED'
+          ? 'FLUX'
+          : st === 'CORRUPTED'
+          ? 'NANO'
+          : null;
+      if (!el) continue;
+      for (let i = 0; i < 12; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const spd = 110 + Math.random() * 210;
+        const maxLife = 0.34 + Math.random() * 0.24;
+        this.addElementParticle(el, {
+          x,
+          y,
+          z: 12 + Math.random() * 10,
+          vx: Math.cos(a) * spd,
+          vy: Math.sin(a) * spd,
+          vz: 30 + Math.random() * 75,
+          life: maxLife,
+          maxLife,
+        });
+      }
     }
   }
 
@@ -855,33 +1084,34 @@ export class SpellVFX {
     spread: number,
     range: number,
     colors: number[],
-    isNova: boolean
+    isNova: boolean,
+    elements: readonly QueueElement[] = []
   ): void {
     const palette = colors.length > 0 ? colors : [0x00f5ff];
-    const count = isNova ? 76 : 32;
-    const hasCryo = palette.includes(ELEMENT_META.CRYO.colorHex) || palette.includes(ELEMENT_META.CRYSTAL.colorHex);
-    const hasNano = palette.includes(ELEMENT_META.NANO.colorHex);
+    const count = isNova ? 76 : 36;
+    const sprayEls = elements.filter((e) => e !== 'BARRIER');
 
     for (let i = 0; i < count; i++) {
-      const cHex = palette[i % palette.length]!;
-      const color = new THREE.Color(cHex).multiplyScalar(0.95);
       const a = isNova ? Math.random() * Math.PI * 2 : angle + (Math.random() - 0.5) * spread;
       const spd = range * (1.8 + Math.random() * 1.55);
-      const maxLife = 0.26 + Math.random() * 0.22;
-      const p: Particle = {
+      const maxLife = 0.28 + Math.random() * 0.24;
+      const pos = {
         x,
         y,
-        z: 10 + Math.random() * 8,
+        z: 10 + Math.random() * 10,
         vx: Math.cos(a) * spd,
         vy: Math.sin(a) * spd,
-        vz: (Math.random() - 0.5) * 30,
+        vz: (Math.random() - 0.35) * 35,
         life: maxLife,
         maxLife,
-        color,
       };
-      if (hasCryo && i % 3 === 0) this.snowPool.add(p);
-      else if (hasNano && i % 3 === 0) this.crossPool.add(p);
-      else this.orbPool.add(p);
+      if (sprayEls.length > 0 && i % 4 !== 3) {
+        const el = sprayEls[i % sprayEls.length]!;
+        this.addElementParticle(el, pos);
+      } else {
+        const cHex = palette[i % palette.length]!;
+        this.orbPool.add({ ...pos, color: new THREE.Color(cHex).multiplyScalar(0.95) });
+      }
     }
 
     const arcCount = isNova ? 5 : 2;
@@ -1069,8 +1299,12 @@ export class SpellVFX {
     }
 
     this.orbPool.update(dt, 0.94);
+    this.firePool.update(dt, 0.94);
+    this.waterPool.update(dt, 0.94);
+    this.plasmaPool.update(dt, 0.93);
     this.snowPool.update(dt, 0.96);
     this.crossPool.update(dt, 0.95);
+    this.sparkPool.update(dt, 0.93);
   }
 
   private syncEnemyStatusParticles(snapshot: SimSnapshot): void {
@@ -1702,8 +1936,8 @@ export class SpellVFX {
             color: new THREE.Color(0x39ff14),
           });
         }
-        if (s.elements.includes('THERMAL') || s.elements.includes('PLASMA')) {
-          this.orbPool.add({
+        if (s.elements.includes('THERMAL')) {
+          this.addElementParticle('THERMAL', {
             x: px,
             y: py,
             z: 50 + Math.random() * 65,
@@ -1712,11 +1946,22 @@ export class SpellVFX {
             vz: -75 - Math.random() * 65,
             life: 0.55,
             maxLife: 0.55,
-            color: new THREE.Color(Math.random() < 0.5 ? 0xff6a00 : 0xffaa1d),
+          });
+        }
+        if (s.elements.includes('PLASMA')) {
+          this.addElementParticle('PLASMA', {
+            x: px,
+            y: py,
+            z: 50 + Math.random() * 65,
+            vx: (Math.random() - 0.5) * 35,
+            vy: (Math.random() - 0.5) * 35,
+            vz: -65 - Math.random() * 55,
+            life: 0.55,
+            maxLife: 0.55,
           });
         }
         if (s.elements.includes('FLUX')) {
-          this.orbPool.add({
+          this.addElementParticle('FLUX', {
             x: px,
             y: py,
             z: 90 + Math.random() * 35,
@@ -1725,22 +1970,24 @@ export class SpellVFX {
             vz: -145 - Math.random() * 60,
             life: 0.45,
             maxLife: 0.45,
-            color: new THREE.Color(0x3898ff),
           });
         }
         if (s.elements.includes('VOID')) {
           const voidCol = vp.particleColors[k % vp.particleColors.length]!;
-          this.orbPool.add({
-            x: px,
-            y: py,
-            z: 10 + Math.random() * 45,
-            vx: (s.x - px) * 1.4 - Math.sin(a) * 65,
-            vy: (s.y - py) * 1.4 + Math.cos(a) * 65,
-            vz: -15,
-            life: 0.5,
-            maxLife: 0.5,
-            color: new THREE.Color(voidCol),
-          });
+          this.addElementParticle(
+            'VOID',
+            {
+              x: px,
+              y: py,
+              z: 10 + Math.random() * 45,
+              vx: (s.x - px) * 1.4 - Math.sin(a) * 65,
+              vy: (s.y - py) * 1.4 + Math.cos(a) * 65,
+              vz: -15,
+              life: 0.5,
+              maxLife: 0.5,
+            },
+            voidCol
+          );
         }
       }
       if (s.elements.includes('VOLT') && Math.random() < 0.25) {

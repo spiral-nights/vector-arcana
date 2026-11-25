@@ -822,4 +822,79 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     expect(ELEMENT_META.THERMAL.colorHex).toBe(0xff6a00);
     expect(ELEMENT_META.KINETIC.colorHex).toBe(0xa86b3e);
   });
+
+  it('imbued Kinetic rocks detonate with imbued element explosions, cryo shatter shards, and void pull', () => {
+    // 1. KINETIC + THERMAL rock emits vfx_element_explosion and ignites
+    const simFire = new GameSim();
+    simFire.combat.enemies = [];
+    simFire.waveDirector.rifts = [];
+    const targetFire = simFire.combat.spawnEnemy('BASTION', simFire.getSnapshot().player.x + 90, 0, 1);
+    targetFire.hasFrontShield = false;
+    queueAndStep(simFire, ['KINETIC', 'THERMAL']);
+    simFire.step(makeInput({ castAction: 'FORWARD', castHeld: false, aimX: targetFire.x, aimY: 0 }));
+    for (let i = 0; i < 6; i++) simFire.step(makeInput({ aimX: targetFire.x, aimY: 0 }));
+    const fireExp = simFire.drainEvents().find((ev) => ev.type === 'vfx_element_explosion');
+    expect(fireExp?.type).toBe('vfx_element_explosion');
+    if (fireExp?.type === 'vfx_element_explosion') {
+      expect(fireExp.elements).toContain('KINETIC');
+      expect(fireExp.elements).toContain('THERMAL');
+    }
+    expect(targetFire.statuses.IGNITED).toBeDefined();
+
+    // 2. KINETIC + CRYO rock spawns 4 radial SHATTER_SHARD spikes on detonation
+    const simCryo = new GameSim();
+    simCryo.combat.enemies = [];
+    simCryo.waveDirector.rifts = [];
+    const targetCryo = simCryo.combat.spawnEnemy('BASTION', simCryo.getSnapshot().player.x + 80, 0, 1);
+    targetCryo.hasFrontShield = false;
+    queueAndStep(simCryo, ['KINETIC', 'CRYO']);
+    simCryo.step(makeInput({ castAction: 'FORWARD', castHeld: false, aimX: targetCryo.x, aimY: 0 }));
+    for (let i = 0; i < 6; i++) simCryo.step(makeInput({ aimX: targetCryo.x, aimY: 0 }));
+    const shards = simCryo.getSnapshot().projectiles.filter((p) => p.kind === 'SHATTER_SHARD');
+    expect(shards.length).toBe(4);
+
+    // 3. KINETIC + VOID rock pulls nearby enemies inward on detonation
+    const simVoid = new GameSim();
+    simVoid.combat.enemies = [];
+    simVoid.waveDirector.rifts = [];
+    const px = simVoid.getSnapshot().player.x;
+    const hitEnemy = simVoid.combat.spawnEnemy('BASTION', px + 85, 0, 1);
+    hitEnemy.hasFrontShield = false;
+    const pulled = simVoid.combat.spawnEnemy('BASTION', px + 145, 0, 1);
+    pulled.hasFrontShield = false;
+    queueAndStep(simVoid, ['KINETIC', 'VOID']);
+    simVoid.step(makeInput({ castAction: 'FORWARD', castHeld: false, aimX: hitEnemy.x, aimY: 0 }));
+    for (let i = 0; i < 6; i++) simVoid.step(makeInput({ aimX: hitEnemy.x, aimY: 0 }));
+    expect(pulled.vx).toBeLessThan(0);
+  });
+
+  it('emits vfx_enemy_death with position and active statuses when an enemy dies', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    const e = sim.combat.spawnEnemy('BASTION', 220, 45, 1);
+    e.statuses.IGNITED = { type: 'IGNITED', remaining: 3, stacks: 1, potency: 1 };
+    e.hp = 0;
+    sim.step(makeInput());
+    const deathEv = sim.drainEvents().find((ev) => ev.type === 'vfx_enemy_death');
+    expect(deathEv?.type).toBe('vfx_enemy_death');
+    if (deathEv?.type === 'vfx_enemy_death') {
+      expect(deathEv.x).toBe(220);
+      expect(deathEv.y).toBe(45);
+      expect(deathEv.statuses).toContain('IGNITED');
+    }
+  });
+
+  it('includes elements array with PLASMA on Fire+Water spray events', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    queueAndStep(sim, ['THERMAL', 'FLUX']);
+    sim.step(makeInput({ castAction: 'FORWARD', castHeld: true, aimX: 200, aimY: 0 }));
+    const sprayEv = sim.drainEvents().find((ev) => ev.type === 'vfx_spray');
+    expect(sprayEv?.type).toBe('vfx_spray');
+    if (sprayEv?.type === 'vfx_spray') {
+      expect(sprayEv.elements).toContain('PLASMA');
+    }
+  });
 });

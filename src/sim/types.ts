@@ -417,7 +417,9 @@ export type SimEvent =
   | { type: 'vfx_storm_strike'; x: number; y: number; colorHex: number; secondaryColorHex: number; radius: number }
   | { type: 'vfx_lightning'; points: Array<{ x: number; y: number }>; colors: number[] }
   | { type: 'vfx_shatter'; x: number; y: number; colorHex: number }
-  | { type: 'vfx_spray'; x: number; y: number; angle: number; spread: number; range: number; colors: number[]; isNova: boolean }
+  | { type: 'vfx_spray'; x: number; y: number; angle: number; spread: number; range: number; colors: number[]; isNova: boolean; elements?: QueueElement[] }
+  | { type: 'vfx_element_explosion'; x: number; y: number; radius: number; elements: QueueElement[]; colors: number[]; power: number }
+  | { type: 'vfx_enemy_death'; x: number; y: number; radius: number; colorHex: number; secondaryColorHex: number; isBoss: boolean; statuses: StatusType[] }
   | { type: 'damage_number'; x: number; y: number; text: string; colorHex: number; big?: boolean }
   | { type: 'beam_clash'; x: number; y: number; colorHex: number }
   | { type: 'wave_start'; wave: number; isBoss: boolean }
