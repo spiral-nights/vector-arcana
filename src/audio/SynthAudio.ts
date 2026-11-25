@@ -1,4 +1,4 @@
-import { SfxId } from '../sim/types';
+import { QueueElement, SfxId } from '../sim/types';
 
 const COOLDOWN_MS: Partial<Record<SfxId, number>> = {
   spray: 90,
@@ -116,7 +116,7 @@ export class SynthAudio {
     src.stop(now + duration + 0.02);
   }
 
-  public play(sound: SfxId, _colorHex?: number): void {
+  public play(sound: SfxId, _colorHex?: number, elements?: readonly QueueElement[]): void {
     if (this.muted) return;
     const nowMs = performance.now();
     const minCd = COOLDOWN_MS[sound] ?? 30;
@@ -127,93 +127,97 @@ export class SynthAudio {
     const ctx = this.ensureContext();
     if (!ctx || ctx.state === 'suspended') return;
 
+    const pitchVar = 0.94 + Math.random() * 0.12;
+    if (elements && elements.length > 0) {
+      this.playElementLayer(elements, pitchVar);
+    }
+
     switch (sound) {
       case 'queue':
-        this.playTone(540, 740, 0.075, 'triangle', 0.22);
+        this.playTone(540 * pitchVar, 740 * pitchVar, 0.075, 'triangle', 0.22);
         break;
       case 'cancel':
-        this.playTone(340, 170, 0.11, 'sawtooth', 0.2);
+        this.playTone(340 * pitchVar, 170, 0.11, 'sawtooth', 0.2);
         break;
       case 'fusion':
-        this.playTone(520, 780, 0.12, 'triangle', 0.24);
-        this.playTone(780, 1180, 0.14, 'sine', 0.2, 0.05);
+        this.playTone(520 * pitchVar, 780 * pitchVar, 0.12, 'triangle', 0.24);
+        this.playTone(780 * pitchVar, 1180 * pitchVar, 0.14, 'sine', 0.2, 0.05);
         break;
       case 'dash':
-        this.playNoise(0.16, 'bandpass', 1100, 0.28, 1.5);
-        this.playTone(460, 180, 0.14, 'sine', 0.2);
+        this.playNoise(0.16, 'bandpass', 1100 * pitchVar, 0.28, 1.5);
+        this.playTone(460 * pitchVar, 180, 0.14, 'sine', 0.2);
         break;
       case 'shield':
-        this.playTone(280, 560, 0.18, 'sine', 0.26);
-        this.playTone(420, 840, 0.16, 'triangle', 0.14, 0.03);
+        this.playTone(280 * pitchVar, 560, 0.18, 'sine', 0.22);
+        this.playTone(420 * pitchVar, 840, 0.16, 'triangle', 0.12, 0.03);
         break;
       case 'wall':
-        this.playTone(150, 75, 0.2, 'triangle', 0.34);
-        this.playNoise(0.14, 'lowpass', 520, 0.24);
+        this.playTone(150 * pitchVar, 75, 0.2, 'triangle', 0.28);
+        this.playNoise(0.14, 'lowpass', 520, 0.2);
         break;
       case 'mine_deploy':
-        this.playTone(460, 620, 0.08, 'square', 0.14);
-        this.playTone(620, 480, 0.08, 'sine', 0.16, 0.05);
+        this.playTone(460 * pitchVar, 620, 0.08, 'square', 0.12);
+        this.playTone(620 * pitchVar, 480, 0.08, 'sine', 0.14, 0.05);
         break;
       case 'mine_explode':
-        this.playTone(130, 36, 0.34, 'sine', 0.48);
-        this.playNoise(0.28, 'lowpass', 780, 0.42);
+        this.playTone(130 * pitchVar, 36, 0.34, 'sine', 0.44);
+        this.playNoise(0.28, 'lowpass', 780, 0.38);
         break;
       case 'storm':
-        this.playNoise(0.42, 'bandpass', 420, 0.28, 0.9);
-        this.playTone(110, 62, 0.38, 'sawtooth', 0.18);
+        this.playNoise(0.38, 'bandpass', 420 * pitchVar, 0.22, 0.9);
+        this.playTone(110 * pitchVar, 62, 0.32, 'sawtooth', 0.14);
         break;
       case 'rock':
-        this.playTone(155, 58, 0.24, 'triangle', 0.38);
-        this.playNoise(0.18, 'lowpass', 640, 0.26);
+        this.playTone(155 * pitchVar, 58, 0.22, 'triangle', 0.32);
+        this.playNoise(0.16, 'lowpass', 640, 0.22);
         break;
       case 'icicle':
-        this.playTone(1150, 1750, 0.09, 'sine', 0.2);
-        this.playNoise(0.08, 'highpass', 2600, 0.16);
+        this.playTone(1150 * pitchVar, 1750 * pitchVar, 0.09, 'sine', 0.16);
+        this.playNoise(0.08, 'highpass', 2600, 0.12);
         break;
       case 'beam':
-        this.playTone(185, 225, 0.22, 'sawtooth', 0.2);
-        this.playTone(370, 390, 0.22, 'sine', 0.14);
+        this.playTone(185 * pitchVar, 225 * pitchVar, 0.2, 'sawtooth', 0.16);
         break;
       case 'beam_clash':
-        this.playNoise(0.12, 'bandpass', 1800, 0.24, 2.2);
-        this.playTone(620, 880, 0.11, 'sawtooth', 0.18);
+        this.playNoise(0.12, 'bandpass', 1800 * pitchVar, 0.24, 2.2);
+        this.playTone(620 * pitchVar, 880, 0.11, 'sawtooth', 0.18);
         break;
       case 'lightning':
-        this.playNoise(0.09, 'highpass', 2200, 0.26, 1.8);
-        this.playTone(960, 310, 0.09, 'sawtooth', 0.2);
+        this.playNoise(0.09, 'highpass', 2200 * pitchVar, 0.2, 1.8);
+        this.playTone(960 * pitchVar, 310, 0.09, 'sawtooth', 0.15);
         break;
       case 'spray':
-        this.playNoise(0.11, 'bandpass', 950, 0.18, 0.9);
+        this.playNoise(0.11, 'bandpass', 950 * pitchVar, 0.12, 0.9);
         break;
       case 'slash':
-        this.playNoise(0.16, 'bandpass', 1650, 0.3, 1.4);
-        this.playTone(540, 210, 0.14, 'sawtooth', 0.22);
+        this.playNoise(0.16, 'bandpass', 1650 * pitchVar, 0.26, 1.4);
+        this.playTone(540 * pitchVar, 210, 0.14, 'sawtooth', 0.18);
         break;
       case 'heal':
-        this.playTone(440, 660, 0.14, 'sine', 0.18);
-        this.playTone(660, 880, 0.14, 'sine', 0.14, 0.06);
+        this.playTone(440 * pitchVar, 660 * pitchVar, 0.14, 'sine', 0.18);
+        this.playTone(660 * pitchVar, 880 * pitchVar, 0.14, 'sine', 0.14, 0.06);
         break;
       case 'cleanse':
-        this.playNoise(0.14, 'bandpass', 1400, 0.22);
-        this.playTone(620, 920, 0.14, 'triangle', 0.18);
+        this.playNoise(0.14, 'bandpass', 1400 * pitchVar, 0.22);
+        this.playTone(620 * pitchVar, 920, 0.14, 'triangle', 0.18);
         break;
       case 'ward':
-        this.playTone(390, 585, 0.18, 'triangle', 0.22);
-        this.playTone(585, 780, 0.18, 'sine', 0.16, 0.04);
+        this.playTone(390 * pitchVar, 585, 0.18, 'triangle', 0.2);
+        this.playTone(585 * pitchVar, 780, 0.18, 'sine', 0.14, 0.04);
         break;
       case 'shatter':
         this.playNoise(0.2, 'highpass', 2400, 0.34, 1.5);
-        this.playTone(1450, 520, 0.16, 'triangle', 0.26);
-        this.playTone(980, 320, 0.18, 'sine', 0.22, 0.03);
+        this.playTone(1450 * pitchVar, 520, 0.16, 'triangle', 0.26);
+        this.playTone(980 * pitchVar, 320, 0.18, 'sine', 0.22, 0.03);
         break;
       case 'shield_block':
-        this.playTone(720, 420, 0.08, 'triangle', 0.2);
+        this.playTone(720 * pitchVar, 420, 0.08, 'triangle', 0.2);
         break;
       case 'enemy_hit':
-        this.playTone(260, 140, 0.06, 'triangle', 0.14);
+        this.playTone(260 * pitchVar, 140, 0.06, 'triangle', 0.14);
         break;
       case 'enemy_kill':
-        this.playTone(180, 55, 0.22, 'sawtooth', 0.26);
+        this.playTone(180 * pitchVar, 55, 0.22, 'sawtooth', 0.26);
         this.playNoise(0.18, 'bandpass', 900, 0.26);
         break;
       case 'player_hit':
@@ -238,6 +242,52 @@ export class SynthAudio {
         this.playTone(330, 220, 0.22, 'sawtooth', 0.24);
         this.playTone(220, 110, 0.4, 'sawtooth', 0.26, 0.18);
         break;
+    }
+  }
+
+  private playElementLayer(elements: readonly QueueElement[], pitchVar: number): void {
+    const unique = [...new Set(elements)].slice(0, 3);
+    for (let i = 0; i < unique.length; i++) {
+      const el = unique[i]!;
+      const delay = i * 0.02;
+      switch (el) {
+        case 'THERMAL':
+          this.playNoise(0.16, 'lowpass', 720 * pitchVar, 0.22, 0.9, delay);
+          this.playTone(240 * pitchVar, 130, 0.14, 'sawtooth', 0.12, delay);
+          break;
+        case 'FLUX':
+          this.playTone(360 * pitchVar, 920 * pitchVar, 0.09, 'sine', 0.16, delay);
+          this.playNoise(0.12, 'bandpass', 620 * pitchVar, 0.18, 2.4, delay + 0.02);
+          break;
+        case 'CRYO':
+        case 'CRYSTAL':
+          this.playTone(1480 * pitchVar, 2240 * pitchVar, 0.13, 'sine', 0.14, delay);
+          this.playTone(2120 * pitchVar, 1860, 0.14, 'triangle', 0.09, delay + 0.03);
+          break;
+        case 'VOLT':
+          this.playNoise(0.08, 'highpass', 2800 * pitchVar, 0.18, 2.0, delay);
+          this.playTone(1180 * pitchVar, 420, 0.08, 'square', 0.1, delay);
+          break;
+        case 'VOID':
+          this.playTone(86 * pitchVar, 46, 0.24, 'sawtooth', 0.22, delay);
+          this.playTone(128 * pitchVar, 64, 0.22, 'triangle', 0.16, delay);
+          break;
+        case 'KINETIC':
+          this.playTone(125 * pitchVar, 48, 0.18, 'triangle', 0.24, delay);
+          this.playNoise(0.12, 'lowpass', 460, 0.2, 1.0, delay);
+          break;
+        case 'NANO':
+          this.playTone(620 * pitchVar, 930 * pitchVar, 0.11, 'triangle', 0.14, delay);
+          this.playTone(930 * pitchVar, 1240 * pitchVar, 0.11, 'sine', 0.12, delay + 0.04);
+          break;
+        case 'PLASMA':
+          this.playNoise(0.15, 'highpass', 1850 * pitchVar, 0.2, 1.4, delay);
+          this.playTone(340 * pitchVar, 740 * pitchVar, 0.14, 'sawtooth', 0.12, delay);
+          break;
+        case 'BARRIER':
+          this.playTone(330 * pitchVar, 495 * pitchVar, 0.15, 'sine', 0.14, delay);
+          break;
+      }
     }
   }
 }

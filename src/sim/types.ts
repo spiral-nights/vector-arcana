@@ -61,7 +61,7 @@ export interface ElementComposition {
 }
 
 export interface ChannelState {
-  delivery: 'SPRAY' | 'BEAM' | 'LIGHTNING_BOLT' | 'SELF_HEAL';
+  delivery: 'SPRAY' | 'BEAM' | 'LIGHTNING_BOLT';
   elements: QueueElement[];
   composition: ElementComposition;
   remaining: number;
@@ -109,6 +109,8 @@ export type EnemyArchetype =
   | 'SWARMER'
   | 'BASTION'
   | 'STALKER'
+  | 'PYRO_SPRAYER'
+  | 'GEO_BOMBER'
   | 'WEAVER'
   | 'SPLITTER'
   | 'WARDEN';
@@ -182,12 +184,17 @@ export interface EnemyEntity {
   beamAngle: number;
   statuses: Partial<Record<StatusType, StatusInstance>>;
   hitFlash: number;
+  affinity?: BaseElement;
+  weakness?: BaseElement;
+  nanoMarkTimer: number;
+  freezeImmuneTimer: number;
+  bossPhase?: number;
 }
 
 export interface ProjectileEntity {
   id: number;
   owner: 'PLAYER' | 'ENEMY';
-  kind: 'ROCK' | 'ICICLE' | 'FROST_NEEDLE' | 'SHATTER_SHARD';
+  kind: 'ROCK' | 'ICICLE' | 'FROST_NEEDLE' | 'SHATTER_SHARD' | 'STORM_BOMB' | 'NANO_BOLT' | 'ENEMY_ROCK';
   x: number;
   y: number;
   vx: number;
@@ -224,6 +231,7 @@ export interface BeamEntity {
   clashing: boolean;
   clashDist: number;
   refracted?: boolean;
+  beamOffset?: number;
 }
 
 export interface WallPylonEntity {
@@ -410,7 +418,7 @@ export type SimEvent =
   | { type: 'grid_well'; x: number; y: number; strength: number; radius: number }
   | { type: 'hit_stop'; duration: number }
   | { type: 'screen_shake'; intensity: number }
-  | { type: 'sfx'; sound: SfxId; colorHex?: number }
+  | { type: 'sfx'; sound: SfxId; colorHex?: number; elements?: QueueElement[] }
   | { type: 'vfx_burst'; x: number; y: number; colorHex: number; count: number; radius: number }
   | { type: 'vfx_shards'; x: number; y: number; colors: number[]; count: number; speedScale?: number }
   | { type: 'vfx_ring'; x: number; y: number; radius: number; colorHex: number; duration?: number }

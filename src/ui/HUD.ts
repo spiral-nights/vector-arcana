@@ -394,8 +394,10 @@ export class HUD {
         e.archetype === 'WARDEN' ? '#ff2e97' :
         e.archetype === 'BASTION' ? '#e6f0ff' :
         e.archetype === 'STALKER' ? '#00f5ff' :
+        e.archetype === 'PYRO_SPRAYER' ? '#ff6a00' :
+        e.archetype === 'GEO_BOMBER' ? '#a86b3e' :
         e.archetype === 'WEAVER' ? '#b429ff' :
-        e.archetype === 'SPLITTER' ? '#a86b3e' : '#ff2e97';
+        e.archetype === 'SPLITTER' ? '#fff733' : '#ff2e97';
       const r = e.archetype === 'WARDEN' ? 5 : 2.3;
       ctx.beginPath();
       ctx.arc(toX(e.x), toY(e.y), r, 0, Math.PI * 2);
@@ -465,7 +467,7 @@ export class HUD {
       this.channelWrap.style.display = 'flex';
       this.channelWrap.style.flexDirection = 'column';
       this.channelWrap.style.gap = '3px';
-      this.channelLabel.textContent = ch.delivery === 'SELF_HEAL' ? 'HEALING...' : `CHANNELING ${ch.delivery.replace('_', ' ')}`;
+      this.channelLabel.textContent = `CHANNELING ${ch.delivery.replace('_', ' ')}`;
       this.channelFill.style.width = `${Math.max(0, (ch.remaining / ch.maxDuration) * 100)}%`;
       this.channelFill.style.background = `#${ch.composition.primaryColorHex.toString(16).padStart(6, '0')}`;
     } else if (charge) {

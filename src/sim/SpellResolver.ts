@@ -153,7 +153,7 @@ export function computeComposition(elements: readonly QueueElement[]): ElementCo
 export type SelfEffectType =
   | 'SHIELD_WARD'
   | 'KINETIC_ARMOR'
-  | 'SELF_HEAL'
+  | 'NANO_PULSE'
   | 'VOID_BURST'
   | 'VOLT_NOVA'
   | 'ELEMENT_AOE'
@@ -221,12 +221,11 @@ export function resolveSelfCast(queue: readonly QueueElement[]): ResolvedSelfCas
     };
   }
   if (queue.includes('NANO')) {
-    const nanoStacks = comp.counts.NANO ?? 1;
     return {
-      effect: 'SELF_HEAL',
+      effect: 'NANO_PULSE',
       elements: [...queue],
       composition: comp,
-      healPerSec: nanoStacks * 24,
+      healPerSec: 0,
       armorAmount: 0,
       wardElement: null,
       colorHex: ELEMENT_META.NANO.colorHex,

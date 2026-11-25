@@ -148,6 +148,9 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('mousedown', (e) => {
   synthAudio.unlock();
   syncShiftFromMouse(e);
+  if ((e.target as HTMLElement | null)?.closest('#hud') || sim.getSnapshot().phase !== 'PLAYING') {
+    return;
+  }
   if (e.button === 1) {
     e.preventDefault();
     mmbDown = true;
@@ -326,7 +329,7 @@ function frame(now: number): void {
     } else if (ev.type === 'gate_open') {
       hud.showGateOpenBanner();
     } else if (ev.type === 'sfx') {
-      synthAudio.play(ev.sound, ev.colorHex);
+      synthAudio.play(ev.sound, ev.colorHex, ev.elements);
     } else if (ev.type === 'game_over') {
       highScores = recordHighScore(ev.score, ev.wave);
     }

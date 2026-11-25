@@ -123,6 +123,7 @@ export class GameSim {
       if (ocStacks > 0 && uniqueCount >= 3) {
         p.overclockTimer = p.overclockMax;
         this.events.push({ type: 'vfx_ring', x: p.x, y: p.y, radius: 75, colorHex: 0x39ff14, duration: 0.25 });
+        this.events.push({ type: 'damage_number', x: p.x, y: p.y - 24, text: 'OVERCLOCKED!', colorHex: 0x39ff14, big: true });
       }
     };
     const getOcCooldownMult = (): number =>
@@ -170,14 +171,7 @@ export class GameSim {
         if (selfCast.effect !== 'NONE') {
           this.combat.stopChannel(p);
           this.combat.cancelCharge(p);
-          if (selfCast.effect === 'SELF_HEAL' && input.selfHeld) {
-            this.combat.startSelfHealChannel(p, selfCast, this.events);
-          } else {
-            this.combat.castSelf(p, selfCast, this.events);
-            if (selfCast.effect === 'SELF_HEAL' && !input.selfHeld) {
-              this.combat.stopChannel(p);
-            }
-          }
+          this.combat.castSelf(p, selfCast, this.events);
           tryTriggerOverclock(new Set(selfCast.elements).size);
           p.queue = [];
           p.castCooldown = 0.16 * getOcCooldownMult();

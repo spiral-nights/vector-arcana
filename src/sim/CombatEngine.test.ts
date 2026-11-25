@@ -129,13 +129,16 @@ describe('CombatEngine — Rock & Icicle Charge-Up Proportionality', () => {
 });
 
 describe('CombatEngine — Mixed Volt + Fire + Barrier Storm', () => {
-  it('emits both storm strikes and lightning bolts for VOLT + THERMAL + BARRIER', () => {
+  it('emits both storm strikes and lightning bolts after storm-bomb detonates for VOLT + THERMAL + BARRIER', () => {
     const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
     queueAndStep(sim, ['VOLT', 'THERMAL', 'BARRIER']);
     sim.step(makeInput({ castAction: 'FORWARD' }));
+    expect(sim.getSnapshot().projectiles.some((p) => p.kind === 'STORM_BOMB')).toBe(true);
     let sawStrike = false;
     let sawLightning = false;
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 65; i++) {
       sim.step(makeInput());
       for (const ev of sim.drainEvents()) {
         if (ev.type === 'vfx_storm_strike') sawStrike = true;
@@ -184,19 +187,21 @@ describe('GameSim — Click-to-Move & Post-Nova Movement', () => {
 });
 
 describe('CombatEngine — Per-Element Self-Casting', () => {
-  it('channels NANO self-healing while selfHeld is true and stops when released', () => {
+  it('launches homing NANO_BOLTs on self-cast and heals +6 HP when killing Nano-marked enemies', () => {
     const sim = new GameSim();
-    sim.getSnapshot().player.hp = 40;
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    sim.getSnapshot().player.hp = 60;
     queueAndStep(sim, ['NANO', 'NANO']);
-    sim.step(makeInput({ castAction: 'SELF', selfHeld: true }));
-    for (let i = 0; i < 30; i++) {
-      sim.step(makeInput({ selfHeld: true }));
-    }
-    const hpAfterHold = sim.getSnapshot().player.hp;
-    expect(hpAfterHold).toBeGreaterThan(55);
+    sim.step(makeInput({ castAction: 'SELF' }));
+    expect(sim.getSnapshot().projectiles.filter((p) => p.kind === 'NANO_BOLT').length).toBeGreaterThanOrEqual(8);
 
-    sim.step(makeInput({ selfHeld: false }));
-    expect(sim.getSnapshot().player.channel).toBeNull();
+    const marked = sim.combat.spawnEnemy('SWARMER', 200, 0, 1);
+    sim.combat.applyElementalHit(marked, 20, ['NANO'], 1, 0, []);
+    expect(marked.nanoMarkTimer).toBeGreaterThan(0);
+    marked.hp = 0;
+    sim.step(makeInput());
+    expect(sim.getSnapshot().player.hp).toBe(66);
   });
 
   it('triggers local VOID burst with gravity well and zero beams', () => {
@@ -297,7 +302,7 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     expect(e.statuses.IGNITED).toBeDefined();
 
     const hpBefore = e.hp;
-    sim.combat.applyElementalHit(e, 30, ['VOID'], 1, 0, ev);
+    sim.combat.applyElementalHit(e, 30, ['NANO'], 1, 0, ev);
     // effectiveArmor = 0.5 -> 30 / 1.5 = 20 damage
     expect(hpBefore - e.hp).toBeCloseTo(20);
   });
@@ -533,9 +538,10 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     };
     queueAndStep(sim, ['BARRIER', 'THERMAL', 'VOLT']);
     sim.step(makeInput({ castAction: 'FORWARD', aimX: 150, aimY: 0 }));
-    waitCooldown();
+    for (let i = 0; i < 50; i++) sim.step(makeInput());
     queueAndStep(sim, ['BARRIER', 'CRYO', 'VOLT']);
     sim.step(makeInput({ castAction: 'FORWARD', aimX: -150, aimY: 0 }));
+    for (let i = 0; i < 50; i++) sim.step(makeInput());
     expect(sim.getSnapshot().storms.length).toBe(1);
 
     waitCooldown();
@@ -706,7 +712,7 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     expect(snap.pools.length).toBe(0);
   });
 
-  it('keeps Forward Shield static in place while Self-Cast BARRIER follows player movement', () => {
+  it('keeps Forward Shield and large 360° Sanctuary Dome anchored in place when cast', () => {
     const sim = new GameSim();
     sim.combat.enemies = [];
     sim.waveDirector.rifts = [];
@@ -717,45 +723,59 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     const forwardShieldId = sim.getSnapshot().shields[0]!.id;
     const initShieldX = sim.getSnapshot().shields[0]!.x;
 
-    // Move player away for > castCooldown (12 ticks = 0.2s)
     for (let i = 0; i < 12; i++) {
       sim.step(makeInput({ moveX: -1, moveY: 0 }));
     }
-    const movedForwardShield = sim.getSnapshot().shields.find((s) => s.id === forwardShieldId)!;
-    expect(movedForwardShield.x).toBe(initShieldX);
+    expect(sim.getSnapshot().shields.find((s) => s.id === forwardShieldId)!.x).toBe(initShieldX);
 
-    // Self-Cast Barrier follows player (step 15 ticks right so player velocity reverses cleanly)
+    // Self-Cast Sanctuary Dome is large (118px) and anchored stationary
     queueAndStep(sim, ['BARRIER']);
     sim.step(makeInput({ castAction: 'SELF' }));
-    const selfShield = sim.getSnapshot().shields.find((s) => s.id !== forwardShieldId)!;
-    const selfId = selfShield.id;
-    const beforeX = selfShield.x;
+    const dome = sim.getSnapshot().shields[0]!;
+    expect(dome.radius).toBe(118);
+    expect(dome.isNova).toBe(true);
+    const domeX = dome.x;
     for (let i = 0; i < 15; i++) {
       sim.step(makeInput({ moveX: 1, moveY: 0 }));
     }
-    const afterX = sim.getSnapshot().shields.find((s) => s.id === selfId)!.x;
-    expect(afterX).toBeGreaterThan(beforeX);
+    expect(sim.getSnapshot().shields[0]!.x).toBe(domeX);
   });
 
-  it('VOID-infused crystal shards steer toward a nearby off-axis enemy', () => {
-    const sim = new GameSim();
-    sim.combat.enemies = [];
-    sim.waveDirector.rifts = [];
-    const px = sim.getSnapshot().player.x;
-    const offAxisEnemy = sim.combat.spawnEnemy('BASTION', px + 260, 75, 1);
+  it('NANO-infused crystal shards steer toward off-axis enemies while VOID shards fly straight with higher damage', () => {
+    const simNano = new GameSim();
+    simNano.combat.enemies = [];
+    simNano.waveDirector.rifts = [];
+    const npx = simNano.getSnapshot().player.x;
+    const offAxisEnemy = simNano.combat.spawnEnemy('BASTION', npx + 260, 75, 1);
     offAxisEnemy.hasFrontShield = false;
 
-    queueAndStep(sim, ['VOID', 'FLUX', 'CRYO']);
-    sim.step(makeInput({ castAction: 'FORWARD', aimX: px + 300, aimY: 0 }));
-    const projId = sim.getSnapshot().projectiles[0]!.id;
-    const initialVy = sim.getSnapshot().projectiles[0]!.vy;
+    queueAndStep(simNano, ['NANO', 'FLUX', 'CRYO']);
+    simNano.step(makeInput({ castAction: 'FORWARD', aimX: npx + 300, aimY: 0 }));
+    const projId = simNano.getSnapshot().projectiles[0]!.id;
+    const initialVy = simNano.getSnapshot().projectiles[0]!.vy;
 
     for (let i = 0; i < 6; i++) {
-      sim.step(makeInput({ aimX: px + 300, aimY: 0 }));
+      simNano.step(makeInput({ aimX: npx + 300, aimY: 0 }));
     }
-    const steeredProj = sim.getSnapshot().projectiles.find((p) => p.id === projId)!;
+    const steeredProj = simNano.getSnapshot().projectiles.find((p) => p.id === projId)!;
     expect(steeredProj).toBeDefined();
     expect(steeredProj.vy).toBeGreaterThan(initialVy);
+
+    // VOID does not home
+    const simVoid = new GameSim();
+    simVoid.combat.enemies = [];
+    simVoid.waveDirector.rifts = [];
+    const vpx = simVoid.getSnapshot().player.x;
+    const vEnemy = simVoid.combat.spawnEnemy('BASTION', vpx + 260, 75, 1);
+    vEnemy.hasFrontShield = false;
+    queueAndStep(simVoid, ['VOID', 'FLUX', 'CRYO']);
+    simVoid.step(makeInput({ castAction: 'FORWARD', aimX: vpx + 300, aimY: 0 }));
+    const vProjId = simVoid.getSnapshot().projectiles[0]!.id;
+    const vInitVy = simVoid.getSnapshot().projectiles[0]!.vy;
+    for (let i = 0; i < 6; i++) {
+      simVoid.step(makeInput({ aimX: vpx + 300, aimY: 0 }));
+    }
+    expect(simVoid.getSnapshot().projectiles.find((p) => p.id === vProjId)!.vy).toBeCloseTo(vInitVy, 4);
   });
 
   it('mixed VOLT + CRYO on wet (PRIMED) enemies triggers both OVERLOAD and FROZEN on target and AoE bystander', () => {
@@ -896,5 +916,100 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     if (sprayEv?.type === 'vfx_spray') {
       expect(sprayEv.elements).toContain('PLASMA');
     }
+  });
+
+  it('player and enemy beams span full screen (>= 1800px)', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    queueAndStep(sim, ['VOID']);
+    sim.step(makeInput({ castAction: 'FORWARD', castHeld: true, aimX: 300, aimY: 0 }));
+    expect(sim.getSnapshot().beams[0]!.length).toBeGreaterThanOrEqual(1850);
+
+    const weaver = sim.combat.spawnEnemy('WEAVER', 400, 0, 1);
+    weaver.aiState = 'CHARGE';
+    weaver.aiTimer = 0.01;
+    weaver.beamAngle = Math.PI;
+    sim.step(makeInput({ castHeld: false }));
+    const enemyBeam = sim.getSnapshot().beams.find((b) => b.owner === 'ENEMY')!;
+    expect(enemyBeam.length).toBeGreaterThanOrEqual(1900);
+  });
+
+  it('combined FLUX + VOID deals reduced damage compared to pure VOID and pushes enemies', () => {
+    const simPure = new GameSim();
+    simPure.combat.enemies = [];
+    const ePure = simPure.combat.spawnEnemy('SWARMER', 200, 0, 1);
+    ePure.maxHp = 500;
+    ePure.hp = 500;
+    simPure.combat.applyElementalHit(ePure, 40, ['VOID'], 1, 0, []);
+    const pureDmg = 500 - ePure.hp;
+
+    const simMix = new GameSim();
+    simMix.combat.enemies = [];
+    const eMix = simMix.combat.spawnEnemy('SWARMER', 200, 0, 1);
+    eMix.maxHp = 500;
+    eMix.hp = 500;
+    simMix.combat.applyElementalHit(eMix, 40, ['FLUX', 'VOID'], 1, 0, []);
+    const mixDmg = 500 - eMix.hp;
+
+    expect(mixDmg).toBeLessThan(pureDmg);
+    expect(eMix.vx).toBeGreaterThan(100);
+  });
+
+  it('PYRO_SPRAYER and GEO_BOMBER have elemental weaknesses (1.75x + WEAK!) and fire sprays / rocks', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    const pyro = sim.combat.spawnEnemy('PYRO_SPRAYER', sim.getSnapshot().player.x + 120, 0, 1);
+    expect(pyro.weakness).toBe('CRYO');
+    const geo = sim.combat.spawnEnemy('GEO_BOMBER', sim.getSnapshot().player.x + 280, 0, 1);
+    expect(geo.weakness).toBe('VOLT');
+
+    const ev: ReturnType<GameSim['drainEvents']> = [];
+    sim.combat.applyElementalHit(pyro, 20, ['CRYO'], 1, 0, ev);
+    expect(pyro.hp).toBeCloseTo(pyro.maxHp - 35);
+    expect(ev.some((e) => e.type === 'damage_number' && e.text === 'WEAK!')).toBe(true);
+
+    // Trigger PYRO_SPRAYER fire spray and GEO_BOMBER rock throw
+    pyro.aiState = 'CHARGE';
+    pyro.aiTimer = 0.01;
+    geo.aiState = 'CHARGE';
+    geo.aiTimer = 0.01;
+    for (let i = 0; i < 4; i++) sim.step(makeInput());
+    expect(sim.getSnapshot().projectiles.some((p) => p.kind === 'ENEMY_ROCK')).toBe(true);
+    expect(sim.drainEvents().some((e) => e.type === 'vfx_spray')).toBe(true);
+  });
+
+  it('enforces freeze diminishing returns (freezeImmuneTimer) after Shatter or thaw', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    const e = sim.combat.spawnEnemy('BASTION', 200, 0, 1);
+    e.hasFrontShield = false;
+    e.statuses.FROZEN = { type: 'FROZEN', remaining: 1, stacks: 1, potency: 1 };
+
+    sim.combat.applyElementalHit(e, 20, ['KINETIC'], 1, 0, []);
+    expect(e.freezeImmuneTimer).toBeGreaterThan(2.5);
+
+    e.statuses.PRIMED = { type: 'PRIMED', remaining: 5, stacks: 1, potency: 1 };
+    sim.combat.applyElementalHit(e, 10, ['CRYO'], 1, 0, []);
+    expect(e.statuses.FROZEN).toBeUndefined();
+    expect(e.statuses.CHILLED).toBeDefined();
+  });
+
+  it('3-Phase WARDEN boss adds 4th shield plate under 50% HP and fires triple beams in Phase 3', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    const warden = sim.combat.spawnEnemy('WARDEN', 400, 0, 5);
+    expect(warden.bossShieldAngles.length).toBe(3);
+
+    warden.hp = Math.round(warden.maxHp * 0.25);
+    warden.aiState = 'CHARGE';
+    warden.aiTimer = 0.01;
+    sim.step(makeInput());
+
+    expect(warden.bossPhase).toBe(3);
+    expect(warden.bossShieldAngles.length).toBe(4);
+    expect(sim.getSnapshot().beams.filter((b) => b.ownerEnemyId === warden.id).length).toBe(3);
   });
 });

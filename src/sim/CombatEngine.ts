@@ -249,24 +249,6 @@ export class CombatEngine {
     return enemy;
   }
 
-  public startSelfHealChannel(player: PlayerState, selfCast: ResolvedSelfCast, events: SimEvent[]): void {
-    const nanoStacks = selfCast.composition.counts.NANO ?? 1;
-    const maxDuration = 2.2 + nanoStacks * 0.5;
-    player.channel = {
-      delivery: 'SELF_HEAL',
-      elements: selfCast.elements,
-      composition: selfCast.composition,
-      remaining: maxDuration,
-      maxDuration,
-      tickTimer: 0,
-      beamId: null,
-    };
-    player.hp = Math.min(player.maxHp, player.hp + selfCast.healPerSec * 0.25);
-    events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: selfCast.colorHex, count: 16, radius: 45 });
-    events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 64, colorHex: selfCast.colorHex });
-    events.push({ type: 'sfx', sound: 'heal' });
-  }
-
   public castSelf(player: PlayerState, selfCast: ResolvedSelfCast, events: SimEvent[]): void {
     const comp = selfCast.composition;
     const counts = comp.counts;
@@ -277,27 +259,28 @@ export class CombatEngine {
         player.wardMaxDuration = 6;
         player.wardElement = selfCast.wardElement;
         if (!selfCast.wardElement) {
+          this.shields.length = 0;
           this.shields.push({
             id: this.nextId++,
             x: player.x,
             y: player.y,
             angle: player.aimAngle,
             arc: Math.PI,
-            radius: 56,
-            hp: 180,
-            maxHp: 180,
-            life: 6,
-            maxLife: 6,
+            radius: 118,
+            hp: 260,
+            maxHp: 260,
+            life: 6.5,
+            maxLife: 6.5,
             isNova: true,
-            followPlayer: true,
+            followPlayer: false,
             colorHex: selfCast.colorHex,
             colors: comp.colors,
           });
         }
         events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: selfCast.colorHex, count: 24, radius: 60 });
-        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 85, colorHex: selfCast.colorHex });
-        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 160, radius: 120 });
-        events.push({ type: 'sfx', sound: 'ward' });
+        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 118, colorHex: selfCast.colorHex });
+        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 160, radius: 140 });
+        events.push({ type: 'sfx', sound: 'ward', elements: selfCast.elements });
         break;
       }
 
@@ -309,12 +292,40 @@ export class CombatEngine {
         events.push({ type: 'vfx_shards', x: player.x, y: player.y, colors: comp.colors, count: 14, speedScale: 0.9 });
         events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 200, radius: radius + 20 });
         events.push({ type: 'screen_shake', intensity: 4 });
-        events.push({ type: 'sfx', sound: 'rock' });
+        events.push({ type: 'sfx', sound: 'rock', elements: selfCast.elements });
         break;
       }
 
-      case 'SELF_HEAL': {
-        this.startSelfHealChannel(player, selfCast, events);
+      case 'NANO_PULSE': {
+        const nanoStacks = counts.NANO ?? 1;
+        const count = 4 + nanoStacks * 2;
+        const speed = 540;
+        for (let i = 0; i < count; i++) {
+          const a = player.aimAngle + (i / count) * Math.PI * 2;
+          this.projectiles.push({
+            id: this.nextId++,
+            owner: 'PLAYER',
+            kind: 'NANO_BOLT',
+            x: player.x + Math.cos(a) * 18,
+            y: player.y + Math.sin(a) * 18,
+            vx: Math.cos(a) * speed,
+            vy: Math.sin(a) * speed,
+            radius: 9,
+            damage: 24 + comp.totalPower * 4,
+            pierce: 1,
+            life: 1.4,
+            maxLife: 1.4,
+            colorHex: ELEMENT_META.NANO.colorHex,
+            colors: comp.colors,
+            elements: selfCast.elements,
+            composition: comp,
+            hitIds: [],
+            spin: 0,
+          });
+        }
+        events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: selfCast.colorHex, count: 18, radius: 55 });
+        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 95, colorHex: selfCast.colorHex });
+        events.push({ type: 'sfx', sound: 'beam', elements: selfCast.elements });
         break;
       }
 
@@ -328,7 +339,7 @@ export class CombatEngine {
         events.push({ type: 'vfx_shards', x: player.x, y: player.y, colors: burstColors, count: 18, speedScale: 1.1 });
         events.push({ type: 'grid_well', x: player.x, y: player.y, strength: 240 + comp.totalPower * 40, radius: radius + 40 });
         events.push({ type: 'screen_shake', intensity: 4.5 });
-        events.push({ type: 'sfx', sound: 'beam' });
+        events.push({ type: 'sfx', sound: 'beam', elements: selfCast.elements });
         break;
       }
 
@@ -339,7 +350,7 @@ export class CombatEngine {
         this.castLightningBurst(player.x, player.y, player.aimAngle, arcs, range, 32 * voltStacks, selfCast.elements, comp, true, events);
         events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: range * 0.7, colorHex: selfCast.colorHex });
         events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 160 + voltStacks * 35, radius: range * 0.8 });
-        events.push({ type: 'sfx', sound: 'lightning' });
+        events.push({ type: 'sfx', sound: 'lightning', elements: selfCast.elements });
         break;
       }
 
@@ -408,7 +419,7 @@ export class CombatEngine {
       this.spawnRock(player.x, player.y, angle, speed, radius, damage, pierce, life, color, comp, ch.elements);
       events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 110 + r * 150, radius: 115 + r * 45 });
       events.push({ type: 'screen_shake', intensity: 2.5 + (kineticCount + 1) * r * 1.6 });
-      events.push({ type: 'sfx', sound: 'rock' });
+      events.push({ type: 'sfx', sound: 'rock', elements: ch.elements });
     } else if (ch.delivery === 'CRYSTAL_SHARDS') {
       const crystalCount = counts.CRYSTAL ?? 1;
       const count = 7 + crystalCount * 3;
@@ -443,7 +454,7 @@ export class CombatEngine {
         });
       }
       events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 75 + r * 85, radius: 95 + r * 30 });
-      events.push({ type: 'sfx', sound: 'icicle' });
+      events.push({ type: 'sfx', sound: 'icicle', elements: ch.elements });
     }
   }
 
@@ -455,8 +466,10 @@ export class CombatEngine {
     if (delivery === 'BEAM') {
       const counts = spell.composition.counts;
       const beamPower = (counts.VOID ?? 0) + (counts.NANO ?? 0);
-      const length = 880 + beamPower * 90;
+      const length = 1850 + beamPower * 150;
       const width = 18 + spell.composition.totalPower * 5;
+      const isVoidOnly = spell.elements.includes('VOID') && !spell.elements.includes('NANO');
+      const baseDps = isVoidOnly ? 108 + spell.composition.totalPower * 26 : 74 + spell.composition.totalPower * 16;
       const b: BeamEntity = {
         id: this.nextId++,
         owner: 'PLAYER',
@@ -465,7 +478,7 @@ export class CombatEngine {
         angle: player.aimAngle,
         length,
         width,
-        damagePerSec: 88 + spell.composition.totalPower * 22,
+        damagePerSec: baseDps,
         life: maxDuration + 0.1,
         maxLife: maxDuration + 0.1,
         colorHex: spell.primaryColorHex,
@@ -478,7 +491,7 @@ export class CombatEngine {
       this.beams.push(b);
       beamId = b.id;
       events.push({ type: 'screen_shake', intensity: 3.5 });
-      events.push({ type: 'sfx', sound: 'beam' });
+      events.push({ type: 'sfx', sound: 'beam', elements: spell.elements });
     }
 
     player.channel = {
@@ -537,7 +550,7 @@ export class CombatEngine {
         radius: 110,
       });
       if (Math.random() < 0.35) {
-        events.push({ type: 'sfx', sound: 'spray' });
+        events.push({ type: 'sfx', sound: 'spray', elements: ch.elements });
       }
     } else if (ch.delivery === 'LIGHTNING_BOLT') {
       const voltCount = counts.VOLT ?? 1;
@@ -545,7 +558,7 @@ export class CombatEngine {
       const dmg = 11 * voltCount + 4 * comp.totalPower;
       this.castLightningBurst(player.x, player.y, angle, 1, range, dmg, ch.elements, comp, false, events);
       if (Math.random() < 0.4) {
-        events.push({ type: 'sfx', sound: 'lightning' });
+        events.push({ type: 'sfx', sound: 'lightning', elements: ch.elements });
       }
     }
   }
@@ -632,6 +645,7 @@ export class CombatEngine {
                   relayedMineIds.add(m.id);
                   pts.push({ x: m.x, y: m.y });
                   events.push({ type: 'vfx_burst', x: m.x, y: m.y, colorHex: 0xfff733, count: 6, radius: 26 });
+                  events.push({ type: 'damage_number', x: m.x, y: m.y - 16, text: 'SUPERCONDUCTOR!', colorHex: 0xfff733, big: true });
                   nextTarget = candidate;
                   break;
                 }
@@ -659,8 +673,8 @@ export class CombatEngine {
   public castSpell(
     player: PlayerState,
     spell: ResolvedSpell,
-    aimX: number,
-    aimY: number,
+    _aimX: number,
+    _aimY: number,
     events: SimEvent[]
   ): void {
     const angle = player.aimAngle;
@@ -673,15 +687,15 @@ export class CombatEngine {
       case 'SHIELD': {
         this.shields.length = 0;
         const isNova = spell.isNova;
-        const shieldHp = isNova ? 140 : 420;
-        const shieldLife = isNova ? 3.5 : 8.0;
+        const shieldHp = isNova ? 260 : 440;
+        const shieldLife = isNova ? 6.5 : 8.0;
         this.shields.push({
           id: this.nextId++,
           x: player.x,
           y: player.y,
           angle,
           arc: 1.25,
-          radius: isNova ? 68 : 74,
+          radius: isNova ? 118 : 76,
           hp: shieldHp,
           maxHp: shieldHp,
           life: shieldLife,
@@ -692,7 +706,7 @@ export class CombatEngine {
           colors: comp.colors,
         });
         events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 170, radius: 140 });
-        events.push({ type: 'sfx', sound: 'shield' });
+        events.push({ type: 'sfx', sound: 'shield', elements: spell.elements });
         break;
       }
 
@@ -756,14 +770,14 @@ export class CombatEngine {
           this.walls = this.walls.filter((w) => w.groupId !== oldestGroup);
         }
         events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 160, radius: 145 });
-        events.push({ type: 'sfx', sound: 'wall' });
+        events.push({ type: 'sfx', sound: 'wall', elements: spell.elements });
         break;
       }
 
       case 'MINES': {
         if (spell.isNova) {
           const count = nonBarrierPower >= 2 ? 6 : 4;
-          const ringR = nonBarrierPower >= 2 ? 155 : 115;
+          const ringR = nonBarrierPower >= 2 ? 205 : 155;
           for (let i = 0; i < count; i++) {
             const a = (i / count) * Math.PI * 2;
             const pos = clampArena(player.x + Math.cos(a) * ringR, player.y + Math.sin(a) * ringR);
@@ -771,44 +785,70 @@ export class CombatEngine {
           }
         } else if (nonBarrierPower >= 2) {
           for (let i = 0; i < 5; i++) {
-            const a = angle + (i - 2) * 0.28;
-            const pos = clampArena(player.x + Math.cos(a) * 150, player.y + Math.sin(a) * 150);
+            const a = angle + (i - 2) * 0.42;
+            const dist = i % 2 === 0 ? 160 : 210;
+            const pos = clampArena(player.x + Math.cos(a) * dist, player.y + Math.sin(a) * dist);
             this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
           }
         } else {
           for (let i = 0; i < 3; i++) {
-            const a = angle + (i - 1) * 0.34;
-            const pos = clampArena(player.x + Math.cos(a) * 135, player.y + Math.sin(a) * 135);
+            const a = angle + (i - 1) * 0.52;
+            const pos = clampArena(player.x + Math.cos(a) * 165, player.y + Math.sin(a) * 165);
             this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
           }
         }
-        events.push({ type: 'sfx', sound: 'mine_deploy' });
+        events.push({ type: 'sfx', sound: 'mine_deploy', elements: spell.elements });
         break;
       }
 
       case 'STORM': {
-        while (this.storms.length >= MAX_STORMS) {
-          this.storms.shift();
+        if (spell.isNova) {
+          while (this.storms.length >= MAX_STORMS) {
+            this.storms.shift();
+          }
+          const radius = 130 + nonBarrierPower * 18;
+          const life = 3.4 + nonBarrierPower * 0.45;
+          this.storms.push({
+            id: this.nextId++,
+            x: player.x,
+            y: player.y,
+            radius,
+            life,
+            maxLife: life,
+            tickTimer: 0.04,
+            colorHex: color,
+            colors: comp.colors,
+            elements: spell.elements,
+            composition: comp,
+          });
+          events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius, colorHex: color });
+          events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 185, radius });
+          events.push({ type: 'sfx', sound: 'storm', elements: spell.elements });
+        } else {
+          // Launch an unstable morphing storm-bomb projectile that detonates into a Storm on impact
+          const speed = 520;
+          this.projectiles.push({
+            id: this.nextId++,
+            owner: 'PLAYER',
+            kind: 'STORM_BOMB',
+            x: player.x + Math.cos(angle) * 24,
+            y: player.y + Math.sin(angle) * 24,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            radius: 16,
+            damage: 12,
+            pierce: 1,
+            life: 0.72,
+            maxLife: 0.72,
+            colorHex: color,
+            colors: comp.colors,
+            elements: spell.elements,
+            composition: comp,
+            hitIds: [],
+            spin: 0,
+          });
+          events.push({ type: 'sfx', sound: 'storm', elements: spell.elements });
         }
-        const radius = spell.isNova ? 195 + (nonBarrierPower - 1) * 80 : 185 + nonBarrierPower * 35;
-        const life = 4.5 + nonBarrierPower * 0.75;
-        const target = spell.isNova ? { x: player.x, y: player.y } : clampArena(aimX, aimY, 90);
-        this.storms.push({
-          id: this.nextId++,
-          x: target.x,
-          y: target.y,
-          radius,
-          life,
-          maxLife: life,
-          tickTimer: 0.04,
-          colorHex: color,
-          colors: comp.colors,
-          elements: spell.elements,
-          composition: comp,
-        });
-        events.push({ type: 'vfx_ring', x: target.x, y: target.y, radius, colorHex: color });
-        events.push({ type: 'grid_impulse', x: target.x, y: target.y, strength: 210, radius: radius * 0.9 });
-        events.push({ type: 'sfx', sound: 'storm' });
         break;
       }
 
@@ -827,7 +867,7 @@ export class CombatEngine {
         events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 140 + comp.totalPower * 65, colorHex: rockAccent });
         events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 210 + comp.totalPower * 40, radius: 160 + comp.totalPower * 40 });
         events.push({ type: 'screen_shake', intensity: 4 + comp.totalPower * 1.5 });
-        events.push({ type: 'sfx', sound: 'rock' });
+        events.push({ type: 'sfx', sound: 'rock', elements: spell.elements });
         break;
       }
 
@@ -860,13 +900,13 @@ export class CombatEngine {
         }
         events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 130 + comp.totalPower * 55, colorHex: color });
         events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 135 + comp.totalPower * 30, radius: 140 });
-        events.push({ type: 'sfx', sound: 'icicle' });
+        events.push({ type: 'sfx', sound: 'icicle', elements: spell.elements });
         break;
       }
 
       case 'BEAM': {
         const count = 2 + comp.totalPower * 2;
-        const length = 260 + comp.totalPower * 130;
+        const length = 1550 + comp.totalPower * 150;
         const width = 18 + comp.totalPower * 5;
         for (let i = 0; i < count; i++) {
           const a = angle + (i / count) * Math.PI * 2;
@@ -878,7 +918,7 @@ export class CombatEngine {
             angle: a,
             length,
             width,
-            damagePerSec: 120,
+            damagePerSec: spell.elements.includes('VOID') ? 140 : 95,
             life: 0.45,
             maxLife: 0.45,
             colorHex: color,
@@ -895,7 +935,7 @@ export class CombatEngine {
           events.push({ type: 'grid_well', x: player.x, y: player.y, strength: 220 + comp.totalPower * 60, radius: 190 + comp.totalPower * 50 });
         }
         events.push({ type: 'screen_shake', intensity: 4 + comp.totalPower });
-        events.push({ type: 'sfx', sound: 'beam' });
+        events.push({ type: 'sfx', sound: 'beam', elements: spell.elements });
         break;
       }
 
@@ -906,7 +946,7 @@ export class CombatEngine {
         const dmg = 26 * voltCount + 10 * comp.totalPower;
         this.castLightningBurst(player.x, player.y, angle, arcs, range, dmg, spell.elements, comp, true, events);
         events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: range * 0.85, colorHex: color });
-        events.push({ type: 'sfx', sound: 'lightning' });
+        events.push({ type: 'sfx', sound: 'lightning', elements: spell.elements });
         break;
       }
 
@@ -931,7 +971,7 @@ export class CombatEngine {
           events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: ringR, colorHex: ringColor, duration: 0.32 + rIdx * 0.08 });
         }
         events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 140 + comp.totalPower * 55, radius: range * 0.85 });
-        events.push({ type: 'sfx', sound: 'spray' });
+        events.push({ type: 'sfx', sound: 'spray', elements: spell.elements });
         break;
       }
 
@@ -971,7 +1011,7 @@ export class CombatEngine {
             this.spawnMine(pos.x, pos.y, color, comp, spell.elements);
           }
         }
-        events.push({ type: 'sfx', sound: 'slash' });
+        events.push({ type: 'sfx', sound: 'slash', elements: spell.elements });
         break;
       }
     }
@@ -1103,6 +1143,42 @@ export class CombatEngine {
     }
   }
 
+  private detonateStormBomb(p: ProjectileEntity, events: SimEvent[]): void {
+    while (this.storms.length >= MAX_STORMS) {
+      this.storms.shift();
+    }
+    const counts = p.composition.counts;
+    const nonBarrierPower = Math.max(1, p.composition.totalPower - (counts.BARRIER ?? 0));
+    const radius = 118 + nonBarrierPower * 18;
+    const life = 3.4 + nonBarrierPower * 0.45;
+    const pos = clampArena(p.x, p.y, 90);
+    this.storms.push({
+      id: this.nextId++,
+      x: pos.x,
+      y: pos.y,
+      radius,
+      life,
+      maxLife: life,
+      tickTimer: 0.04,
+      colorHex: p.colorHex,
+      colors: p.colors,
+      elements: p.elements,
+      composition: p.composition,
+    });
+    events.push({
+      type: 'vfx_element_explosion',
+      x: pos.x,
+      y: pos.y,
+      radius: radius * 0.85,
+      elements: p.elements,
+      colors: p.colors,
+      power: nonBarrierPower,
+    });
+    events.push({ type: 'vfx_ring', x: pos.x, y: pos.y, radius, colorHex: p.colorHex });
+    events.push({ type: 'grid_impulse', x: pos.x, y: pos.y, strength: 185, radius });
+    events.push({ type: 'sfx', sound: 'storm', elements: p.elements });
+  }
+
   private applyWaterSplash(x: number, y: number, radius: number, events: SimEvent[], sourceId?: number): void {
     if (sourceId !== undefined && this.splashCooldown.has(sourceId)) return;
     if (sourceId !== undefined) this.splashCooldown.set(sourceId, 0.25);
@@ -1136,8 +1212,9 @@ export class CombatEngine {
   ): void {
     if (e.hp <= 0) return;
 
-    const effectiveDamage =
-      elements.length > 0 && elements.every((el) => el === 'FLUX' || el === 'BARRIER') ? 0 : rawDamage;
+    const pureFlux = elements.length > 0 && elements.every((el) => el === 'FLUX' || el === 'BARRIER');
+    const mixedFlux = !pureFlux && elements.includes('FLUX');
+    const effectiveDamage = pureFlux ? 0 : mixedFlux ? rawDamage * 0.68 : rawDamage;
 
     const nonBarrier = elements.find((el) => el !== 'BARRIER') ?? elements[0];
     const hitColor = nonBarrier ? ELEMENT_META[nonBarrier].colorHex : 0x00f5ff;
@@ -1180,6 +1257,43 @@ export class CombatEngine {
     }
 
     let dmg = effectiveDamage;
+    if (elements.includes('VOID') && !elements.includes('NANO')) {
+      dmg *= 1.35;
+    }
+
+    // Elemental affinity weakness / resistance
+    const hitsWeakness = Boolean(
+      e.weakness &&
+        (elements.includes(e.weakness) ||
+          (e.weakness === 'CRYO' && elements.includes('CRYSTAL')) ||
+          (e.weakness === 'THERMAL' && elements.includes('PLASMA')))
+    );
+    if (hitsWeakness) {
+      dmg *= 1.75;
+      if (rawDamage >= 6 && !this.comboTextCooldown.has(e.id)) {
+        this.comboTextCooldown.set(e.id, 0.45);
+        events.push({
+          type: 'damage_number',
+          x: e.x,
+          y: e.y - e.radius - 14,
+          text: 'WEAK!',
+          colorHex: ELEMENT_META[e.weakness!].colorHex,
+          big: true,
+        });
+      }
+    } else if (e.affinity && elements.length > 0 && elements.every((el) => el === e.affinity || el === 'BARRIER')) {
+      dmg *= 0.6;
+    }
+
+    // Directional Flux pushback on non-tiny-tick hits (beam ticks apply smooth dt push in step)
+    if (elements.includes('FLUX') && rawDamage >= 6) {
+      const dLen = Math.hypot(dirX, dirY);
+      if (dLen > 0.01) {
+        const pushForce = isAoE ? 135 : 175;
+        e.vx += (dirX / dLen) * pushForce;
+        e.vy += (dirY / dLen) * pushForce;
+      }
+    }
 
     // Interrupt charging / windup enemies whenever hit by VOLT in any mixed spell
     if (elements.includes('VOLT') && (e.aiState === 'CHARGE' || e.aiState === 'TELEPORT_WINDUP')) {
@@ -1209,6 +1323,7 @@ export class CombatEngine {
     // Shatter combo: FROZEN + (KINETIC | VOID)
     if (e.statuses.FROZEN && (elements.includes('KINETIC') || elements.includes('VOID'))) {
       delete e.statuses.FROZEN;
+      e.freezeImmuneTimer = 3.5;
       dmg += 55;
       if (!this.comboTextCooldown.has(e.id)) {
         this.comboTextCooldown.set(e.id, 0.35);
@@ -1328,20 +1443,24 @@ export class CombatEngine {
     }
     if (elements.includes('CRYO') || elements.includes('CRYSTAL')) {
       if (e.statuses.PRIMED) {
-        const wasFrozen = Boolean(e.statuses.FROZEN);
         delete e.statuses.PRIMED;
-        this.setStatus(e, 'FROZEN', 2.5, 1);
-        if (!wasFrozen) {
-          events.push({ type: 'vfx_burst', x: e.x, y: e.y, colorHex: 0x00f5ff, count: 12, radius: 32 });
-          events.push({ type: 'vfx_ring', x: e.x, y: e.y, radius: e.radius * 1.9, colorHex: 0x00f5ff, duration: 0.24 });
-          events.push({
-            type: 'damage_number',
-            x: e.x,
-            y: e.y - e.radius - (overloadFired ? 28 : 10),
-            text: 'FROZEN!',
-            colorHex: 0x00f5ff,
-            big: true,
-          });
+        if (e.freezeImmuneTimer <= 0) {
+          const wasFrozen = Boolean(e.statuses.FROZEN);
+          this.setStatus(e, 'FROZEN', 2.5, 1);
+          if (!wasFrozen) {
+            events.push({ type: 'vfx_burst', x: e.x, y: e.y, colorHex: 0x00f5ff, count: 12, radius: 32 });
+            events.push({ type: 'vfx_ring', x: e.x, y: e.y, radius: e.radius * 1.9, colorHex: 0x00f5ff, duration: 0.24 });
+            events.push({
+              type: 'damage_number',
+              x: e.x,
+              y: e.y - e.radius - (overloadFired ? 28 : 10),
+              text: 'FROZEN!',
+              colorHex: 0x00f5ff,
+              big: true,
+            });
+          }
+        } else if (!e.statuses.FROZEN) {
+          this.setStatus(e, 'CHILLED', 3.0, 1);
         }
       } else if (!e.statuses.FROZEN) {
         this.setStatus(e, 'CHILLED', 3.0, 1);
@@ -1355,7 +1474,7 @@ export class CombatEngine {
       this.setStatus(e, 'IGNITED', 3.5, 1);
     }
     if (elements.includes('NANO')) {
-      this.setStatus(e, 'CORRUPTED', 4.0, 1);
+      e.nanoMarkTimer = 4.5;
     }
   }
 
@@ -1477,7 +1596,7 @@ export class CombatEngine {
     dt: number,
     player: PlayerState,
     castHeld: boolean,
-    selfHeld: boolean,
+    _selfHeld: boolean,
     wave: number,
     pillars: readonly ArenaPillar[],
     onKill: (archetype: EnemyArchetype) => void,
@@ -1527,26 +1646,27 @@ export class CombatEngine {
     if (player.channel) {
       const ch = player.channel;
       ch.remaining -= dt;
-      if (ch.delivery === 'SELF_HEAL') {
-        if (!selfHeld || ch.remaining <= 0) {
-          this.stopChannel(player);
-        } else {
-          const nanoStacks = ch.composition.counts.NANO ?? 1;
-          player.hp = Math.min(player.maxHp, player.hp + nanoStacks * 24 * dt);
-          ch.tickTimer -= dt;
-          if (ch.tickTimer <= 0) {
-            ch.tickTimer = 0.18;
-            events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 56, colorHex: ELEMENT_META.NANO.colorHex });
-            events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: ELEMENT_META.NANO.colorHex, count: 8, radius: 35 });
-          }
-        }
-      } else if (!castHeld || ch.remaining <= 0) {
+      if (!castHeld || ch.remaining <= 0) {
         this.stopChannel(player);
       } else if (ch.delivery === 'BEAM') {
         const beam = this.beams.find((b) => b.id === ch.beamId);
         if (beam) {
           beam.life = 0.2;
-          beam.angle = player.aimAngle;
+          let targetBeamAngle = player.aimAngle;
+          // NANO beams gently lock onto nearby targets in aim cone
+          if (ch.elements.includes('NANO') && !ch.elements.includes('VOID')) {
+            let bestDiff = 0.34;
+            for (const e of this.enemies) {
+              if (e.hp <= 0) continue;
+              const toEnemy = Math.atan2(e.y - player.y, e.x - player.x);
+              const diff = Math.abs(normalizeAngle(toEnemy - player.aimAngle));
+              if (diff < bestDiff) {
+                bestDiff = diff;
+                targetBeamAngle = toEnemy;
+              }
+            }
+          }
+          beam.angle = targetBeamAngle;
           beam.x = player.x + Math.cos(beam.angle) * 24;
           beam.y = player.y + Math.sin(beam.angle) * 24;
           ch.tickTimer -= dt;
@@ -1577,12 +1697,12 @@ export class CombatEngine {
       const p = this.projectiles[i]!;
       p.life -= dt;
 
-      // Subtle homing for VOID-infused player projectiles
-      if (p.owner === 'PLAYER' && p.elements.includes('VOID')) {
+      // Homing tracking for NANO-infused player projectiles (replaces VOID homing)
+      if (p.owner === 'PLAYER' && p.elements.includes('NANO')) {
         const curSpd = Math.hypot(p.vx, p.vy);
         if (curSpd > 1) {
           let bestTarget: EnemyEntity | null = null;
-          let bestDist = 360;
+          let bestDist = 440;
           for (const e of this.enemies) {
             if (e.hp <= 0 || p.hitIds.includes(e.id)) continue;
             const dx = e.x - p.x;
@@ -1590,7 +1710,7 @@ export class CombatEngine {
             const d = Math.hypot(dx, dy);
             if (d > bestDist || d < 4) continue;
             const dot = (dx * p.vx + dy * p.vy) / (d * curSpd);
-            if (dot > -0.2) {
+            if (dot > -0.35 || p.kind === 'NANO_BOLT') {
               bestDist = d;
               bestTarget = e;
             }
@@ -1599,7 +1719,7 @@ export class CombatEngine {
             const desiredA = Math.atan2(bestTarget.y - p.y, bestTarget.x - p.x);
             const curA = Math.atan2(p.vy, p.vx);
             const diff = normalizeAngle(desiredA - curA);
-            const turn = Math.max(-3.6 * dt, Math.min(3.6 * dt, diff));
+            const turn = Math.max(-4.6 * dt, Math.min(4.6 * dt, diff));
             const nextA = curA + turn;
             p.vx = Math.cos(nextA) * curSpd;
             p.vy = Math.sin(nextA) * curSpd;
@@ -1621,6 +1741,11 @@ export class CombatEngine {
           const d = Math.hypot(e.x - p.x, e.y - p.y);
           if (d <= p.radius + e.radius) {
             p.hitIds.push(e.id);
+            if (p.kind === 'STORM_BOMB') {
+              this.detonateStormBomb(p, events);
+              consumed = true;
+              break;
+            }
             if (p.kind === 'ROCK' && (e.archetype !== 'SWARMER' || p.pierce <= 0)) {
               this.detonateRock(p, events);
               consumed = true;
@@ -1704,6 +1829,11 @@ export class CombatEngine {
           continue;
         }
         if (Math.hypot(p.x - player.x, p.y - player.y) <= p.radius + 16) {
+          if (p.kind === 'ENEMY_ROCK') {
+            events.push({ type: 'vfx_ring', x: p.x, y: p.y, radius: 68, colorHex: 0xa86b3e, duration: 0.28 });
+            events.push({ type: 'vfx_shards', x: p.x, y: p.y, colors: [0xa86b3e, 0xffaa44], count: 10, speedScale: 1.0 });
+            events.push({ type: 'grid_impulse', x: p.x, y: p.y, strength: 165, radius: 95 });
+          }
           this.damagePlayer(player, p.damage, undefined, onPlayerDamaged, events);
           this.projectiles.splice(i, 1);
           continue;
@@ -1714,8 +1844,16 @@ export class CombatEngine {
       const hitPillar = pillars.some((pil) => Math.hypot(p.x - pil.x, p.y - pil.y) <= pil.radius + p.radius);
       const hitBlock = blocks.some((blk) => circleVsAABB(p.x, p.y, p.radius, blk).hit);
       if (p.life <= 0 || hitWall || hitPillar || hitBlock) {
-        if (p.kind === 'ROCK') {
+        if (p.kind === 'STORM_BOMB') {
+          this.detonateStormBomb(p, events);
+        } else if (p.kind === 'ROCK') {
           this.detonateRock(p, events, hitWall || hitPillar || hitBlock);
+        } else if (p.kind === 'ENEMY_ROCK') {
+          events.push({ type: 'vfx_ring', x: p.x, y: p.y, radius: 68, colorHex: 0xa86b3e, duration: 0.28 });
+          events.push({ type: 'vfx_shards', x: p.x, y: p.y, colors: [0xa86b3e, 0xffaa44], count: 10, speedScale: 1.0 });
+          if (Math.hypot(p.x - player.x, p.y - player.y) <= 68 + 16) {
+            this.damagePlayer(player, p.damage, undefined, onPlayerDamaged, events);
+          }
         } else if (hitPillar || hitBlock) {
           events.push({ type: 'vfx_burst', x: p.x, y: p.y, colorHex: p.colorHex, count: 6, radius: 22 });
           if (p.owner === 'PLAYER' && p.elements.includes('FLUX')) {
@@ -1856,6 +1994,7 @@ export class CombatEngine {
               if (!childIds) {
                 childIds = offsets.map(() => this.nextId++);
                 this.refractedBeamIds.set(rKey, childIds);
+                events.push({ type: 'damage_number', x: ox, y: oy - 16, text: 'REFRACTED!', colorHex: 0xe6f0ff, big: true });
               }
               const dmgFactor = 0.65 + (prismStacks - 1) * 0.15;
               for (let oi = 0; oi < offsets.length; oi++) {
@@ -1910,7 +2049,7 @@ export class CombatEngine {
           }
           b.x = owner.x;
           b.y = owner.y;
-          b.angle = owner.beamAngle;
+          b.angle = owner.beamAngle + (b.beamOffset ?? 0);
         }
         const eCos = Math.cos(b.angle);
         const eSin = Math.sin(b.angle);
@@ -2109,7 +2248,7 @@ export class CombatEngine {
           if (spawned && tectStacks > 1) {
             spawned.damage = Math.round(spawned.damage * (1 + (tectStacks - 1) * 0.35));
           }
-          events.push({ type: 'sfx', sound: 'mine_deploy' });
+          events.push({ type: 'sfx', sound: 'mine_deploy', elements: w.elements });
         }
         this.walls.splice(i, 1);
       }
@@ -2143,7 +2282,7 @@ export class CombatEngine {
         events.push({ type: 'vfx_shards', x: m.x, y: m.y, colors: mineShardCols, count: 14, speedScale: 1.1 });
         events.push({ type: 'vfx_ring', x: m.x, y: m.y, radius: blastR, colorHex: mineAccent });
         events.push({ type: 'grid_impulse', x: m.x, y: m.y, strength: 220, radius: m.blastRadius + 30 });
-        events.push({ type: 'sfx', sound: 'mine_explode' });
+        events.push({ type: 'sfx', sound: 'mine_explode', elements: m.elements });
         this.mines.splice(i, 1);
         continue;
       }
@@ -2152,7 +2291,7 @@ export class CombatEngine {
       }
     }
 
-    // Update storms
+    // Update storms (compact rapid pulses with very low direct damage)
     for (let i = this.storms.length - 1; i >= 0; i--) {
       const s = this.storms[i]!;
       s.life -= dt;
@@ -2160,7 +2299,7 @@ export class CombatEngine {
       if (s.tickTimer <= 0) {
         const counts = s.composition.counts;
         const nonBarrierPower = Math.max(1, s.composition.totalPower - (counts.BARRIER ?? 0));
-        s.tickTimer = nonBarrierPower >= 2 ? 0.18 : 0.32;
+        s.tickTimer = 0.14;
 
         const a = Math.random() * Math.PI * 2;
         const d = Math.random() * s.radius * 0.78;
@@ -2168,14 +2307,14 @@ export class CombatEngine {
         const sy = s.y + Math.sin(a) * d;
         const strikeRadius =
           s.elements.includes('CRYO') || s.elements.includes('CRYSTAL')
-            ? (56 + nonBarrierPower * 22) * 1.25
-            : 56 + nonBarrierPower * 22;
-        const knockback = s.elements.includes('FLUX') ? 210 : 0;
+            ? (38 + nonBarrierPower * 10) * 1.25
+            : 38 + nonBarrierPower * 10;
+        const knockback = s.elements.includes('FLUX') ? 195 : 0;
 
-        this.applyAoEDamage(sx, sy, strikeRadius, 11 * nonBarrierPower, s.elements, knockback, events);
+        this.applyAoEDamage(sx, sy, strikeRadius, 3 * nonBarrierPower, s.elements, knockback, events);
 
         if (s.elements.includes('VOID')) {
-          this.applyAoEDamage(s.x, s.y, s.radius, 0, [], -220, events);
+          this.applyAoEDamage(s.x, s.y, s.radius, 0, [], -210, events);
         }
         if (s.elements.includes('VOLT')) {
           for (const e of this.enemies) {
@@ -2186,10 +2325,6 @@ export class CombatEngine {
               }
             }
           }
-        }
-        if (s.elements.includes('NANO') && Math.hypot(player.x - s.x, player.y - s.y) <= s.radius) {
-          player.hp = Math.min(player.maxHp, player.hp + 8);
-          events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: ELEMENT_META.NANO.colorHex, count: 6, radius: 30 });
         }
 
         const rawPayload = s.colors.filter((c) => c !== ELEMENT_META.BARRIER.colorHex);
@@ -2271,10 +2406,11 @@ export class CombatEngine {
         st.remaining -= dt;
         if (stKey === 'IGNITED') {
           e.hp -= 14 * st.stacks * dt;
-        } else if (stKey === 'CORRUPTED' && e.shieldHp > 0) {
-          e.shieldHp = Math.max(0, e.shieldHp - 35 * st.stacks * dt);
         }
         if (st.remaining <= 0) {
+          if (stKey === 'FROZEN') {
+            e.freezeImmuneTimer = 3.5;
+          }
           delete e.statuses[stKey];
         }
       }
@@ -2308,7 +2444,63 @@ export class CombatEngine {
               spin: 0,
             });
           },
-          spawnBeam: (enemy, angle) => {
+          spawnEnemyRock: (x, y, vx, vy, damage) => {
+            this.projectiles.push({
+              id: this.nextId++,
+              owner: 'ENEMY',
+              kind: 'ENEMY_ROCK',
+              x,
+              y,
+              vx,
+              vy,
+              radius: 17,
+              damage,
+              pierce: 1,
+              life: 2.0,
+              maxLife: 2.0,
+              colorHex: ELEMENT_META.KINETIC.colorHex,
+              colors: [ELEMENT_META.KINETIC.colorHex, 0xffaa44],
+              elements: ['KINETIC'],
+              composition: computeComposition(['KINETIC']),
+              hitIds: [],
+              spin: 0,
+            });
+            events.push({ type: 'sfx', sound: 'rock', elements: ['KINETIC'] });
+          },
+          spawnEnemySpray: (x, y, angle, range, damage) => {
+            events.push({
+              type: 'vfx_spray',
+              x: x + Math.cos(angle) * 20,
+              y: y + Math.sin(angle) * 20,
+              angle,
+              spread: 0.72,
+              range,
+              colors: [0xff6a00, 0xffaa22],
+              isNova: false,
+              elements: ['THERMAL'],
+            });
+            const dx = player.x - x;
+            const dy = player.y - y;
+            const dist = Math.hypot(dx, dy);
+            if (dist <= range + 16) {
+              const angDiff = Math.abs(normalizeAngle(Math.atan2(dy, dx) - angle));
+              if (angDiff <= 0.38) {
+                let sprayBlocked = false;
+                for (const s of this.shields) {
+                  const sDist = Math.hypot(player.x - s.x, player.y - s.y);
+                  if (sDist <= s.radius + 14) {
+                    sprayBlocked = true;
+                    s.hp -= damage;
+                    break;
+                  }
+                }
+                if (!sprayBlocked) {
+                  this.damagePlayer(player, damage, e, onPlayerDamaged, events);
+                }
+              }
+            }
+          },
+          spawnBeam: (enemy, angle, offsetAngle = 0) => {
             this.beams.push({
               id: this.nextId++,
               owner: 'ENEMY',
@@ -2316,17 +2508,18 @@ export class CombatEngine {
               x: enemy.x,
               y: enemy.y,
               angle,
-              length: 620,
-              width: 14,
-              damagePerSec: 28,
-              life: enemy.archetype === 'WARDEN' ? 2.2 : 1.8,
-              maxLife: enemy.archetype === 'WARDEN' ? 2.2 : 1.8,
+              beamOffset: offsetAngle,
+              length: 1900,
+              width: enemy.archetype === 'WARDEN' ? 16 : 14,
+              damagePerSec: enemy.archetype === 'WARDEN' ? 34 : 28,
+              life: enemy.archetype === 'WARDEN' ? 2.8 : 1.8,
+              maxLife: enemy.archetype === 'WARDEN' ? 2.8 : 1.8,
               colorHex: 0xb429ff,
               colors: [0xb429ff],
               elements: ['VOID'],
               composition: computeComposition(['VOID']),
               clashing: false,
-              clashDist: 620,
+              clashDist: 1900,
             });
           },
           spawnMinion: (archetype, x, y) => {
@@ -2410,8 +2603,12 @@ export class CombatEngine {
             ? 0xb429ff
             : e.archetype === 'STALKER'
             ? 0x00f5ff
-            : e.archetype === 'SPLITTER'
+            : e.archetype === 'PYRO_SPRAYER'
+            ? ELEMENT_META.THERMAL.colorHex
+            : e.archetype === 'GEO_BOMBER'
             ? ELEMENT_META.KINETIC.colorHex
+            : e.archetype === 'SPLITTER'
+            ? 0xfff733
             : 0xff2e97;
         const secColor =
           e.archetype === 'WARDEN'
@@ -2422,9 +2619,20 @@ export class CombatEngine {
             ? 0xff2e97
             : e.archetype === 'STALKER'
             ? 0xff2e97
+            : e.archetype === 'PYRO_SPRAYER'
+            ? 0xffaa22
+            : e.archetype === 'GEO_BOMBER'
+            ? 0xffaa44
             : e.archetype === 'SPLITTER'
             ? 0xffaa22
             : 0xff88cc;
+        if (e.nanoMarkTimer > 0 && player.hp < player.maxHp) {
+          const healAmt = e.archetype === 'WARDEN' ? 18 : 6;
+          player.hp = Math.min(player.maxHp, player.hp + healAmt);
+          events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: ELEMENT_META.NANO.colorHex, count: 8, radius: 34 });
+          events.push({ type: 'damage_number', x: player.x, y: player.y - 20, text: `+${healAmt} HP`, colorHex: ELEMENT_META.NANO.colorHex });
+          events.push({ type: 'sfx', sound: 'heal', elements: ['NANO'] });
+        }
         const deathStatuses = Object.keys(e.statuses) as StatusType[];
         events.push({
           type: 'vfx_enemy_death',

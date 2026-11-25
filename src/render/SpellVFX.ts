@@ -1308,10 +1308,6 @@ export class SpellVFX {
   }
 
   private syncEnemyStatusParticles(snapshot: SimSnapshot): void {
-    if (snapshot.player.channel?.delivery === 'SELF_HEAL') {
-      this.emitElementEmission(snapshot.player.x, snapshot.player.y, 14, ['NANO'], 18);
-    }
-
     for (const e of snapshot.enemies) {
       if (e.statuses.IGNITED && Math.random() < 0.72) {
         this.emitElementEmission(e.x, e.y, 12, ['THERMAL'], e.radius * 0.85);
@@ -1319,7 +1315,7 @@ export class SpellVFX {
       if ((e.statuses.FROZEN || e.statuses.CHILLED) && Math.random() < (e.statuses.FROZEN ? 0.65 : 0.35)) {
         this.emitElementEmission(e.x, e.y, 12, ['CRYO'], e.radius * 0.95);
       }
-      if (e.statuses.CORRUPTED && Math.random() < 0.5) {
+      if (e.nanoMarkTimer > 0 && Math.random() < 0.45) {
         this.emitElementEmission(e.x, e.y, 12, ['NANO'], e.radius * 0.85);
       }
       if (e.statuses.PRIMED && Math.random() < 0.35) {
@@ -1369,7 +1365,7 @@ export class SpellVFX {
       let g = this.projMeshes.get(p.id);
       if (!g) {
         g = new THREE.Group();
-        if (p.kind === 'ROCK') {
+        if (p.kind === 'ROCK' || p.kind === 'ENEMY_ROCK') {
           const s = p.radius * 1.12;
           const rockGeo = new THREE.DodecahedronGeometry(s, 0);
           const wire = new THREE.WireframeGeometry(rockGeo);
@@ -1402,6 +1398,46 @@ export class SpellVFX {
             )
           );
           g.add(createGlowSprite(infused, s * 2.8, 0.3));
+        } else if (p.kind === 'STORM_BOMB') {
+          const payloadCols = p.colors.filter((c) => c !== 0xe6f0ff);
+          const c1 = payloadCols[0] ?? p.colorHex;
+          const c2 = payloadCols[1] ?? c1;
+          const coreGeo = new THREE.IcosahedronGeometry(p.radius * 0.85, 0);
+          g.add(
+            new THREE.Mesh(
+              coreGeo,
+              new THREE.MeshStandardMaterial({
+                color: p.elements.includes('VOID') ? 0x060508 : c1,
+                emissive: c1,
+                emissiveIntensity: 0.8,
+                roughness: 0.3,
+                metalness: 0.4,
+              })
+            ),
+            new THREE.Mesh(
+              buildRibbonGeometry(createPolygonPoints(6, p.radius * 1.45), 2.4, true, 0),
+              createNeonRibbonMaterial(c1, 1.3, 0.95)
+            ),
+            new THREE.Mesh(
+              buildRibbonGeometry(createPolygonPoints(5, p.radius * 1.15), 2.0, true, 0),
+              createNeonRibbonMaterial(c2, 1.25, 0.9)
+            ),
+            createGlowSprite(c1, p.radius * 3.0, 0.32)
+          );
+        } else if (p.kind === 'NANO_BOLT') {
+          const dartPts = [
+            { x: p.radius * 2.0, y: 0 },
+            { x: -p.radius * 0.9, y: p.radius * 0.85 },
+            { x: -p.radius * 0.4, y: 0 },
+            { x: -p.radius * 0.9, y: -p.radius * 0.85 },
+          ];
+          g.add(
+            new THREE.Mesh(
+              buildRibbonGeometry(dartPts, 2.4, true, 13),
+              createNeonRibbonMaterial(ELEMENT_META.NANO.colorHex, 1.35, 0.96)
+            ),
+            createGlowSprite(ELEMENT_META.NANO.colorHex, p.radius * 2.8, 0.28)
+          );
         } else {
           const vp = this.getVoidPalette(p.elements, p.colors);
           // Crystal Shard Blade blending CRYSTAL cyan + any mixed element color cleanly (black core when Void)
@@ -1460,11 +1496,29 @@ export class SpellVFX {
         this.projMeshes.set(p.id, g);
         this.scene.add(g);
       }
-      g.position.set(p.x, p.y, p.kind === 'ROCK' ? 14 : 0);
-      if (p.kind === 'ROCK') {
+      const zPos = p.kind === 'ROCK' || p.kind === 'ENEMY_ROCK' || p.kind === 'STORM_BOMB' ? 14 : 0;
+      g.position.set(p.x, p.y, zPos);
+      if (p.kind === 'ROCK' || p.kind === 'ENEMY_ROCK') {
         g.rotation.x = p.spin;
         g.rotation.y = p.spin * 0.7;
         this.emitRockTrail(p);
+      } else if (p.kind === 'STORM_BOMB') {
+        const core = g.children[0]!;
+        core.scale.set(
+          1 + 0.34 * Math.sin(timeSec * 14 + p.id),
+          1 + 0.34 * Math.cos(timeSec * 11.7 + p.id),
+          1 + 0.3 * Math.sin(timeSec * 16.3 + p.id)
+        );
+        core.rotation.x = timeSec * 5;
+        core.rotation.y = timeSec * 3.7;
+        g.children[1]!.rotation.z = timeSec * 8;
+        g.children[2]!.rotation.z = -timeSec * 10;
+        this.emitElementEmission(p.x, p.y, 14, p.elements, 12);
+      } else if (p.kind === 'NANO_BOLT') {
+        g.rotation.z = Math.atan2(p.vy, p.vx);
+        if (Math.random() < 0.6) {
+          this.emitElementEmission(p.x, p.y, 13, ['NANO'], 6);
+        }
       } else {
         g.rotation.z = Math.atan2(p.vy, p.vx);
         const blade = g.children[0];

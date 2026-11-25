@@ -152,8 +152,8 @@ describe('SpellResolver — Self Cast', () => {
     expect(resolveSelfCast(['BARRIER', 'THERMAL']).wardElement).toBe('THERMAL');
     expect(resolveSelfCast(['KINETIC', 'KINETIC']).effect).toBe('KINETIC_ARMOR');
     expect(resolveSelfCast(['KINETIC', 'KINETIC']).armorAmount).toBe(70);
-    expect(resolveSelfCast(['NANO', 'NANO']).effect).toBe('SELF_HEAL');
-    expect(resolveSelfCast(['NANO', 'NANO']).healPerSec).toBe(48);
+    expect(resolveSelfCast(['NANO', 'NANO']).effect).toBe('NANO_PULSE');
+    expect(resolveSelfCast(['NANO', 'NANO']).healPerSec).toBe(0);
     expect(resolveSelfCast(['VOID']).effect).toBe('VOID_BURST');
     expect(resolveSelfCast(['VOLT']).effect).toBe('VOLT_NOVA');
     expect(resolveSelfCast(['FLUX']).effect).toBe('ELEMENT_AOE');

@@ -350,7 +350,7 @@ export class EntityRenderer {
     setRibbonColor(this.thrusterMesh, activeColor);
 
     const isShooting =
-      (p.channel !== null && p.channel.delivery !== 'SELF_HEAL') ||
+      p.channel !== null ||
       snapshot.beams.some((b) => b.owner === 'PLAYER') ||
       snapshot.slashes.length > 0;
     this.muzzleSparkle.visible = isShooting;
@@ -487,10 +487,7 @@ export class EntityRenderer {
 
       const zHeight = e.archetype === 'WARDEN' ? 22 : 14;
       group.position.set(e.x, e.y, zHeight);
-      const hullRot =
-        e.archetype === 'SWARMER' || e.archetype === 'SPLITTER'
-          ? timeSec * 3.5 + e.id
-          : e.angle;
+      const hullRot = e.angle;
       const bodyGroup = group.userData.bodyGroup as THREE.Group;
       bodyGroup.rotation.z = hullRot;
 
@@ -505,7 +502,7 @@ export class EntityRenderer {
         ? ELEMENT_META.THERMAL.colorHex
         : e.statuses.PRIMED
         ? 0x1a6bff
-        : e.statuses.CORRUPTED
+        : e.nanoMarkTimer > 0
         ? 0x39ff14
         : null;
 
@@ -520,7 +517,7 @@ export class EntityRenderer {
           hullMat.emissiveIntensity = 1.65;
         } else {
           hullMat.emissive.setHex(targetColor);
-          hullMat.emissiveIntensity = statusColor ? 0.55 : 0.3;
+          hullMat.emissiveIntensity = statusColor ? 0.55 : 0.32;
         }
       }
 
@@ -539,9 +536,13 @@ export class EntityRenderer {
       if (e.archetype === 'WARDEN') {
         const plates = bodyGroup.userData.bossPlates as THREE.Object3D[] | undefined;
         if (plates) {
-          for (let i = 0; i < e.bossShieldAngles.length; i++) {
+          for (let i = 0; i < plates.length; i++) {
             const plate = plates[i];
-            if (plate) plate.rotation.z = e.bossShieldAngles[i]! - e.angle;
+            if (!plate) continue;
+            plate.visible = i < e.bossShieldAngles.length;
+            if (plate.visible) {
+              plate.rotation.z = e.bossShieldAngles[i]! - e.angle;
+            }
           }
         }
       }
@@ -593,7 +594,7 @@ export class EntityRenderer {
       }
       (group.userData.chilledRing as THREE.Object3D).visible = Boolean(e.statuses.CHILLED && !e.statuses.FROZEN);
       const corruptRing = group.userData.corruptRing as THREE.Object3D;
-      corruptRing.visible = Boolean(e.statuses.CORRUPTED);
+      corruptRing.visible = e.nanoMarkTimer > 0;
       if (corruptRing.visible) {
         corruptRing.rotation.z = timeSec * 4;
       }
@@ -630,41 +631,65 @@ export class EntityRenderer {
     let trimObj: THREE.Mesh;
 
     if (e.archetype === 'SWARMER') {
+      // Sleek twin-wing interceptor fighter
       baseColor = 0xff2e97;
       hullMat = new THREE.MeshStandardMaterial({
-        color: 0x6b103f,
+        color: 0x5c0e38,
         emissive: baseColor,
-        emissiveIntensity: 0.32,
+        emissiveIntensity: 0.35,
         roughness: 0.35,
-        metalness: 0.3,
+        metalness: 0.35,
       });
-      const hull = new THREE.Mesh(new THREE.OctahedronGeometry(r * 0.85, 0), hullMat);
-      hull.scale.set(1.2, 0.9, 0.65);
-      bodyGroup.add(hull);
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(r * 0.42, r * 2.0, 4), hullMat);
+      nose.rotation.z = -Math.PI / 2;
+      nose.position.x = r * 0.15;
+      bodyGroup.add(nose);
 
-      const pts: Array<{ x: number; y: number }> = [];
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2;
-        const rad = i % 2 === 0 ? r : r * 0.44;
-        pts.push({ x: Math.cos(a) * rad, y: Math.sin(a) * rad });
-      }
-      trimObj = new THREE.Mesh(buildRibbonGeometry(pts, 2.4, true, 4), createNeonRibbonMaterial(baseColor, 1.2, 0.95));
-      bodyGroup.add(trimObj, createGlowSprite(baseColor, r * 2.2, 0.2));
+      const wingGeo = new THREE.BoxGeometry(r * 0.72, r * 1.95, 3);
+      const wingMesh = new THREE.Mesh(wingGeo, hullMat);
+      wingMesh.position.x = -r * 0.25;
+      bodyGroup.add(wingMesh);
+
+      const shipPts = [
+        { x: r * 1.25, y: 0 },
+        { x: -r * 0.15, y: r * 0.48 },
+        { x: -r * 0.85, y: r * 1.05 },
+        { x: -r * 0.55, y: 0 },
+        { x: -r * 0.85, y: -r * 1.05 },
+        { x: -r * 0.15, y: -r * 0.48 },
+      ];
+      trimObj = new THREE.Mesh(buildRibbonGeometry(shipPts, 2.3, true, 4.5), createNeonRibbonMaterial(baseColor, 1.2, 0.95));
+      bodyGroup.add(trimObj, createGlowSprite(baseColor, r * 2.1, 0.18));
     } else if (e.archetype === 'BASTION') {
+      // Armored Cryo dreadnought frigate with twin forward gun barrels & cyan prow shield
       baseColor = 0xe6f0ff;
       hullMat = new THREE.MeshStandardMaterial({
-        color: 0x3b4d6b,
-        emissive: 0x1a3866,
-        emissiveIntensity: 0.3,
+        color: 0x264466,
+        emissive: 0x00a8dd,
+        emissiveIntensity: 0.32,
         roughness: 0.45,
         metalness: 0.55,
       });
-      const cyl = new THREE.CylinderGeometry(r * 0.88, r * 0.96, 22, 6, 1);
-      cyl.rotateX(Math.PI / 2);
-      bodyGroup.add(new THREE.Mesh(cyl, hullMat));
+      const hull = new THREE.Mesh(new THREE.BoxGeometry(r * 1.6, r * 1.15, 14), hullMat);
+      hull.position.x = -r * 0.1;
+      const prow = new THREE.Mesh(new THREE.BoxGeometry(r * 0.7, r * 1.55, 12), hullMat);
+      prow.position.x = r * 0.35;
+      bodyGroup.add(hull, prow);
+      for (const side of [-1, 1]) {
+        const barrel = new THREE.Mesh(new THREE.BoxGeometry(r * 0.85, r * 0.22, 6), hullMat);
+        barrel.position.set(r * 0.75, side * r * 0.48, 3);
+        bodyGroup.add(barrel);
+      }
 
-      const hexPts = createPolygonPts(6, r * 0.94);
-      trimObj = new THREE.Mesh(buildRibbonGeometry(hexPts, 2.8, true, 11.5), createNeonRibbonMaterial(baseColor, 1.15, 0.95));
+      const shipPts = [
+        { x: r * 0.88, y: r * 0.78 },
+        { x: -r * 0.3, y: r * 0.88 },
+        { x: -r * 0.95, y: r * 0.52 },
+        { x: -r * 0.95, y: -r * 0.52 },
+        { x: -r * 0.3, y: -r * 0.88 },
+        { x: r * 0.88, y: -r * 0.78 },
+      ];
+      trimObj = new THREE.Mesh(buildRibbonGeometry(shipPts, 2.8, true, 9.5), createNeonRibbonMaterial(baseColor, 1.15, 0.95));
       bodyGroup.add(trimObj);
 
       const arcPts: Array<{ x: number; y: number }> = [];
@@ -680,6 +705,7 @@ export class EntityRenderer {
       bodyGroup.userData.frontShield = frontShield;
       bodyGroup.add(createGlowSprite(0x00f5ff, r * 2.2, 0.18));
     } else if (e.archetype === 'STALKER') {
+      // Swept-wing stealth Cryo interceptor
       baseColor = 0x00f5ff;
       hullMat = new THREE.MeshStandardMaterial({
         color: 0x0a3d4d,
@@ -688,104 +714,222 @@ export class EntityRenderer {
         roughness: 0.35,
         metalness: 0.45,
       });
-      const diamond = new THREE.Mesh(new THREE.OctahedronGeometry(r * 0.92, 0), hullMat);
-      diamond.scale.set(1.25, 0.85, 0.55);
-      bodyGroup.add(diamond);
+      const fuse = new THREE.Mesh(new THREE.ConeGeometry(r * 0.46, r * 2.4, 4), hullMat);
+      fuse.rotation.z = -Math.PI / 2;
+      bodyGroup.add(fuse);
+      for (const side of [-1, 1]) {
+        const wing = new THREE.Mesh(new THREE.BoxGeometry(r * 1.1, r * 0.32, 4), hullMat);
+        wing.position.set(-r * 0.35, side * r * 0.65, 0);
+        wing.rotation.z = side * -0.42;
+        bodyGroup.add(wing);
+      }
 
-      const pts = [
-        { x: r * 1.25, y: 0 },
-        { x: 0, y: r * 0.85 },
-        { x: -r * 1.25, y: 0 },
-        { x: 0, y: -r * 0.85 },
+      const shipPts = [
+        { x: r * 1.35, y: 0 },
+        { x: -r * 0.2, y: r * 0.36 },
+        { x: -r * 1.05, y: r * 1.0 },
+        { x: -r * 0.5, y: 0 },
+        { x: -r * 1.05, y: -r * 1.0 },
+        { x: -r * 0.2, y: -r * 0.36 },
       ];
-      trimObj = new THREE.Mesh(buildRibbonGeometry(pts, 2.6, true, 4.5), createNeonRibbonMaterial(baseColor, 1.2, 0.95));
+      trimObj = new THREE.Mesh(buildRibbonGeometry(shipPts, 2.6, true, 5), createNeonRibbonMaterial(baseColor, 1.2, 0.95));
       bodyGroup.add(trimObj, createGlowSprite(baseColor, r * 2.2, 0.2));
+    } else if (e.archetype === 'PYRO_SPRAYER') {
+      // Blazing Thermal orange twin-nozzle flamethrower gunship (weak to CRYO)
+      baseColor = ELEMENT_META.THERMAL.colorHex;
+      hullMat = new THREE.MeshStandardMaterial({
+        color: 0x5c2208,
+        emissive: baseColor,
+        emissiveIntensity: 0.42,
+        roughness: 0.4,
+        metalness: 0.4,
+      });
+      const core = new THREE.Mesh(new THREE.BoxGeometry(r * 1.45, r * 1.2, 12), hullMat);
+      const tank = new THREE.Mesh(
+        new THREE.CylinderGeometry(r * 0.34, r * 0.34, r * 1.2, 8),
+        new THREE.MeshStandardMaterial({ color: 0xffaa22, emissive: 0xff6a00, emissiveIntensity: 0.75 })
+      );
+      tank.rotation.z = Math.PI / 2;
+      tank.position.set(-r * 0.15, 0, 7);
+      bodyGroup.add(core, tank);
+      for (const side of [-1, 1]) {
+        const nozzle = new THREE.Mesh(new THREE.BoxGeometry(r * 0.95, r * 0.28, 7), hullMat);
+        nozzle.position.set(r * 0.65, side * r * 0.45, 2);
+        bodyGroup.add(nozzle);
+      }
+
+      const shipPts = [
+        { x: r * 1.15, y: r * 0.55 },
+        { x: r * 0.65, y: r * 0.95 },
+        { x: -r * 0.85, y: r * 0.78 },
+        { x: -r * 0.55, y: 0 },
+        { x: -r * 0.85, y: -r * 0.78 },
+        { x: r * 0.65, y: -r * 0.95 },
+        { x: r * 1.15, y: -r * 0.55 },
+      ];
+      trimObj = new THREE.Mesh(buildRibbonGeometry(shipPts, 2.8, true, 8), createNeonRibbonMaterial(baseColor, 1.25, 0.95));
+      bodyGroup.add(trimObj, createGlowSprite(baseColor, r * 2.4, 0.24));
+    } else if (e.archetype === 'GEO_BOMBER') {
+      // Heavy Kinetic brown industrial rock bomber with forward catapult rails (weak to VOLT)
+      baseColor = ELEMENT_META.KINETIC.colorHex;
+      hullMat = new THREE.MeshStandardMaterial({
+        color: 0x3b2414,
+        emissive: baseColor,
+        emissiveIntensity: 0.38,
+        roughness: 0.5,
+        metalness: 0.45,
+      });
+      const barge = new THREE.Mesh(new THREE.BoxGeometry(r * 1.5, r * 1.4, 14), hullMat);
+      barge.position.x = -r * 0.15;
+      const boulder = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(r * 0.42, 0),
+        new THREE.MeshStandardMaterial({ color: 0x6b3e1e, emissive: 0xffaa44, emissiveIntensity: 0.55 })
+      );
+      boulder.position.set(r * 0.35, 0, 8);
+      bodyGroup.add(barge, boulder);
+      for (const side of [-1, 1]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(r * 1.1, r * 0.22, 8), hullMat);
+        rail.position.set(r * 0.65, side * r * 0.55, 3);
+        bodyGroup.add(rail);
+      }
+
+      const shipPts = [
+        { x: r * 1.2, y: r * 0.65 },
+        { x: r * 0.3, y: r * 0.95 },
+        { x: -r * 0.95, y: r * 0.88 },
+        { x: -r * 0.95, y: -r * 0.88 },
+        { x: r * 0.3, y: -r * 0.95 },
+        { x: r * 1.2, y: -r * 0.65 },
+      ];
+      trimObj = new THREE.Mesh(buildRibbonGeometry(shipPts, 2.8, true, 9), createNeonRibbonMaterial(baseColor, 1.2, 0.95));
+      bodyGroup.add(trimObj, createGlowSprite(baseColor, r * 2.4, 0.22));
     } else if (e.archetype === 'WEAVER') {
+      // Elongated Void violet twin-rail beam cruiser (weak to NANO)
       baseColor = 0xb429ff;
       hullMat = new THREE.MeshStandardMaterial({
         color: 0x2d114d,
         emissive: baseColor,
-        emissiveIntensity: 0.35,
+        emissiveIntensity: 0.38,
         roughness: 0.4,
         metalness: 0.35,
       });
-      const cyl = new THREE.CylinderGeometry(r * 0.8, r * 0.96, 20, 8, 1);
-      cyl.rotateX(Math.PI / 2);
-      bodyGroup.add(new THREE.Mesh(cyl, hullMat));
+      const fuse = new THREE.Mesh(new THREE.BoxGeometry(r * 1.65, r * 0.85, 13), hullMat);
+      bodyGroup.add(fuse);
+      for (const side of [-1, 1]) {
+        const prong = new THREE.Mesh(new THREE.BoxGeometry(r * 1.25, r * 0.22, 7), hullMat);
+        prong.position.set(r * 0.65, side * r * 0.45, 3);
+        bodyGroup.add(prong);
+      }
 
-      trimObj = new THREE.Mesh(buildRibbonGeometry(createPolygonPts(8, r * 0.92), 2.8, true, 10.5), createNeonRibbonMaterial(baseColor, 1.15, 0.95));
+      const shipPts = [
+        { x: r * 1.35, y: r * 0.45 },
+        { x: r * 0.2, y: r * 0.88 },
+        { x: -r * 1.05, y: r * 0.68 },
+        { x: -r * 0.7, y: 0 },
+        { x: -r * 1.05, y: -r * 0.68 },
+        { x: r * 0.2, y: -r * 0.88 },
+        { x: r * 1.35, y: -r * 0.45 },
+      ];
+      trimObj = new THREE.Mesh(buildRibbonGeometry(shipPts, 2.8, true, 8.5), createNeonRibbonMaterial(baseColor, 1.15, 0.95));
       const spire = new THREE.Mesh(
-        new THREE.ConeGeometry(r * 0.42, 16, 4),
+        new THREE.ConeGeometry(r * 0.38, 16, 4),
         new THREE.MeshStandardMaterial({ color: 0xff5e99, emissive: 0xff5e99, emissiveIntensity: 0.55 })
       );
       spire.rotation.x = Math.PI / 2;
-      spire.position.z = 14;
+      spire.position.z = 11;
       bodyGroup.add(trimObj, spire, createGlowSprite(baseColor, r * 2.4, 0.2));
 
       const tele = new THREE.Mesh(
-        buildRibbonGeometry([{ x: 0, y: 0 }, { x: 580, y: 0 }], 2.4, false, 0.5),
+        buildRibbonGeometry([{ x: 0, y: 0 }, { x: 1850, y: 0 }], 2.4, false, 0.5),
         createNeonRibbonMaterial(0xb429ff, 1.15, 0.6)
       );
       tele.visible = false;
       bodyGroup.add(tele);
       bodyGroup.userData.telegraph = tele;
     } else if (e.archetype === 'SPLITTER') {
-      baseColor = 0xe8741a;
+      // Twin-hull Volt yellow catamaran carrier with central splitting reactor (weak to KINETIC)
+      baseColor = 0xfff733;
       hullMat = new THREE.MeshStandardMaterial({
-        color: 0x6b2f08,
+        color: 0x4d4306,
         emissive: baseColor,
-        emissiveIntensity: 0.32,
-        roughness: 0.45,
-        metalness: 0.3,
+        emissiveIntensity: 0.35,
+        roughness: 0.4,
+        metalness: 0.35,
       });
-      const box = new THREE.BoxGeometry(r * 1.45, r * 1.45, r * 1.45);
-      bodyGroup.add(new THREE.Mesh(box, hullMat));
-      bodyGroup.add(
-        new THREE.LineSegments(
-          new THREE.EdgesGeometry(box),
-          new THREE.LineBasicMaterial({ color: 0xffaa44 })
-        )
-      );
+      for (const side of [-1, 1]) {
+        const pod = new THREE.Mesh(new THREE.BoxGeometry(r * 1.65, r * 0.45, 11), hullMat);
+        pod.position.set(0, side * r * 0.56, 2);
+        bodyGroup.add(pod);
+      }
       const gem = new THREE.Mesh(
-        new THREE.OctahedronGeometry(r * 0.45, 0),
-        new THREE.MeshStandardMaterial({ color: 0xb429ff, emissive: 0xb429ff, emissiveIntensity: 0.65 })
+        new THREE.OctahedronGeometry(r * 0.42, 0),
+        new THREE.MeshStandardMaterial({ color: 0xfff733, emissive: 0xffaa22, emissiveIntensity: 0.75 })
       );
-      gem.position.z = r * 0.85;
-      trimObj = new THREE.Mesh(
-        buildRibbonGeometry(createPolygonPts(4, r * 0.72), 2.4, true, r * 0.78),
-        createNeonRibbonMaterial(0xb429ff, 1.2, 0.95)
-      );
+      gem.position.z = 6;
+      const shipPts = [
+        { x: r * 1.1, y: r * 0.78 },
+        { x: -r * 0.9, y: r * 0.85 },
+        { x: -r * 0.45, y: 0 },
+        { x: -r * 0.9, y: -r * 0.85 },
+        { x: r * 1.1, y: -r * 0.78 },
+        { x: r * 0.55, y: 0 },
+      ];
+      trimObj = new THREE.Mesh(buildRibbonGeometry(shipPts, 2.5, true, 8), createNeonRibbonMaterial(baseColor, 1.2, 0.95));
       bodyGroup.add(gem, trimObj, createGlowSprite(baseColor, r * 2.2, 0.2));
     } else {
-      // WARDEN Boss — Solid 3D Dodecahedral core + solid armored plates
+      // WARDEN Boss — Massive Multi-Winged Dreadnought Command Carrier with 4 rotating armor plates
       baseColor = 0xff2e97;
       hullMat = new THREE.MeshStandardMaterial({
         color: 0x450d35,
         emissive: baseColor,
-        emissiveIntensity: 0.35,
+        emissiveIntensity: 0.38,
         roughness: 0.38,
         metalness: 0.45,
       });
-      const bossGeo = new THREE.DodecahedronGeometry(r * 0.9, 0);
-      bodyGroup.add(new THREE.Mesh(bossGeo, hullMat));
-      trimObj = new THREE.Mesh(buildRibbonGeometry(createPolygonPts(12, r), 3.4, true, 12), createNeonRibbonMaterial(baseColor, 1.25, 0.98));
+      const mainHull = new THREE.Mesh(new THREE.BoxGeometry(r * 1.85, r * 1.05, 20), hullMat);
+      bodyGroup.add(mainHull);
+      for (const side of [-1, 1]) {
+        const wing = new THREE.Mesh(new THREE.BoxGeometry(r * 1.35, r * 0.55, 12), hullMat);
+        wing.position.set(-r * 0.15, side * r * 0.85, 2);
+        wing.rotation.z = side * -0.22;
+        const turret = new THREE.Mesh(new THREE.BoxGeometry(r * 0.8, r * 0.24, 9), hullMat);
+        turret.position.set(r * 0.85, side * r * 0.45, 7);
+        bodyGroup.add(wing, turret);
+      }
+      const bridge = new THREE.Mesh(new THREE.DodecahedronGeometry(r * 0.45, 0), hullMat);
+      bridge.position.z = 14;
+      bodyGroup.add(bridge);
+
+      const carrierPts = [
+        { x: r * 1.35, y: r * 0.36 },
+        { x: r * 0.45, y: r * 0.78 },
+        { x: -r * 0.25, y: r * 1.22 },
+        { x: -r * 1.15, y: r * 1.05 },
+        { x: -r * 0.85, y: 0 },
+        { x: -r * 1.15, y: -r * 1.05 },
+        { x: -r * 0.25, y: -r * 1.22 },
+        { x: r * 0.45, y: -r * 0.78 },
+        { x: r * 1.35, y: -r * 0.36 },
+      ];
+      trimObj = new THREE.Mesh(buildRibbonGeometry(carrierPts, 3.4, true, 12), createNeonRibbonMaterial(baseColor, 1.25, 0.98));
       bodyGroup.add(trimObj);
 
       const bossPlates: THREE.Object3D[] = [];
-      for (let p = 0; p < 3; p++) {
+      for (let p = 0; p < 4; p++) {
         const platePts: Array<{ x: number; y: number }> = [];
         for (let i = 0; i <= 10; i++) {
           const a = -0.45 + (i / 10) * 0.9;
-          platePts.push({ x: Math.cos(a) * (r + 14), y: Math.sin(a) * (r + 14) });
+          platePts.push({ x: Math.cos(a) * (r + 16), y: Math.sin(a) * (r + 16) });
         }
-        const plate = new THREE.Mesh(buildRibbonGeometry(platePts, 4.2, false, 6), createNeonRibbonMaterial(0xe6f0ff, 1.25, 0.98));
+        const plate = new THREE.Mesh(buildRibbonGeometry(platePts, 4.4, false, 6), createNeonRibbonMaterial(0xe6f0ff, 1.25, 0.98));
+        plate.visible = p < e.bossShieldAngles.length;
         bodyGroup.add(plate);
         bossPlates.push(plate);
       }
       bodyGroup.userData.bossPlates = bossPlates;
       bodyGroup.add(createGlowSprite(baseColor, r * 2.6, 0.24));
       const tele = new THREE.Mesh(
-        buildRibbonGeometry([{ x: 0, y: 0 }, { x: 620, y: 0 }], 2.8, false, 1),
+        buildRibbonGeometry([{ x: 0, y: 0 }, { x: 1900, y: 0 }], 3.0, false, 1),
         createNeonRibbonMaterial(0xff2e97, 1.15, 0.65)
       );
       tele.visible = false;

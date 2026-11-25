@@ -165,57 +165,57 @@ export class WaveDirector {
   private buildSectorSquads(sector: number, isBoss: boolean): RiftWaveSpec[] {
     if (isBoss) {
       return [
-        { x: 420, y: 0, delay: 2.0, archetypes: ['WARDEN', 'BASTION', 'BASTION'] },
-        { x: 320, y: 390, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'STALKER', 'WEAVER'] },
-        { x: 320, y: -390, delay: 8.5, archetypes: ['SWARMER', 'SWARMER', 'WEAVER', 'SPLITTER', 'STALKER'] },
+        { x: 420, y: 0, delay: 2.0, archetypes: ['WARDEN', 'BASTION', 'PYRO_SPRAYER'] },
+        { x: 320, y: 390, delay: 2.0, archetypes: ['SWARMER', 'PYRO_SPRAYER', 'STALKER', 'WEAVER'] },
+        { x: 320, y: -390, delay: 8.5, archetypes: ['GEO_BOMBER', 'SWARMER', 'WEAVER', 'SPLITTER', 'STALKER'] },
       ];
     }
     if (sector === 1) {
       return [
-        { x: 410, y: 170, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'SWARMER', 'BASTION'] },
-        { x: 410, y: -170, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'STALKER', 'STALKER'] },
-        { x: 260, y: 410, delay: 7.5, archetypes: ['SWARMER', 'SWARMER', 'WEAVER'] },
-        { x: 260, y: -410, delay: 7.5, archetypes: ['SWARMER', 'BASTION', 'STALKER'] },
+        { x: 410, y: 170, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'PYRO_SPRAYER', 'BASTION'] },
+        { x: 410, y: -170, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'STALKER', 'GEO_BOMBER'] },
+        { x: 260, y: 410, delay: 7.5, archetypes: ['SWARMER', 'PYRO_SPRAYER', 'WEAVER'] },
+        { x: 260, y: -410, delay: 7.5, archetypes: ['GEO_BOMBER', 'BASTION', 'STALKER'] },
       ];
     }
     if (sector === 2) {
       return [
-        { x: 420, y: 260, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'BASTION', 'STALKER', 'WEAVER'] },
-        { x: 420, y: -260, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'SPLITTER', 'STALKER'] },
-        { x: -240, y: 380, delay: 7.5, archetypes: ['SWARMER', 'SWARMER', 'BASTION', 'STALKER', 'WEAVER'] },
-        { x: -240, y: -380, delay: 7.5, archetypes: ['SWARMER', 'SPLITTER', 'STALKER', 'BASTION'] },
+        { x: 420, y: 260, delay: 2.0, archetypes: ['SWARMER', 'PYRO_SPRAYER', 'BASTION', 'STALKER', 'WEAVER'] },
+        { x: 420, y: -260, delay: 2.0, archetypes: ['SWARMER', 'GEO_BOMBER', 'SPLITTER', 'STALKER'] },
+        { x: -240, y: 380, delay: 7.5, archetypes: ['SWARMER', 'PYRO_SPRAYER', 'BASTION', 'WEAVER'] },
+        { x: -240, y: -380, delay: 7.5, archetypes: ['GEO_BOMBER', 'SPLITTER', 'STALKER', 'BASTION'] },
       ];
     }
     if (sector === 3) {
       return [
-        { x: 440, y: 260, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'WEAVER', 'SPLITTER', 'BASTION'] },
-        { x: 440, y: -260, delay: 2.0, archetypes: ['SWARMER', 'BASTION', 'STALKER', 'WEAVER'] },
-        { x: 240, y: 390, delay: 7.0, archetypes: ['SWARMER', 'WEAVER', 'SPLITTER', 'STALKER', 'STALKER'] },
-        { x: -200, y: -390, delay: 7.0, archetypes: ['SWARMER', 'SWARMER', 'BASTION', 'SPLITTER'] },
-        { x: 540, y: 0, delay: 13.0, archetypes: ['BASTION', 'WEAVER', 'WEAVER', 'STALKER'] },
+        { x: 440, y: 260, delay: 2.0, archetypes: ['SWARMER', 'PYRO_SPRAYER', 'WEAVER', 'SPLITTER', 'BASTION'] },
+        { x: 440, y: -260, delay: 2.0, archetypes: ['GEO_BOMBER', 'BASTION', 'STALKER', 'WEAVER'] },
+        { x: 240, y: 390, delay: 7.0, archetypes: ['PYRO_SPRAYER', 'WEAVER', 'SPLITTER', 'STALKER', 'STALKER'] },
+        { x: -200, y: -390, delay: 7.0, archetypes: ['SWARMER', 'GEO_BOMBER', 'BASTION', 'SPLITTER'] },
+        { x: 540, y: 0, delay: 13.0, archetypes: ['BASTION', 'WEAVER', 'PYRO_SPRAYER', 'GEO_BOMBER'] },
       ];
     }
     if (sector === 4) {
       return [
-        { x: 440, y: 280, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'BASTION', 'WEAVER', 'STALKER'] },
-        { x: 440, y: -280, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'SPLITTER', 'STALKER', 'BASTION'] },
-        { x: 220, y: 400, delay: 7.0, archetypes: ['SWARMER', 'BASTION', 'WEAVER', 'SPLITTER', 'STALKER'] },
-        { x: -200, y: -400, delay: 7.0, archetypes: ['SWARMER', 'SWARMER', 'WEAVER', 'STALKER', 'BASTION'] },
-        { x: 560, y: 0, delay: 13.0, archetypes: ['WEAVER', 'WEAVER', 'SPLITTER', 'BASTION', 'STALKER', 'STALKER'] },
+        { x: 440, y: 280, delay: 2.0, archetypes: ['SWARMER', 'PYRO_SPRAYER', 'BASTION', 'WEAVER', 'STALKER'] },
+        { x: 440, y: -280, delay: 2.0, archetypes: ['GEO_BOMBER', 'SWARMER', 'SPLITTER', 'STALKER', 'BASTION'] },
+        { x: 220, y: 400, delay: 7.0, archetypes: ['PYRO_SPRAYER', 'BASTION', 'WEAVER', 'SPLITTER', 'STALKER'] },
+        { x: -200, y: -400, delay: 7.0, archetypes: ['GEO_BOMBER', 'SWARMER', 'WEAVER', 'STALKER', 'BASTION'] },
+        { x: 560, y: 0, delay: 13.0, archetypes: ['WEAVER', 'PYRO_SPRAYER', 'GEO_BOMBER', 'SPLITTER', 'BASTION'] },
       ];
     }
 
     // Sector 6+ scaling
     const extra = Math.min(6, Math.floor((sector - 4) / 2) + 1);
-    const s1: EnemyArchetype[] = ['SWARMER', 'SWARMER', 'BASTION', 'WEAVER', 'STALKER'];
-    const s2: EnemyArchetype[] = ['SWARMER', 'SWARMER', 'SPLITTER', 'WEAVER', 'STALKER'];
-    const s3: EnemyArchetype[] = ['SWARMER', 'BASTION', 'SPLITTER', 'STALKER', 'WEAVER'];
-    const s4: EnemyArchetype[] = ['SWARMER', 'WEAVER', 'BASTION', 'STALKER', 'SPLITTER'];
+    const s1: EnemyArchetype[] = ['SWARMER', 'PYRO_SPRAYER', 'BASTION', 'WEAVER', 'STALKER'];
+    const s2: EnemyArchetype[] = ['SWARMER', 'GEO_BOMBER', 'SPLITTER', 'WEAVER', 'STALKER'];
+    const s3: EnemyArchetype[] = ['PYRO_SPRAYER', 'BASTION', 'SPLITTER', 'STALKER', 'WEAVER'];
+    const s4: EnemyArchetype[] = ['GEO_BOMBER', 'WEAVER', 'BASTION', 'STALKER', 'SPLITTER'];
     for (let i = 0; i < extra; i++) {
-      s1.push(i % 2 === 0 ? 'SWARMER' : 'STALKER');
-      s2.push(i % 2 === 0 ? 'SPLITTER' : 'BASTION');
-      s3.push(i % 2 === 0 ? 'WEAVER' : 'STALKER');
-      s4.push(i % 2 === 0 ? 'BASTION' : 'WEAVER');
+      s1.push(i % 2 === 0 ? 'PYRO_SPRAYER' : 'STALKER');
+      s2.push(i % 2 === 0 ? 'GEO_BOMBER' : 'BASTION');
+      s3.push(i % 2 === 0 ? 'WEAVER' : 'PYRO_SPRAYER');
+      s4.push(i % 2 === 0 ? 'BASTION' : 'GEO_BOMBER');
     }
     return [
       { x: 440, y: 270, delay: 2.0, archetypes: s1 },
@@ -278,10 +278,12 @@ export class WaveDirector {
 
   public onEnemyKilled(archetype: EnemyArchetype): void {
     const basePoints =
-      archetype === 'WARDEN' ? 1500 :
+      archetype === 'WARDEN' ? 2500 :
       archetype === 'BASTION' ? 180 :
+      archetype === 'GEO_BOMBER' ? 175 :
       archetype === 'WEAVER' ? 160 :
       archetype === 'SPLITTER' ? 150 :
+      archetype === 'PYRO_SPRAYER' ? 145 :
       archetype === 'STALKER' ? 130 : 60;
 
     this.score += basePoints * this.multiplier;
