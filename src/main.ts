@@ -1,10 +1,12 @@
 import { MusicPlayer } from './audio/MusicPlayer';
 import { SynthAudio } from './audio/SynthAudio';
 import { DEFAULT_SETTINGS, GameSettings, loadSettings, saveSettings } from './settings';
-import { SceneManager } from './render/SceneManager';
-import { WarpingGrid } from './render/WarpingGrid';
 import { EntityRenderer } from './render/EntityRenderer';
+import { MotionTrails } from './render/MotionTrails';
+import { SceneManager } from './render/SceneManager';
+import { SpaceBackdrop } from './render/SpaceBackdrop';
 import { SpellVFX } from './render/SpellVFX';
+import { WarpingGrid } from './render/WarpingGrid';
 import { GameSim } from './sim/GameSim';
 import { getShipDef } from './sim/Ships';
 import { BaseElement, CastMode, ELEMENT_META, FIXED_DT } from './sim/types';
@@ -58,9 +60,11 @@ const appEl = document.getElementById('app')!;
 const hudEl = document.getElementById('hud')!;
 
 const sceneManager = new SceneManager(appEl);
+const spaceBackdrop = new SpaceBackdrop(sceneManager.scene);
 const warpingGrid = new WarpingGrid(sceneManager.scene);
 const entityRenderer = new EntityRenderer(sceneManager.scene);
 const spellVFX = new SpellVFX(sceneManager.scene);
+const motionTrails = new MotionTrails(sceneManager.scene);
 const synthAudio = new SynthAudio();
 const musicPlayer = new MusicPlayer();
 const sim = new GameSim('TITLE');
@@ -109,6 +113,7 @@ function applyAllSettings(next: GameSettings): void {
   sceneManager.setPixelRatioCap(settings.pixelRatioCap);
   warpingGrid.setWarpEnabled(settings.gridWarp);
   spellVFX.setParticleQuality(settings.particleQuality);
+  motionTrails.setParticleQuality(settings.particleQuality);
   sim.setDifficulty(settings.difficulty);
   sim.setShip(settings.selectedShip);
   hud?.applySettings(settings);
@@ -332,9 +337,9 @@ function frame(now: number): void {
 
   for (const ev of sim.drainEvents()) {
     if (ev.type === 'grid_impulse') {
-      warpingGrid.applyRadialImpulse(ev.x, ev.y, ev.strength, ev.radius);
+      warpingGrid.applyRadialImpulse(ev.x, ev.y, ev.strength, ev.radius, ev.colorHex);
     } else if (ev.type === 'grid_well') {
-      warpingGrid.applyGravityWell(ev.x, ev.y, ev.strength, ev.radius);
+      warpingGrid.applyGravityWell(ev.x, ev.y, ev.strength, ev.radius, ev.colorHex);
     } else if (ev.type === 'screen_shake') {
       sceneManager.addScreenShake(ev.intensity);
     } else if (ev.type === 'hit_stop') {
@@ -353,6 +358,7 @@ function frame(now: number): void {
       spellVFX.spawnSpray(ev.x, ev.y, ev.angle, ev.spread, ev.range, ev.colors, ev.isNova, ev.elements);
     } else if (ev.type === 'vfx_element_explosion') {
       spellVFX.spawnElementExplosion(ev.x, ev.y, ev.radius, ev.elements, ev.colors, ev.power);
+      warpingGrid.stampColorSplash(ev.x, ev.y, ev.radius, ev.colors[0] ?? 0x00f5ff, 0.95);
     } else if (ev.type === 'vfx_enemy_death') {
       spellVFX.spawnEnemyDeath(
         ev.x,
@@ -364,6 +370,8 @@ function frame(now: number): void {
         ev.statuses
       );
       sceneManager.addScreenShake(ev.isBoss ? 12 : 3.5);
+      sceneManager.triggerImpactPost(ev.x, ev.y, ev.isBoss ? 0.011 : 0.0025, ev.isBoss ? 0.024 : 0);
+      warpingGrid.stampColorSplash(ev.x, ev.y, ev.radius * 3.2, ev.colorHex, ev.isBoss ? 1.0 : 0.65);
     } else if (ev.type === 'damage_number') {
       if (settings.damageNumbers) {
         const pt = sceneManager.worldToScreen(ev.x, ev.y, 28);
@@ -373,10 +381,14 @@ function frame(now: number): void {
       }
     } else if (ev.type === 'vfx_shatter') {
       spellVFX.spawnBurst(ev.x, ev.y, ev.colorHex, 24, 1.4);
+      spellVFX.spawnFloorDecal(ev.x, ev.y, 64, 0x00f5ff, 4.5);
+      warpingGrid.stampColorSplash(ev.x, ev.y, 130, 0x00f5ff, 0.9);
+      sceneManager.triggerImpactPost(ev.x, ev.y, 0.0055, 0.015);
     } else if (ev.type === 'beam_clash') {
       spellVFX.spawnBurst(ev.x, ev.y, ev.colorHex, 8, 1.1);
       spellVFX.spawnShards(ev.x, ev.y, [0x00f5ff, 0xb429ff], 3, 0.9);
       sceneManager.addScreenShake(2.5);
+      sceneManager.triggerImpactPost(ev.x, ev.y, 0.004, 0);
     } else if (ev.type === 'wave_start') {
       hud.showWaveBanner(ev.wave, ev.isBoss);
     } else if (ev.type === 'gate_open') {
@@ -385,6 +397,8 @@ function frame(now: number): void {
       synthAudio.play(ev.sound, ev.colorHex, ev.elements);
     } else if (ev.type === 'player_hit') {
       hud.triggerDamageFlash(ev.hpRatio, ev.absorbedByArmor);
+      sceneManager.triggerImpactPost(ev.x, ev.y, 0.011, 0.022);
+      warpingGrid.stampColorSplash(ev.x, ev.y, 175, ev.absorbedByArmor ? 0xffaa44 : 0xff1e2d, 1.0);
     } else if (ev.type === 'game_over') {
       highScores = recordHighScore(ev.score, ev.wave);
     }
@@ -397,6 +411,9 @@ function frame(now: number): void {
   sceneManager.setArenaBoundary(snapshot.arenaBoundary, snapshot.wave);
   warpingGrid.setArenaBoundary(snapshot.arenaBoundary);
   warpingGrid.setSectorTheme(snapshot.wave);
+  spaceBackdrop.setSectorTheme(snapshot.wave);
+  const timeSec = now / 1000;
+  spaceBackdrop.update(rawDt, timeSec, snapshot.player.x, snapshot.player.y);
   sceneManager.setCameraTarget(snapshot.player.x, snapshot.player.y, aimWorld.x, aimWorld.y, rawDt);
   if (snapshot.player.moving || snapshot.player.dashTimer > 0) {
     const thrustColor = snapshot.player.queue[0]
@@ -404,8 +421,8 @@ function frame(now: number): void {
       : getShipDef(snapshot.shipId).colorHex;
     spellVFX.spawnThruster(snapshot.player.x, snapshot.player.y, snapshot.player.aimAngle, thrustColor);
   }
-  const timeSec = now / 1000;
   entityRenderer.update(snapshot, aimWorld, timeSec);
+  motionTrails.update(snapshot, rawDt);
   spellVFX.update(snapshot, rawDt, timeSec);
 
   hudTimer += rawDt;

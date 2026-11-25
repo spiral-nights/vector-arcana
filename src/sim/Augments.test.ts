@@ -299,7 +299,7 @@ describe('Construct Augments — Catalog, Draft & All 6 Mechanics', () => {
       sim.getSnapshot().player.hp = 50;
       sim.pickAugment(hullDefIdx);
       expect(sim.getSnapshot().player.maxHp).toBe(130);
-      expect(sim.getSnapshot().player.hp).toBe(105); // 50 + 25 gate + 30 hull? wait gate healed +25 to 75, wait we set 50 after gate, so 50+30=80
+      expect(sim.getSnapshot().player.hp).toBe(80);
     } else {
       // Direct test on another run
       const sim2 = new GameSim();

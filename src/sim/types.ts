@@ -482,8 +482,8 @@ export type SfxId =
   | 'game_over';
 
 export type SimEvent =
-  | { type: 'grid_impulse'; x: number; y: number; strength: number; radius: number }
-  | { type: 'grid_well'; x: number; y: number; strength: number; radius: number }
+  | { type: 'grid_impulse'; x: number; y: number; strength: number; radius: number; colorHex?: number }
+  | { type: 'grid_well'; x: number; y: number; strength: number; radius: number; colorHex?: number }
   | { type: 'hit_stop'; duration: number }
   | { type: 'screen_shake'; intensity: number }
   | { type: 'sfx'; sound: SfxId; colorHex?: number; elements?: QueueElement[] }

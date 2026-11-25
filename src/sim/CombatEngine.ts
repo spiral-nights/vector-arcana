@@ -279,7 +279,7 @@ export class CombatEngine {
     const radius = 155;
     this.applyAoEDamage(x, y, radius, 28 * stacks, ['BARRIER'], 260, events);
     events.push({ type: 'vfx_ring', x, y, radius, colorHex: 0xe6f0ff, duration: 0.28 });
-    events.push({ type: 'grid_impulse', x, y, strength: 185, radius });
+    events.push({ type: 'grid_impulse', x, y, strength: 185, radius, colorHex: 0xe6f0ff });
     events.push({ type: 'damage_number', x, y: y - 24, text: 'SANCTUARY PULSE!', colorHex: 0xe6f0ff, big: true });
   }
 
@@ -316,7 +316,7 @@ export class CombatEngine {
         }
         events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: selfCast.colorHex, count: 24, radius: 60 });
         events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 118, colorHex: selfCast.colorHex });
-        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 160, radius: 140 });
+        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 160, radius: 140, colorHex: selfCast.colorHex });
         events.push({ type: 'sfx', sound: 'ward', elements: selfCast.elements });
         break;
       }
@@ -374,7 +374,7 @@ export class CombatEngine {
         events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius, colorHex: accent });
         events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: accent, count: 28, radius: radius * 0.7 });
         events.push({ type: 'vfx_shards', x: player.x, y: player.y, colors: burstColors, count: 18, speedScale: 1.1 });
-        events.push({ type: 'grid_well', x: player.x, y: player.y, strength: 240 + comp.totalPower * 40, radius: radius + 40 });
+        events.push({ type: 'grid_well', x: player.x, y: player.y, strength: 240 + comp.totalPower * 40, radius: radius + 40, colorHex: accent });
         events.push({ type: 'screen_shake', intensity: 4.5 });
         events.push({ type: 'sfx', sound: 'beam', elements: selfCast.elements });
         break;
@@ -590,6 +590,7 @@ export class CombatEngine {
         y: player.y + Math.sin(angle) * 110,
         strength: 55 + comp.totalPower * 15,
         radius: 110,
+        colorHex: comp.primaryColorHex,
       });
       if (Math.random() < 0.35) {
         events.push({ type: 'sfx', sound: 'spray', elements: ch.elements });
@@ -699,7 +700,7 @@ export class CombatEngine {
         }
         const last = pts[pts.length - 1]!;
         events.push({ type: 'vfx_lightning', points: pts, colors: comp.colors });
-        events.push({ type: 'grid_impulse', x: last.x, y: last.y, strength: 105, radius: 100 });
+        events.push({ type: 'grid_impulse', x: last.x, y: last.y, strength: 105, radius: 100, colorHex: comp.primaryColorHex });
       } else {
         const jitterA = isNova ? a : a + (Math.random() - 0.5) * 0.16;
         const tx = ox + Math.cos(jitterA) * range;
@@ -707,7 +708,7 @@ export class CombatEngine {
         pts.push({ x: tx, y: ty });
         events.push({ type: 'vfx_lightning', points: pts, colors: comp.colors });
         events.push({ type: 'vfx_burst', x: tx, y: ty, colorHex: comp.primaryColorHex, count: 8, radius: 34 });
-        events.push({ type: 'grid_impulse', x: tx, y: ty, strength: 95, radius: 100 });
+        events.push({ type: 'grid_impulse', x: tx, y: ty, strength: 95, radius: 100, colorHex: comp.primaryColorHex });
       }
     }
   }
@@ -1150,7 +1151,7 @@ export class CombatEngine {
       }
       events.push({ type: 'vfx_ring', x: p.x, y: p.y, radius: blastRadius * 1.15, colorHex: ELEMENT_META.KINETIC.colorHex, duration: 0.32 });
     }
-    events.push({ type: 'grid_impulse', x: p.x, y: p.y, strength: 220 + kineticCount * 90, radius: blastRadius + 50 });
+    events.push({ type: 'grid_impulse', x: p.x, y: p.y, strength: 220 + kineticCount * 90, radius: blastRadius + 50, colorHex: rockAccent });
     events.push({
       type: 'vfx_element_explosion',
       x: p.x,
@@ -1200,7 +1201,7 @@ export class CombatEngine {
 
     const voidCount = counts.VOID ?? 0;
     if (voidCount > 0) {
-      events.push({ type: 'grid_well', x: p.x, y: p.y, strength: 220 * voidCount, radius: 170 });
+      events.push({ type: 'grid_well', x: p.x, y: p.y, strength: 220 * voidCount, radius: 170, colorHex: 0xff2438 });
     }
   }
 
@@ -1237,7 +1238,7 @@ export class CombatEngine {
       power: nonBarrierPower,
     });
     events.push({ type: 'vfx_ring', x: pos.x, y: pos.y, radius, colorHex: p.colorHex });
-    events.push({ type: 'grid_impulse', x: pos.x, y: pos.y, strength: 185, radius });
+    events.push({ type: 'grid_impulse', x: pos.x, y: pos.y, strength: 185, radius, colorHex: p.colorHex });
     events.push({ type: 'sfx', sound: 'storm', elements: p.elements });
   }
 
@@ -1682,7 +1683,7 @@ export class CombatEngine {
     const hpRatio = player.hp / Math.max(1, player.maxHp);
     const impactColor = absorbedByArmor ? 0xffaa44 : 0xff1e2d;
     events.push({ type: 'hit_stop', duration: 0.055 });
-    events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 300, radius: 195 });
+    events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 300, radius: 195, colorHex: impactColor });
     events.push({ type: 'screen_shake', intensity: hpRatio <= 0.35 ? 16 : 13 });
     events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 115, colorHex: impactColor, duration: 0.32 });
     events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: impactColor, count: 26, radius: 75 });
@@ -2412,12 +2413,12 @@ export class CombatEngine {
         const knockback = singMineStacks > 0 ? -240 * singMineStacks : 280;
         this.applyAoEDamage(m.x, m.y, blastR, m.damage, m.elements, knockback, events);
         if (singMineStacks > 0) {
-          events.push({ type: 'grid_well', x: m.x, y: m.y, strength: 220 * singMineStacks, radius: blastR + 30 });
+          events.push({ type: 'grid_well', x: m.x, y: m.y, strength: 220 * singMineStacks, radius: blastR + 30, colorHex: mineAccent });
         }
         events.push({ type: 'vfx_burst', x: m.x, y: m.y, colorHex: mineAccent, count: 20, radius: blastR * 0.6 });
         events.push({ type: 'vfx_shards', x: m.x, y: m.y, colors: mineShardCols, count: 14, speedScale: 1.1 });
         events.push({ type: 'vfx_ring', x: m.x, y: m.y, radius: blastR, colorHex: mineAccent });
-        events.push({ type: 'grid_impulse', x: m.x, y: m.y, strength: 220, radius: m.blastRadius + 30 });
+        events.push({ type: 'grid_impulse', x: m.x, y: m.y, strength: 220, radius: m.blastRadius + 30, colorHex: mineAccent });
         events.push({ type: 'sfx', sound: 'mine_explode', elements: m.elements });
         this.mines.splice(i, 1);
         continue;
@@ -2492,7 +2493,7 @@ export class CombatEngine {
             colors: [voltColor, ...palette.filter((c) => c !== voltColor)],
           });
         }
-        events.push({ type: 'grid_impulse', x: sx, y: sy, strength: 155 + nonBarrierPower * 45, radius: 120 });
+        events.push({ type: 'grid_impulse', x: sx, y: sy, strength: 155 + nonBarrierPower * 45, radius: 120, colorHex: strikeColor });
       }
       if (s.life <= 0) {
         this.storms.splice(i, 1);
@@ -2847,7 +2848,14 @@ export class CombatEngine {
           isBoss: e.archetype === 'WARDEN',
           statuses: deathStatuses,
         });
-        events.push({ type: 'grid_impulse', x: e.x, y: e.y, strength: e.archetype === 'WARDEN' ? 350 : 95, radius: e.radius * 4 });
+        events.push({
+          type: 'grid_impulse',
+          x: e.x,
+          y: e.y,
+          strength: e.archetype === 'WARDEN' ? 350 : 95,
+          radius: e.radius * 4,
+          colorHex: killColor,
+        });
         events.push({ type: 'sfx', sound: 'enemy_kill' });
         onKill(e.archetype);
         this.enemies.splice(i, 1);

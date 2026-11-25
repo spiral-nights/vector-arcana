@@ -13,6 +13,9 @@ export class WarpingGrid {
   private readonly posY: Float32Array;
   private readonly velX: Float32Array;
   private readonly velY: Float32Array;
+  private readonly splashR: Float32Array;
+  private readonly splashG: Float32Array;
+  private readonly splashB: Float32Array;
 
   private readonly linePositions: Float32Array;
   private readonly lineColors: Float32Array;
@@ -33,6 +36,9 @@ export class WarpingGrid {
     this.posY = new Float32Array(this.count);
     this.velX = new Float32Array(this.count);
     this.velY = new Float32Array(this.count);
+    this.splashR = new Float32Array(this.count);
+    this.splashG = new Float32Array(this.count);
+    this.splashB = new Float32Array(this.count);
 
     const w = ARENA_HALF_W * 2;
     const h = ARENA_HALF_H * 2;
@@ -64,7 +70,7 @@ export class WarpingGrid {
     const material = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.78,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -83,6 +89,9 @@ export class WarpingGrid {
         this.posY[i] = this.restY[i]!;
         this.velX[i] = 0;
         this.velY[i] = 0;
+        this.splashR[i] = 0;
+        this.splashG[i] = 0;
+        this.splashB[i] = 0;
       }
       this.syncBuffers();
     }
@@ -96,7 +105,29 @@ export class WarpingGrid {
     this.syncBuffers();
   }
 
-  public applyRadialImpulse(wx: number, wy: number, strength: number, radius: number): void {
+  public stampColorSplash(wx: number, wy: number, radius: number, colorHex: number, intensity = 0.85): void {
+    if (!this.warpEnabled) return;
+    const effR = Math.max(40, radius * 1.25);
+    const r2 = effR * effR;
+    const cr = ((colorHex >> 16) & 0xff) / 255;
+    const cg = ((colorHex >> 8) & 0xff) / 255;
+    const cb = (colorHex & 0xff) / 255;
+
+    for (let i = 0; i < this.count; i++) {
+      const dx = this.restX[i]! - wx;
+      const dy = this.restY[i]! - wy;
+      const dist2 = dx * dx + dy * dy;
+      if (dist2 < r2) {
+        const falloff = 1 - Math.sqrt(dist2) / effR;
+        const w = falloff * falloff * intensity;
+        this.splashR[i] = Math.min(1.1, this.splashR[i]! + cr * w);
+        this.splashG[i] = Math.min(1.1, this.splashG[i]! + cg * w);
+        this.splashB[i] = Math.min(1.1, this.splashB[i]! + cb * w);
+      }
+    }
+  }
+
+  public applyRadialImpulse(wx: number, wy: number, strength: number, radius: number, colorHex?: number): void {
     if (!this.warpEnabled) return;
     const r2 = radius * radius;
     for (let i = 0; i < this.count; i++) {
@@ -111,9 +142,12 @@ export class WarpingGrid {
         this.velY[i]! += (dy / dist) * f;
       }
     }
+    if (colorHex !== undefined) {
+      this.stampColorSplash(wx, wy, radius, colorHex, Math.min(1.0, strength / 220));
+    }
   }
 
-  public applyGravityWell(wx: number, wy: number, strength: number, radius: number): void {
+  public applyGravityWell(wx: number, wy: number, strength: number, radius: number, colorHex?: number): void {
     if (!this.warpEnabled) return;
     const r2 = radius * radius;
     for (let i = 0; i < this.count; i++) {
@@ -128,13 +162,18 @@ export class WarpingGrid {
         this.velY[i]! += (dy / dist) * f;
       }
     }
+    if (colorHex !== undefined) {
+      this.stampColorSplash(wx, wy, radius, colorHex, Math.min(1.0, strength / 240));
+    }
   }
 
   public update(dt: number): void {
+    if (!this.warpEnabled) return;
     const stepDt = Math.min(dt, 0.033);
     const stiffness = 68;
     const neighborStiffness = 22;
     const damping = Math.exp(-6.2 * stepDt);
+    const colorDecay = Math.exp(-2.4 * stepDt);
 
     for (let r = 0; r < this.rows; r++) {
       const isBorderY = r === 0 || r === this.rows - 1;
@@ -154,7 +193,6 @@ export class WarpingGrid {
         let fx = (this.restX[idx]! - x) * stiffness;
         let fy = (this.restY[idx]! - y) * stiffness;
 
-        // Neighbor coupling for ripple propagation
         const left = idx - 1;
         const right = idx + 1;
         const up = idx - this.cols;
@@ -172,6 +210,9 @@ export class WarpingGrid {
     for (let i = 0; i < this.count; i++) {
       this.posX[i]! += this.velX[i]! * stepDt;
       this.posY[i]! += this.velY[i]! * stepDt;
+      this.splashR[i]! *= colorDecay;
+      this.splashG[i]! *= colorDecay;
+      this.splashB[i]! *= colorDecay;
     }
 
     this.syncBuffers();
@@ -182,11 +223,11 @@ export class WarpingGrid {
     if (idx === this.themeIdx) return;
     this.themeIdx = idx;
     const themes: Array<{ base: [number, number, number]; warp: [number, number, number] }> = [
-      { base: [0.08, 0.14, 0.48], warp: [0.55, 0.80, 0.62] }, // Cyber Vault
-      { base: [0.28, 0.08, 0.12], warp: [0.75, 0.42, 0.22] }, // Reactor Choke
-      { base: [0.06, 0.22, 0.44], warp: [0.35, 0.82, 0.72] }, // Cryo Gauntlet
-      { base: [0.06, 0.26, 0.22], warp: [0.32, 0.85, 0.52] }, // Bio-Core Ring
-      { base: [0.22, 0.08, 0.44], warp: [0.72, 0.35, 0.85] }, // Void Sanctum
+      { base: [0.08, 0.14, 0.48], warp: [0.55, 0.80, 0.62] },
+      { base: [0.28, 0.08, 0.12], warp: [0.75, 0.42, 0.22] },
+      { base: [0.06, 0.22, 0.44], warp: [0.35, 0.82, 0.72] },
+      { base: [0.06, 0.26, 0.22], warp: [0.32, 0.85, 0.52] },
+      { base: [0.22, 0.08, 0.44], warp: [0.72, 0.35, 0.85] },
     ];
     const t = themes[idx]!;
     this.baseRgb = t.base;
@@ -226,9 +267,9 @@ export class WarpingGrid {
       this.linePositions[ptr + 1] = y;
       this.linePositions[ptr + 2] = -disp * 8;
 
-      this.lineColors[ptr] = br + disp * wr;
-      this.lineColors[ptr + 1] = bg + disp * wg;
-      this.lineColors[ptr + 2] = bb + disp * wb;
+      this.lineColors[ptr] = Math.min(1.15, br + disp * wr + this.splashR[idx]!);
+      this.lineColors[ptr + 1] = Math.min(1.15, bg + disp * wg + this.splashG[idx]!);
+      this.lineColors[ptr + 2] = Math.min(1.15, bb + disp * wb + this.splashB[idx]!);
       ptr += 3;
     };
 

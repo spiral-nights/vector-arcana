@@ -1,12 +1,105 @@
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { DEFAULT_RECT_BOUNDARY } from '../sim/ArenaGeometry';
 import { ARENA_HALF_H, ARENA_HALF_W, Vec2 } from '../sim/types';
+import { createGlowSprite } from './GlowUtil';
+import { buildRibbonGeometry, createNeonRibbonMaterial } from './NeonShaders';
 
 const SECTOR_BORDER_COLORS = [0x00d8ff, 0xff5522, 0x44f5ff, 0x39ff88, 0xb429ff] as const;
+
+const ImpactPostShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uAberration: { value: 0.0 },
+    uRippleStrength: { value: 0.0 },
+    uRippleRadius: { value: 0.0 },
+    uRippleCenter: { value: new THREE.Vector2(0.5, 0.5) },
+    uVignette: { value: 0.24 },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform float uAberration;
+    uniform float uRippleStrength;
+    uniform float uRippleRadius;
+    uniform vec2 uRippleCenter;
+    uniform float uVignette;
+    varying vec2 vUv;
+
+    void main() {
+      vec2 uv = vUv;
+      if (uRippleStrength > 0.0002) {
+        vec2 toP = uv - uRippleCenter;
+        float dist = length(toP);
+        float diff = abs(dist - uRippleRadius);
+        float ring = smoothstep(0.085, 0.0, diff);
+        uv += normalize(toP + vec2(0.0001)) * ring * uRippleStrength;
+      }
+
+      vec2 fromCenter = uv - vec2(0.5);
+      float ab = uAberration * (0.4 + length(fromCenter) * 1.4);
+      vec2 shift = normalize(fromCenter + vec2(0.0001)) * ab;
+
+      float r = texture2D(tDiffuse, clamp(uv + shift, vec2(0.001), vec2(0.999))).r;
+      float g = texture2D(tDiffuse, clamp(uv, vec2(0.001), vec2(0.999))).g;
+      float b = texture2D(tDiffuse, clamp(uv - shift, vec2(0.001), vec2(0.999))).b;
+      vec3 col = vec3(r, g, b);
+
+      float edgeDist = length(fromCenter) * 1.414;
+      float vig = 1.0 - smoothstep(0.58, 1.18, edgeDist) * uVignette;
+      gl_FragColor = vec4(col * vig, 1.0);
+    }
+  `,
+};
+
+function createBorderSkirtMaterial(colorHex: number): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(colorHex) },
+      uOpacity: { value: 0.34 },
+    },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uColor;
+      uniform float uOpacity;
+      varying vec2 vUv;
+      void main() {
+        float h = pow(1.0 - vUv.y, 1.85);
+        float pulse = 0.88 + 0.12 * sin(vUv.x * 24.0);
+        gl_FragColor = vec4(uColor * (0.85 + h * 0.55) * pulse, h * uOpacity);
+      }
+    `,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+}
+
+function createPolygonPts(sides: number, radius: number): Array<{ x: number; y: number }> {
+  const pts: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i < sides; i++) {
+    const a = (i / sides) * Math.PI * 2;
+    pts.push({ x: Math.cos(a) * radius, y: Math.sin(a) * radius });
+  }
+  return pts;
+}
 
 export class SceneManager {
   public readonly scene: THREE.Scene;
@@ -14,15 +107,13 @@ export class SceneManager {
   public readonly renderer: THREE.WebGLRenderer;
   private readonly composer: EffectComposer;
   private readonly bloomPass: UnrealBloomPass;
+  private readonly impactPass: ShaderPass;
   private readonly raycaster = new THREE.Raycaster();
   private readonly groundPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
   private readonly ndcVec = new THREE.Vector2();
   private readonly hitVec = new THREE.Vector3();
 
-  private borderLoop!: THREE.LineLoop;
-  private outerBorderLoop!: THREE.LineLoop;
-  private borderMat!: THREE.LineBasicMaterial;
-  private outerBorderMat!: THREE.LineBasicMaterial;
+  private readonly borderGroup = new THREE.Group();
   private currentThemeWave = -1;
   private lastBoundaryKey = '';
 
@@ -30,6 +121,9 @@ export class SceneManager {
   private shakeIntensity = 0;
   private shakeScale = 1.0;
   private pixelRatioCap: 1 | 2 = 2;
+  private aberration = 0;
+  private rippleStrength = 0;
+  private rippleRadius = 0;
   private camX = 0;
   private camY = 0;
   private readonly camDist = 1160;
@@ -39,7 +133,7 @@ export class SceneManager {
 
   constructor(container: HTMLElement) {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x05050a);
+    this.scene.background = new THREE.Color(0x04050c);
 
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
@@ -60,57 +154,138 @@ export class SceneManager {
 
     this.bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.56, 0.36, 0.64);
     this.composer.addPass(this.bloomPass);
+    this.impactPass = new ShaderPass(ImpactPostShader);
+    this.composer.addPass(this.impactPass);
     this.composer.addPass(new OutputPass());
 
-    // 3D Lighting for solid opaque hulls, pillars, and arena blocks
     const hemi = new THREE.HemisphereLight(0xaaccff, 0x161b2e, 1.15);
     this.scene.add(hemi);
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.35);
     dirLight.position.set(380, -450, 720);
     this.scene.add(dirLight);
 
-    this.createArenaBorder();
-    this.setSectorTheme(1);
+    this.scene.add(this.borderGroup);
+    this.setArenaBoundary(DEFAULT_RECT_BOUNDARY, 1);
     window.addEventListener('resize', this.handleResize);
   }
 
-  private createArenaBorder(): void {
-    this.borderMat = new THREE.LineBasicMaterial({ color: 0x00d8ff, transparent: true, opacity: 0.82 });
-    this.outerBorderMat = new THREE.LineBasicMaterial({ color: 0x1a3366, transparent: true, opacity: 0.55 });
-    this.borderLoop = new THREE.LineLoop(new THREE.BufferGeometry(), this.borderMat);
-    this.outerBorderLoop = new THREE.LineLoop(new THREE.BufferGeometry(), this.outerBorderMat);
-    this.scene.add(this.borderLoop);
-    this.scene.add(this.outerBorderLoop);
-    this.setArenaBoundary(DEFAULT_RECT_BOUNDARY, 1);
+  private clearBorderGroup(): void {
+    while (this.borderGroup.children.length > 0) {
+      const child = this.borderGroup.children[0]!;
+      this.borderGroup.remove(child);
+      child.traverse((obj) => {
+        if (obj instanceof THREE.Sprite) {
+          obj.material.dispose();
+        } else if (obj instanceof THREE.Mesh || obj instanceof THREE.Line || obj instanceof THREE.LineSegments) {
+          obj.geometry.dispose();
+          if (obj.material instanceof THREE.Material) obj.material.dispose();
+        }
+      });
+    }
   }
 
   public setArenaBoundary(boundary: readonly Vec2[], wave: number): void {
-    this.setSectorTheme(wave);
-    const key = boundary.map((v) => `${v.x},${v.y}`).join(';');
+    const themeIdx = Math.max(0, wave - 1) % SECTOR_BORDER_COLORS.length;
+    const key = `${themeIdx}:${boundary.map((v) => `${v.x},${v.y}`).join(';')}`;
     if (key === this.lastBoundaryKey) return;
     this.lastBoundaryKey = key;
+    this.currentThemeWave = themeIdx;
+    const colHex = SECTOR_BORDER_COLORS[themeIdx]!;
 
-    const innerPts = boundary.map((v) => new THREE.Vector3(v.x, v.y, 0.5));
+    this.clearBorderGroup();
+    if (boundary.length < 3) return;
+
     let cx = 0;
     let cy = 0;
     for (const v of boundary) {
       cx += v.x;
       cy += v.y;
     }
-    cx /= Math.max(1, boundary.length);
-    cy /= Math.max(1, boundary.length);
+    cx /= boundary.length;
+    cy /= boundary.length;
 
     const outerPts = boundary.map((v) => {
       const dx = v.x - cx;
       const dy = v.y - cy;
       const len = Math.max(1, Math.hypot(dx, dy));
-      return new THREE.Vector3(v.x + (dx / len) * 14, v.y + (dy / len) * 14, 0);
+      return { x: v.x + (dx / len) * 16, y: v.y + (dy / len) * 16 };
     });
 
-    this.borderLoop.geometry.dispose();
-    this.borderLoop.geometry = new THREE.BufferGeometry().setFromPoints(innerPts);
-    this.outerBorderLoop.geometry.dispose();
-    this.outerBorderLoop.geometry = new THREE.BufferGeometry().setFromPoints(outerPts);
+    // Primary neon border ribbon rail + soft outer rail
+    this.borderGroup.add(
+      new THREE.Mesh(
+        buildRibbonGeometry(boundary, 6.8, true, 2.0),
+        createNeonRibbonMaterial(colHex, 1.32, 0.96)
+      ),
+      new THREE.Mesh(
+        buildRibbonGeometry(outerPts, 3.6, true, 0.8),
+        createNeonRibbonMaterial(colHex, 0.85, 0.44)
+      )
+    );
+
+    // Volumetric standing energy skirt along arena perimeter walls
+    const n = boundary.length;
+    const positions = new Float32Array((n + 1) * 2 * 3);
+    const uvs = new Float32Array((n + 1) * 2 * 2);
+    const indices: number[] = [];
+    const skirtH = 26;
+    for (let i = 0; i <= n; i++) {
+      const v = boundary[i % n]!;
+      const pBase = i * 6;
+      positions[pBase] = v.x;
+      positions[pBase + 1] = v.y;
+      positions[pBase + 2] = 0.5;
+      positions[pBase + 3] = v.x;
+      positions[pBase + 4] = v.y;
+      positions[pBase + 5] = skirtH;
+      const uvBase = i * 4;
+      uvs[uvBase] = i / n;
+      uvs[uvBase + 1] = 0;
+      uvs[uvBase + 2] = i / n;
+      uvs[uvBase + 3] = 1;
+      if (i < n) {
+        const idx0 = i * 2;
+        indices.push(idx0, idx0 + 1, idx0 + 2, idx0 + 2, idx0 + 1, idx0 + 3);
+      }
+    }
+    const skirtGeo = new THREE.BufferGeometry();
+    skirtGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    skirtGeo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    skirtGeo.setIndex(indices);
+    this.borderGroup.add(new THREE.Mesh(skirtGeo, createBorderSkirtMaterial(colHex)));
+
+    // 3D Corner Beacon Pylons at each polygon vertex
+    const beaconGeo = new THREE.CylinderGeometry(8, 11, 34, 6, 1);
+    beaconGeo.rotateX(Math.PI / 2);
+    const capPts = createPolygonPts(6, 10.5);
+    const beaconMat = new THREE.MeshStandardMaterial({
+      color: 0x10182b,
+      emissive: colHex,
+      emissiveIntensity: 0.35,
+      roughness: 0.4,
+      metalness: 0.45,
+    });
+    for (const v of boundary) {
+      const pylon = new THREE.Mesh(beaconGeo.clone(), beaconMat.clone());
+      pylon.position.set(v.x, v.y, 17);
+      const capRing = new THREE.Mesh(
+        buildRibbonGeometry(capPts, 2.8, true, 35),
+        createNeonRibbonMaterial(colHex, 1.35, 0.95)
+      );
+      capRing.position.set(v.x, v.y, 0);
+      const glow = createGlowSprite(colHex, 46, 0.24);
+      glow.position.set(v.x, v.y, 26);
+      this.borderGroup.add(pylon, capRing, glow);
+    }
+    beaconGeo.dispose();
+    beaconMat.dispose();
+  }
+
+  public setSectorTheme(wave: number): void {
+    const idx = Math.max(0, wave - 1) % SECTOR_BORDER_COLORS.length;
+    if (idx !== this.currentThemeWave) {
+      this.lastBoundaryKey = '';
+    }
   }
 
   public setBloomIntensity(intensity: number): void {
@@ -128,13 +303,18 @@ export class SceneManager {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, cap));
   }
 
-  public setSectorTheme(wave: number): void {
-    const idx = Math.max(0, wave - 1) % SECTOR_BORDER_COLORS.length;
-    if (idx === this.currentThemeWave) return;
-    this.currentThemeWave = idx;
-    const col = SECTOR_BORDER_COLORS[idx]!;
-    this.borderMat.color.setHex(col);
-    this.outerBorderMat.color.setHex(col).multiplyScalar(0.38);
+  public triggerImpactPost(worldX: number, worldY: number, aberrationAmount: number, rippleAmount = 0): void {
+    if (this.shakeScale <= 0.01) return;
+    const scale = Math.max(0.35, this.shakeScale);
+    this.aberration = Math.min(0.014, Math.max(this.aberration, aberrationAmount * scale));
+    if (rippleAmount > 0) {
+      this.hitVec.set(worldX, worldY, 0).project(this.camera);
+      const ux = Math.max(0.05, Math.min(0.95, this.hitVec.x * 0.5 + 0.5));
+      const uy = Math.max(0.05, Math.min(0.95, this.hitVec.y * 0.5 + 0.5));
+      (this.impactPass.uniforms.uRippleCenter!.value as THREE.Vector2).set(ux, uy);
+      this.rippleStrength = Math.min(0.026, Math.max(this.rippleStrength, rippleAmount * scale));
+      this.rippleRadius = 0.02;
+    }
   }
 
   private updateCameraFrustum(width: number, height: number): void {
@@ -235,6 +415,18 @@ export class SceneManager {
     } else {
       this.shakeIntensity = 0;
     }
+
+    const safeDt = Math.min(0.05, Math.max(0.001, dt));
+    this.aberration *= Math.pow(0.001, safeDt);
+    if (this.aberration < 0.00015) this.aberration = 0;
+    this.rippleRadius += safeDt * 2.1;
+    this.rippleStrength *= Math.pow(0.006, safeDt);
+    if (this.rippleStrength < 0.0002) this.rippleStrength = 0;
+
+    this.impactPass.uniforms.uAberration!.value = this.aberration;
+    this.impactPass.uniforms.uRippleStrength!.value = this.rippleStrength;
+    this.impactPass.uniforms.uRippleRadius!.value = this.rippleRadius;
+
     this.applyCameraTransform(sx, sy);
     this.composer.render();
   }
@@ -251,6 +443,7 @@ export class SceneManager {
 
   public dispose(): void {
     window.removeEventListener('resize', this.handleResize);
+    this.clearBorderGroup();
     this.composer.dispose();
     this.renderer.dispose();
   }

@@ -166,6 +166,171 @@ interface StormStrikeAnim {
   secondaryColorHex: number;
 }
 
+interface StreakParticle {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  life: number;
+  maxLife: number;
+  color: THREE.Color;
+  width: number;
+}
+
+interface FloorDecal {
+  mesh: THREE.Mesh;
+  life: number;
+  maxLife: number;
+}
+
+class StreakPool {
+  private readonly maxCount = 900;
+  private readonly items: StreakParticle[] = [];
+  private readonly positions: Float32Array;
+  private readonly colors: Float32Array;
+  private readonly geometry: THREE.BufferGeometry;
+
+  constructor(scene: THREE.Scene) {
+    this.positions = new Float32Array(this.maxCount * 4 * 3);
+    this.colors = new Float32Array(this.maxCount * 4 * 3);
+    const indices: number[] = [];
+    for (let i = 0; i < this.maxCount; i++) {
+      const v0 = i * 4;
+      indices.push(v0, v0 + 1, v0 + 2, v0 + 2, v0 + 1, v0 + 3);
+    }
+    this.geometry = new THREE.BufferGeometry();
+    this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+    this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
+    this.geometry.setIndex(indices);
+
+    const mesh = new THREE.Mesh(
+      this.geometry,
+      new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.96,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      })
+    );
+    mesh.frustumCulled = false;
+    scene.add(mesh);
+  }
+
+  public add(p: StreakParticle): void {
+    if (this.items.length >= this.maxCount) this.items.shift();
+    this.items.push(p);
+  }
+
+  public update(dt: number): void {
+    for (let i = this.items.length - 1; i >= 0; i--) {
+      const p = this.items[i]!;
+      p.life -= dt;
+      if (p.life <= 0) {
+        this.items.splice(i, 1);
+        continue;
+      }
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.z = Math.max(1.5, p.z + p.vz * dt);
+      const drag = Math.pow(0.06, dt);
+      p.vx *= drag;
+      p.vy *= drag;
+      p.vz *= drag;
+    }
+
+    const headCol = new THREE.Color();
+    for (let i = 0; i < this.maxCount; i++) {
+      const p = this.items[i];
+      const pBase = i * 12;
+      if (!p) {
+        for (let k = 0; k < 4; k++) {
+          this.positions[pBase + k * 3] = 0;
+          this.positions[pBase + k * 3 + 1] = 0;
+          this.positions[pBase + k * 3 + 2] = -9999;
+          this.colors[pBase + k * 3] = 0;
+          this.colors[pBase + k * 3 + 1] = 0;
+          this.colors[pBase + k * 3 + 2] = 0;
+        }
+        continue;
+      }
+
+      const spd = Math.hypot(p.vx, p.vy);
+      const dx = spd > 1 ? p.vx / spd : 1;
+      const dy = spd > 1 ? p.vy / spd : 0;
+      const nx = -dy;
+      const ny = dx;
+      const len = Math.max(8, Math.min(54, spd * 0.055));
+      const hw = p.width * 0.5;
+      const fade = Math.pow(Math.max(0, p.life / p.maxLife), 0.75);
+
+      const hx = p.x + dx * len * 0.35;
+      const hy = p.y + dy * len * 0.35;
+      const tx = p.x - dx * len * 0.65;
+      const ty = p.y - dy * len * 0.65;
+
+      // 0: head left, 1: head right, 2: tail left, 3: tail right
+      this.positions[pBase] = hx + nx * hw;
+      this.positions[pBase + 1] = hy + ny * hw;
+      this.positions[pBase + 2] = p.z;
+
+      this.positions[pBase + 3] = hx - nx * hw;
+      this.positions[pBase + 4] = hy - ny * hw;
+      this.positions[pBase + 5] = p.z;
+
+      this.positions[pBase + 6] = tx + nx * hw * 0.15;
+      this.positions[pBase + 7] = ty + ny * hw * 0.15;
+      this.positions[pBase + 8] = p.z;
+
+      this.positions[pBase + 9] = tx - nx * hw * 0.15;
+      this.positions[pBase + 10] = ty - ny * hw * 0.15;
+      this.positions[pBase + 11] = p.z;
+
+      headCol.copy(p.color).lerp(new THREE.Color(0xffffff), 0.45);
+      for (const hIdx of [0, 3]) {
+        this.colors[pBase + hIdx] = headCol.r * fade;
+        this.colors[pBase + hIdx + 1] = headCol.g * fade;
+        this.colors[pBase + hIdx + 2] = headCol.b * fade;
+      }
+      for (const tIdx of [6, 9]) {
+        this.colors[pBase + tIdx] = p.color.r * fade * 0.65;
+        this.colors[pBase + tIdx + 1] = p.color.g * fade * 0.65;
+        this.colors[pBase + tIdx + 2] = p.color.b * fade * 0.65;
+      }
+    }
+
+    (this.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+    (this.geometry.attributes.color as THREE.BufferAttribute).needsUpdate = true;
+  }
+}
+
+function createScorchTexture(): THREE.CanvasTexture {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const c = size * 0.5;
+
+  const grad = ctx.createRadialGradient(c, c, 2, c, c, c - 4);
+  grad.addColorStop(0, 'rgba(255,255,255,0.42)');
+  grad.addColorStop(0.55, 'rgba(255,255,255,0.22)');
+  grad.addColorStop(0.84, 'rgba(255,255,255,0.68)');
+  grad.addColorStop(0.95, 'rgba(255,255,255,0.18)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(c, c, c - 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
 function createSoftOrbTexture(): THREE.CanvasTexture {
   const size = 64;
   const canvas = document.createElement('canvas');
@@ -521,6 +686,10 @@ export class SpellVFX {
   private readonly snowPool: ParticlePool;
   private readonly crossPool: ParticlePool;
   private readonly sparkPool: ParticlePool;
+  private readonly streakPool: StreakPool;
+  private readonly scorchTexture: THREE.CanvasTexture;
+  private readonly floorDecals: FloorDecal[] = [];
+  private readonly maxDecals = 36;
 
   private readonly projMeshes = new Map<number, THREE.Group>();
   private readonly beamMeshes = new Map<number, THREE.Group>();
@@ -558,6 +727,7 @@ export class SpellVFX {
     this.plasmaTexture = createPlasmaSteamTexture();
     this.snowflakeTexture = createSnowflakeTexture();
     this.crossTexture = createCrossTexture();
+    this.scorchTexture = createScorchTexture();
 
     this.orbPool = new ParticlePool(scene, 2400, 18, this.orbTexture, 0.9);
     this.firePool = new ParticlePool(scene, 900, 30, this.fireTexture, 0.94);
@@ -566,6 +736,66 @@ export class SpellVFX {
     this.snowPool = new ParticlePool(scene, 900, 30, this.snowflakeTexture, 0.94);
     this.crossPool = new ParticlePool(scene, 800, 28, this.crossTexture, 0.94);
     this.sparkPool = new ParticlePool(scene, 1200, 24, this.starTexture, 0.94);
+    this.streakPool = new StreakPool(scene);
+  }
+
+  public spawnStreaks(
+    x: number,
+    y: number,
+    colors: readonly number[],
+    count: number,
+    speedScale = 1.0
+  ): void {
+    const palette = colors.length > 0 ? colors : [0x00f5ff];
+    const scaled = this.scaleCount(count);
+    for (let i = 0; i < scaled; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = (240 + Math.random() * 440) * speedScale;
+      const maxLife = 0.22 + Math.random() * 0.24;
+      this.streakPool.add({
+        x,
+        y,
+        z: 10 + Math.random() * 14,
+        vx: Math.cos(a) * spd,
+        vy: Math.sin(a) * spd,
+        vz: 20 + Math.random() * 80,
+        life: maxLife,
+        maxLife,
+        color: new THREE.Color(palette[i % palette.length]!),
+        width: 2.8 + Math.random() * 2.0,
+      });
+    }
+  }
+
+  public spawnFloorDecal(
+    x: number,
+    y: number,
+    radius: number,
+    colorHex: number,
+    duration = 5.0
+  ): void {
+    if (this.particleScale < 0.4) return;
+    while (this.floorDecals.length >= this.maxDecals) {
+      const oldest = this.floorDecals.shift()!;
+      this.scene.remove(oldest.mesh);
+      oldest.mesh.geometry.dispose();
+      (oldest.mesh.material as THREE.Material).dispose();
+    }
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(radius * 2, radius * 2),
+      new THREE.MeshBasicMaterial({
+        map: this.scorchTexture,
+        color: colorHex,
+        transparent: true,
+        opacity: 0.42,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      })
+    );
+    mesh.position.set(x, y, 0.6);
+    mesh.rotation.z = Math.random() * Math.PI * 2;
+    this.scene.add(mesh);
+    this.floorDecals.push({ mesh, life: duration, maxLife: duration });
   }
 
   public setParticleQuality(quality: ParticleQuality): void {
@@ -883,6 +1113,8 @@ export class SpellVFX {
         );
       }
     }
+    this.spawnStreaks(x, y, vp.particleColors, Math.round(16 + power * 6), 1.15);
+    this.spawnFloorDecal(x, y, Math.max(48, radius * 0.72), vp.outlineA, 4.8);
   }
 
   public spawnEnemyDeath(
@@ -937,6 +1169,8 @@ export class SpellVFX {
     }
 
     this.spawnShards(x, y, [colorHex, secondaryColorHex, 0xffffff], shardCount, isBoss ? 1.55 : 1.18);
+    this.spawnStreaks(x, y, [colorHex, secondaryColorHex], isBoss ? 92 : 38, isBoss ? 1.55 : 1.15);
+    this.spawnFloorDecal(x, y, radius * (isBoss ? 2.8 : 1.9), colorHex, isBoss ? 8.0 : 4.5);
     this.spawnRing(x, y, radius * (isBoss ? 2.4 : 1.9), 0xffffff, 0.22);
     this.spawnRing(x, y, radius * (isBoss ? 3.5 : 2.7), colorHex, 0.34);
 
@@ -990,6 +1224,7 @@ export class SpellVFX {
         color: col,
       });
     }
+    this.spawnStreaks(x, y, [colorHex], Math.ceil(count * 0.45), speedScale);
   }
 
   public spawnShards(x: number, y: number, colors: number[], count: number, speedScale = 1, dirAngle?: number): void {
@@ -1328,6 +1563,20 @@ export class SpellVFX {
     this.snowPool.update(dt, 0.96);
     this.crossPool.update(dt, 0.95);
     this.sparkPool.update(dt, 0.93);
+    this.streakPool.update(dt);
+
+    for (let i = this.floorDecals.length - 1; i >= 0; i--) {
+      const d = this.floorDecals[i]!;
+      d.life -= dt;
+      if (d.life <= 0) {
+        this.scene.remove(d.mesh);
+        d.mesh.geometry.dispose();
+        (d.mesh.material as THREE.Material).dispose();
+        this.floorDecals.splice(i, 1);
+      } else {
+        (d.mesh.material as THREE.MeshBasicMaterial).opacity = (d.life / d.maxLife) * 0.38;
+      }
+    }
   }
 
   private syncEnemyStatusParticles(snapshot: SimSnapshot): void {
