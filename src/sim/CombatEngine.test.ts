@@ -1013,3 +1013,38 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     expect(sim.getSnapshot().beams.filter((b) => b.ownerEnemyId === warden.id).length).toBe(3);
   });
 });
+
+describe('CombatEngine — Elemental Wall Consistency', () => {
+  it('assigns infused element colorHex regardless of KINETIC vs payload queue order', () => {
+    const simKineticFirst = new GameSim();
+    queueAndStep(simKineticFirst, ['BARRIER', 'KINETIC', 'FLUX']);
+    simKineticFirst.step(makeInput({ castAction: 'FORWARD' }));
+    const wallsA = simKineticFirst.getSnapshot().walls;
+    expect(wallsA.length).toBeGreaterThan(0);
+    expect(wallsA[0]!.colorHex).toBe(ELEMENT_META.FLUX.colorHex);
+    expect(wallsA[0]!.elements).toContain('FLUX');
+
+    const simFluxFirst = new GameSim();
+    queueAndStep(simFluxFirst, ['BARRIER', 'FLUX', 'KINETIC']);
+    simFluxFirst.step(makeInput({ castAction: 'FORWARD' }));
+    const wallsB = simFluxFirst.getSnapshot().walls;
+    expect(wallsB.length).toBeGreaterThan(0);
+    expect(wallsB[0]!.colorHex).toBe(ELEMENT_META.FLUX.colorHex);
+    expect(wallsB[0]!.elements).toContain('FLUX');
+
+    const simVoid = new GameSim();
+    queueAndStep(simVoid, ['BARRIER', 'KINETIC', 'VOID']);
+    simVoid.step(makeInput({ castAction: 'FORWARD' }));
+    const wallsVoid = simVoid.getSnapshot().walls;
+    expect(wallsVoid.length).toBeGreaterThan(0);
+    expect(wallsVoid[0]!.colorHex).toBe(ELEMENT_META.VOID.colorHex);
+    expect(wallsVoid[0]!.elements).toContain('VOID');
+
+    const simStone = new GameSim();
+    queueAndStep(simStone, ['BARRIER', 'KINETIC']);
+    simStone.step(makeInput({ castAction: 'FORWARD' }));
+    const wallsStone = simStone.getSnapshot().walls;
+    expect(wallsStone.length).toBeGreaterThan(0);
+    expect(wallsStone[0]!.colorHex).toBe(ELEMENT_META.KINETIC.colorHex);
+  });
+});

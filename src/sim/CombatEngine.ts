@@ -758,6 +758,14 @@ export class CombatEngine {
       case 'WALL': {
         const kineticCount = counts.KINETIC ?? 0;
         const hp = kineticCount > 0 ? 380 + kineticCount * 110 : 280;
+        const infusedEl = spell.elements.find(
+          (e) => e !== 'BARRIER' && e !== 'KINETIC' && e !== 'CRYSTAL'
+        );
+        const wallColor = infusedEl
+          ? ELEMENT_META[infusedEl].colorHex
+          : spell.elements.includes('CRYSTAL')
+            ? ELEMENT_META.CRYSTAL.colorHex
+            : color;
         const groupId = this.nextId++;
         if (spell.isNova) {
           const count = nonBarrierPower >= 2 ? 10 : 6;
@@ -777,7 +785,7 @@ export class CombatEngine {
               life: 11,
               maxLife: 11,
               pulseTimer: 0.15,
-              colorHex: color,
+              colorHex: wallColor,
               colors: comp.colors,
               elements: spell.elements,
               composition: comp,
@@ -803,7 +811,7 @@ export class CombatEngine {
               life: 11,
               maxLife: 11,
               pulseTimer: 0.15,
-              colorHex: color,
+              colorHex: wallColor,
               colors: comp.colors,
               elements: spell.elements,
               composition: comp,
@@ -2329,8 +2337,11 @@ export class CombatEngine {
 
       if (w.pulseTimer <= 0) {
         w.pulseTimer = 0.45;
-        if (w.elements.includes('THERMAL')) {
+        if (w.elements.includes('THERMAL') || w.elements.includes('PLASMA')) {
           this.applyAoEDamage(w.x, w.y, 92, 14, w.elements, 45, events);
+        }
+        if (w.elements.includes('VOLT')) {
+          this.applyAoEDamage(w.x, w.y, 95, 11, w.elements, 20, events);
         }
         if (w.elements.includes('CRYO') || w.elements.includes('CRYSTAL')) {
           this.applyAoEDamage(w.x, w.y, 92, 8, w.elements, 0, events);

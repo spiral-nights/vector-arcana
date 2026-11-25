@@ -693,7 +693,7 @@ export class SpellVFX {
 
   private readonly projMeshes = new Map<number, THREE.Group>();
   private readonly beamMeshes = new Map<number, THREE.Group>();
-  private readonly wallMeshes = new Map<number, THREE.Group>();
+  private readonly wallMeshes = new Map<string, THREE.Group>();
   private readonly wallPanels = new Map<string, THREE.Group>();
   private readonly mineMeshes = new Map<number, THREE.Group>();
   private readonly stormMeshes = new Map<number, THREE.Group>();
@@ -1936,20 +1936,52 @@ export class SpellVFX {
     this.pruneMap(this.beamMeshes, alive);
   }
 
+  private getWallPalette(
+    elements: readonly QueueElement[],
+    fallbackHex: number
+  ): { p1: number; p2: number } {
+    const infused = elements.filter(
+      (e) => e !== 'BARRIER' && e !== 'KINETIC' && e !== 'CRYSTAL'
+    );
+    if (infused.includes('THERMAL')) return { p1: ELEMENT_META.THERMAL.colorHex, p2: 0xffcc33 };
+    if (infused.includes('PLASMA')) return { p1: ELEMENT_META.PLASMA.colorHex, p2: 0xffb366 };
+    if (infused.includes('FLUX')) return { p1: ELEMENT_META.FLUX.colorHex, p2: 0x60d8ff };
+    if (infused.includes('VOLT')) return { p1: ELEMENT_META.VOLT.colorHex, p2: 0x80ffff };
+    if (infused.includes('NANO')) return { p1: ELEMENT_META.NANO.colorHex, p2: 0xa8ff78 };
+    if (infused.includes('CRYO')) return { p1: ELEMENT_META.CRYO.colorHex, p2: 0x80ffff };
+    if (infused.includes('VOID')) return { p1: ELEMENT_META.VOID.colorHex, p2: 0xc80a20 };
+
+    if (elements.includes('CRYSTAL')) {
+      return { p1: ELEMENT_META.CRYSTAL.colorHex, p2: ELEMENT_META.CRYO.colorHex };
+    }
+    if (elements.includes('KINETIC')) {
+      return { p1: ELEMENT_META.KINETIC.colorHex, p2: 0xd4945a };
+    }
+    return { p1: fallbackHex, p2: fallbackHex };
+  }
+
   private getWallStyle(elements: readonly QueueElement[]): {
     style: number;
     isKinetic: boolean;
     isVoid: boolean;
   } {
-    const isVoid = elements.includes('VOID');
-    const isKinetic = elements.includes('KINETIC');
-    if (isKinetic) return { style: 0, isKinetic: true, isVoid };
-    if (elements.includes('THERMAL') || elements.includes('PLASMA')) return { style: 2, isKinetic: false, isVoid };
-    if (elements.includes('CRYO') || elements.includes('CRYSTAL')) return { style: 1, isKinetic: false, isVoid };
-    if (elements.includes('FLUX')) return { style: 3, isKinetic: false, isVoid };
-    if (elements.includes('VOLT')) return { style: 4, isKinetic: false, isVoid };
+    // Check infused 3rd elements before structural KINETIC/CRYSTAL so key press order never overrides the element
+    const infused = elements.filter(
+      (e) => e !== 'BARRIER' && e !== 'KINETIC' && e !== 'CRYSTAL'
+    );
+    const isVoid = infused.includes('VOID');
+    if (infused.includes('THERMAL') || infused.includes('PLASMA')) {
+      return { style: 2, isKinetic: false, isVoid };
+    }
+    if (infused.includes('FLUX')) return { style: 3, isKinetic: false, isVoid };
+    if (infused.includes('VOLT')) return { style: 4, isKinetic: false, isVoid };
+    if (infused.includes('NANO')) return { style: 6, isKinetic: false, isVoid };
+    if (infused.includes('CRYO')) return { style: 1, isKinetic: false, isVoid };
     if (isVoid) return { style: 5, isKinetic: false, isVoid: true };
-    return { style: 6, isKinetic: false, isVoid };
+
+    if (elements.includes('CRYSTAL')) return { style: 1, isKinetic: false, isVoid: false };
+    if (elements.includes('KINETIC')) return { style: 0, isKinetic: true, isVoid: false };
+    return { style: 6, isKinetic: false, isVoid: false };
   }
 
   private emitWallElementParticles(
@@ -1957,18 +1989,19 @@ export class SpellVFX {
     y: number,
     z: number,
     elements: readonly QueueElement[],
-    colors: readonly number[],
     spreadRadius: number,
     count: number
   ): void {
     const scaled = this.scaleCount(count);
     if (scaled <= 0) return;
 
-    const vp = this.getVoidPalette(elements, colors);
-    const hasNonVoid = elements.some((e) => e !== 'VOID' && e !== 'BARRIER');
-    const activeEls = elements.filter((e) => e !== 'BARRIER' && !(e === 'VOID' && hasNonVoid));
+    const infusedEls = elements.filter(
+      (e) => e !== 'BARRIER' && e !== 'KINETIC' && e !== 'CRYSTAL'
+    );
+    const emitEls =
+      infusedEls.length > 0 ? infusedEls : elements.filter((e) => e !== 'BARRIER');
 
-    if (activeEls.length === 0) {
+    if (emitEls.length === 0) {
       // Pure BARRIER wall: bright upward cyan-white energy motes
       for (let i = 0; i < scaled; i++) {
         this.orbPool.add({
@@ -1986,8 +2019,9 @@ export class SpellVFX {
       return;
     }
 
+    const offset = Math.floor(Math.random() * emitEls.length);
     for (let i = 0; i < scaled; i++) {
-      const el = activeEls[i % activeEls.length]!;
+      const el = emitEls[(i + offset) % emitEls.length]!;
       const ox = x + (Math.random() - 0.5) * spreadRadius * 2;
       const oy = y + (Math.random() - 0.5) * spreadRadius * 2;
       const oz = z + Math.random() * 16;
@@ -2037,7 +2071,7 @@ export class SpellVFX {
           maxLife: 0.4,
         });
       } else if (el === 'VOID') {
-        const voidCol = vp.particleColors[i % vp.particleColors.length] ?? ELEMENT_META.VOID.colorHex;
+        const voidCol = [ELEMENT_META.VOID.colorHex, 0xc80a20][i % 2]!;
         this.addElementParticle(
           'VOID',
           {
@@ -2077,32 +2111,16 @@ export class SpellVFX {
         });
       }
     }
-
-    if (vp.isVoid && hasNonVoid && Math.random() < 0.65) {
-      this.addElementParticle(
-        'VOID',
-        {
-          x: x + (Math.random() - 0.5) * spreadRadius * 1.8,
-          y: y + (Math.random() - 0.5) * spreadRadius * 1.8,
-          z: z + Math.random() * 14,
-          vx: (Math.random() - 0.5) * 65,
-          vy: (Math.random() - 0.5) * 65,
-          vz: 35 + Math.random() * 60,
-          life: 0.45,
-          maxLife: 0.45,
-        },
-        vp.outlineA
-      );
-    }
   }
 
   private syncWalls(items: readonly WallPylonEntity[], timeSec: number): void {
-    const alive = new Set<number>();
+    const alive = new Set<string>();
     const activePanelKeys = new Set<string>();
     const groups = new Map<number, WallPylonEntity[]>();
 
     for (const w of items) {
-      alive.add(w.id);
+      const wallKey = `${w.id}:${w.elements.join(',')}`;
+      alive.add(wallKey);
       let arr = groups.get(w.groupId);
       if (!arr) {
         arr = [];
@@ -2110,11 +2128,8 @@ export class SpellVFX {
       }
       arr.push(w);
 
-      let g = this.wallMeshes.get(w.id);
-      const vp = this.getVoidPalette(w.elements, w.colors);
-      const payloadColors = w.colors.filter((c) => c !== 0xe6f0ff);
-      const p1 = vp.isVoid ? vp.outlineA : (payloadColors[0] ?? w.colorHex);
-      const p2 = vp.isVoid ? vp.outlineB : (payloadColors[1] ?? p1);
+      let g = this.wallMeshes.get(wallKey);
+      const { p1, p2 } = this.getWallPalette(w.elements, w.colorHex);
       const ws = this.getWallStyle(w.elements);
 
       if (!g) {
@@ -2127,9 +2142,9 @@ export class SpellVFX {
             new THREE.Mesh(
               rockBase,
               new THREE.MeshStandardMaterial({
-                color: ws.isVoid ? 0x07060a : 0x3b271a,
+                color: ws.isVoid ? 0x07060a : 0x5a3b24,
                 emissive: p1,
-                emissiveIntensity: 0.25,
+                emissiveIntensity: 0.28,
                 roughness: 0.72,
                 metalness: 0.15,
               })
@@ -2232,12 +2247,12 @@ export class SpellVFX {
           );
         }
         g.position.set(w.x, w.y, 26);
-        this.wallMeshes.set(w.id, g);
+        this.wallMeshes.set(wallKey, g);
         this.scene.add(g);
       }
 
       // Continuous elemental aura emitted directly off each pylon
-      this.emitWallElementParticles(w.x, w.y, 12 + Math.random() * 34, w.elements, w.colors, 16, 1);
+      this.emitWallElementParticles(w.x, w.y, 12 + Math.random() * 34, w.elements, 16, 1);
     }
 
     const pairs: Array<{ a: WallPylonEntity; b: WallPylonEntity }> = [];
@@ -2256,13 +2271,10 @@ export class SpellVFX {
       const dist = Math.hypot(dx, dy);
       if (dist < 1) continue;
 
-      const panelKey = `${a.id}-${b.id}`;
+      const panelKey = `${a.id}-${b.id}:${a.elements.join(',')}`;
       activePanelKeys.add(panelKey);
       let panelGroup = this.wallPanels.get(panelKey);
-      const vpPanel = this.getVoidPalette(a.elements, a.colors);
-      const payloadColors = a.colors.filter((c) => c !== 0xe6f0ff);
-      const p1 = vpPanel.isVoid ? vpPanel.outlineA : (payloadColors[0] ?? a.colorHex);
-      const p2 = vpPanel.isVoid ? vpPanel.outlineB : (payloadColors[1] ?? p1);
+      const { p1, p2 } = this.getWallPalette(a.elements, a.colorHex);
       const ws = this.getWallStyle(a.elements);
 
       if (!panelGroup) {
@@ -2272,9 +2284,9 @@ export class SpellVFX {
           const segs = 3;
           const slabW = dist / segs + 6;
           const stoneMat = new THREE.MeshStandardMaterial({
-            color: ws.isVoid ? 0x07060a : 0x3a2618,
+            color: ws.isVoid ? 0x07060a : 0x5a3b24,
             emissive: p1,
-            emissiveIntensity: 0.2,
+            emissiveIntensity: 0.28,
             roughness: 0.78,
             metalness: 0.14,
           });
@@ -2370,7 +2382,6 @@ export class SpellVFX {
           a.y + dy * t,
           4 + Math.random() * 44,
           a.elements,
-          a.colors,
           14,
           1
         );
@@ -2388,13 +2399,7 @@ export class SpellVFX {
       }
     }
 
-    for (const [k, obj] of this.wallPanels.entries()) {
-      if (!activePanelKeys.has(k)) {
-        this.scene.remove(obj);
-        this.disposeObject(obj);
-        this.wallPanels.delete(k);
-      }
-    }
+    this.pruneMap(this.wallPanels, activePanelKeys);
     this.pruneMap(this.wallMeshes, alive);
   }
 
@@ -3116,7 +3121,7 @@ export class SpellVFX {
     });
   }
 
-  private pruneMap<T extends THREE.Object3D>(map: Map<number, T>, alive: Set<number>): void {
+  private pruneMap<K, T extends THREE.Object3D>(map: Map<K, T>, alive: Set<K>): void {
     for (const [id, obj] of map.entries()) {
       if (!alive.has(id)) {
         this.scene.remove(obj);
