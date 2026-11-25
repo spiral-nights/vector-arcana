@@ -237,8 +237,12 @@ export class SynthAudio {
         this.playNoise(0.18, 'bandpass', 900, 0.26);
         break;
       case 'player_hit':
-        this.playTone(160, 48, 0.26, 'sawtooth', 0.36);
-        this.playNoise(0.22, 'lowpass', 600, 0.34);
+        this.playNoise(0.1, 'highpass', 1750, 0.44, 1.4);
+        this.playTone(155, 34, 0.28, 'sine', 0.54);
+        this.playTone(230, 58, 0.24, 'sawtooth', 0.4);
+        this.playNoise(0.2, 'lowpass', 680, 0.36);
+        this.playTone(860, 420, 0.08, 'square', 0.16);
+        this.playTone(640, 310, 0.09, 'square', 0.14, 0.06);
         break;
       case 'wave_start':
         this.playTone(330, 440, 0.15, 'triangle', 0.22);

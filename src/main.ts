@@ -383,6 +383,8 @@ function frame(now: number): void {
       hud.showGateOpenBanner();
     } else if (ev.type === 'sfx') {
       synthAudio.play(ev.sound, ev.colorHex, ev.elements);
+    } else if (ev.type === 'player_hit') {
+      hud.triggerDamageFlash(ev.hpRatio, ev.absorbedByArmor);
     } else if (ev.type === 'game_over') {
       highScores = recordHighScore(ev.score, ev.wave);
     }

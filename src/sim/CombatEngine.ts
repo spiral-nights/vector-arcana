@@ -1653,15 +1653,17 @@ export class CombatEngine {
       }
     }
 
+    const totalTaken = Math.max(0, dmg);
     if (player.armorHp > 0) {
       const absorbed = Math.min(player.armorHp, dmg);
       player.armorHp -= absorbed;
       dmg -= absorbed;
       if (player.armorHp <= 0) {
-        events.push({ type: 'vfx_shards', x: player.x, y: player.y, colors: [ELEMENT_META.KINETIC.colorHex], count: 12, speedScale: 1 });
+        events.push({ type: 'vfx_shards', x: player.x, y: player.y, colors: [ELEMENT_META.KINETIC.colorHex], count: 14, speedScale: 1.1 });
       }
     }
 
+    const absorbedByArmor = dmg <= 0 && totalTaken > 0;
     if (dmg > 0) {
       player.hp = Math.max(0, player.hp - dmg);
       onDamaged();
@@ -1677,8 +1679,39 @@ export class CombatEngine {
         e.vy += (edy / edist) * 240;
       }
     }
-    events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 160, radius: 130 });
-    events.push({ type: 'screen_shake', intensity: 6 });
+    const hpRatio = player.hp / Math.max(1, player.maxHp);
+    const impactColor = absorbedByArmor ? 0xffaa44 : 0xff1e2d;
+    events.push({ type: 'hit_stop', duration: 0.055 });
+    events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 300, radius: 195 });
+    events.push({ type: 'screen_shake', intensity: hpRatio <= 0.35 ? 16 : 13 });
+    events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 115, colorHex: impactColor, duration: 0.32 });
+    events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: impactColor, count: 26, radius: 75 });
+    events.push({
+      type: 'vfx_shards',
+      x: player.x,
+      y: player.y,
+      colors: absorbedByArmor ? [0xffaa44, 0xffffff] : [0xff1e2d, 0xff6a00, 0xffffff],
+      count: 18,
+      speedScale: 1.35,
+    });
+    if (totalTaken > 0) {
+      events.push({
+        type: 'damage_number',
+        x: player.x,
+        y: player.y - 26,
+        text: `-${Math.max(1, Math.round(totalTaken))}`,
+        colorHex: absorbedByArmor ? 0xffbb44 : 0xff2244,
+        big: true,
+      });
+    }
+    events.push({
+      type: 'player_hit',
+      x: player.x,
+      y: player.y,
+      damage: totalTaken,
+      hpRatio,
+      absorbedByArmor,
+    });
     events.push({ type: 'sfx', sound: 'player_hit' });
     return true;
   }

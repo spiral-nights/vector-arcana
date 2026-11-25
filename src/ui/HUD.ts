@@ -96,6 +96,10 @@ export class HUD {
   private readonly bossFill: HTMLElement;
   private readonly waveBanner: HTMLElement;
   private readonly combatTextLayer: HTMLElement;
+  private readonly damageVignette: HTMLElement;
+  private readonly statsPanel: HTMLElement;
+  private damageFlashTimer: number | null = null;
+  private hitJoltTimer: number | null = null;
   private readonly minimapCanvas: HTMLCanvasElement;
   private readonly minimapCtx: CanvasRenderingContext2D | null;
   private bannerTimer: number | null = null;
@@ -176,6 +180,7 @@ export class HUD {
         </div>
       </div>
 
+      <div class="damage-vignette" id="damage-vignette"></div>
       <div class="combat-text-layer" id="combat-text-layer"></div>
 
       <div class="boss-bar-wrap" id="boss-wrap">
@@ -340,6 +345,8 @@ export class HUD {
     this.bossFill = this.root.querySelector('#boss-fill')!;
     this.waveBanner = this.root.querySelector('#wave-banner')!;
     this.combatTextLayer = this.root.querySelector('#combat-text-layer')!;
+    this.damageVignette = this.root.querySelector('#damage-vignette')!;
+    this.statsPanel = this.root.querySelector('.hud-stats')!;
     this.minimapCanvas = this.root.querySelector('#hud-minimap')!;
     this.minimapCtx = this.minimapCanvas.getContext('2d');
     this.queueEl = this.root.querySelector('#hud-queue')!;
@@ -546,6 +553,26 @@ export class HUD {
 
   public setMuted(muted: boolean): void {
     this.muteBtn.textContent = muted ? 'AUDIO: OFF' : 'AUDIO: ON';
+  }
+
+  public triggerDamageFlash(hpRatio: number, absorbedByArmor: boolean): void {
+    this.damageVignette.classList.toggle('armor', absorbedByArmor);
+    this.damageVignette.style.transition = 'none';
+    this.damageVignette.style.opacity = absorbedByArmor ? '0.62' : hpRatio <= 0.35 ? '0.96' : '0.82';
+    void this.damageVignette.offsetWidth;
+    if (this.damageFlashTimer !== null) window.clearTimeout(this.damageFlashTimer);
+    this.damageFlashTimer = window.setTimeout(() => {
+      this.damageVignette.style.transition = 'opacity 0.36s ease-out';
+      this.damageVignette.style.opacity = '0';
+    }, 80);
+
+    this.statsPanel.classList.remove('hit-flash');
+    void this.statsPanel.offsetWidth;
+    this.statsPanel.classList.add('hit-flash');
+    if (this.hitJoltTimer !== null) window.clearTimeout(this.hitJoltTimer);
+    this.hitJoltTimer = window.setTimeout(() => {
+      this.statsPanel.classList.remove('hit-flash');
+    }, 300);
   }
 
   public showWaveBanner(wave: number, isBoss: boolean): void {

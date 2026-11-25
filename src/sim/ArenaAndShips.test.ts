@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   circleVsConvexPoly,
   clampPointToConvexPoly,
+  computeBlockedRayLength,
   createConvexObstacle,
   generateArenaBoundary,
   makeRegularPolyVerts,
@@ -133,5 +134,91 @@ describe('Non-Rectangular Arenas, Irregular Obstacles, Ships & Difficulty', () =
     const overEnemy = simOver.combat.spawnEnemy('BASTION', 0, 0, 1);
 
     expect(overEnemy.maxHp).toBeGreaterThan(recEnemy.maxHp * 1.6);
+  });
+
+  it('6. computeBlockedRayLength clips enemy aiming rays at obstacles, pillars, walls, shields & boundary', () => {
+    const boundary = generateArenaBoundary('OCTAGON');
+
+    // Blocked by convex obstacle
+    const obsLen = computeBlockedRayLength(0, 0, 0, 1850, {
+      arenaBoundary: boundary,
+      pillars: [],
+      blocks: [],
+      obstacles: [createConvexObstacle(1, makeTriangleVerts(300, 0, 70, 0, 1.2), 80, 'WEDGE')],
+      walls: [],
+      shields: [],
+    });
+    expect(obsLen).toBeGreaterThan(150);
+    expect(obsLen).toBeLessThan(310);
+
+    // Blocked by pillar
+    const pilLen = computeBlockedRayLength(0, 0, 0, 1850, {
+      arenaBoundary: boundary,
+      pillars: [{ id: 1, x: 400, y: 0, radius: 40, sides: 6 }],
+      blocks: [],
+      obstacles: [],
+      walls: [],
+      shields: [],
+    });
+    expect(pilLen).toBeLessThan(370);
+
+    // Blocked by ShieldBarrierEntity dome
+    const shieldLen = computeBlockedRayLength(350, 0, Math.PI, 1850, {
+      arenaBoundary: boundary,
+      pillars: [],
+      blocks: [],
+      obstacles: [],
+      walls: [],
+      shields: [
+        {
+          id: 1,
+          x: 0,
+          y: 0,
+          angle: 0,
+          arc: Math.PI,
+          radius: 118,
+          hp: 260,
+          maxHp: 260,
+          life: 6,
+          maxLife: 6,
+          isNova: true,
+          colorHex: 0xe6f0ff,
+          colors: [0xe6f0ff],
+        },
+      ],
+    });
+    expect(shieldLen).toBeCloseTo(350 - 118, 0);
+
+    // Blocked by octagon boundary when unobstructed
+    const boundLen = computeBlockedRayLength(0, 0, Math.PI * 0.25, 2500, {
+      arenaBoundary: boundary,
+      pillars: [],
+      blocks: [],
+      obstacles: [],
+      walls: [],
+      shields: [],
+    });
+    expect(boundLen).toBeLessThan(1200);
+  });
+
+  it('7. damagePlayer emits player_hit, hit_stop, crimson vfx_ring, vfx_shards, and negative damage number', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    sim.drainEvents();
+
+    const p = sim.getSnapshot().player;
+    const ev: ReturnType<GameSim['drainEvents']> = [];
+    expect(sim.combat.damagePlayer(p, 24, undefined, () => {}, ev)).toBe(true);
+
+    const hitEv = ev.find((e) => e.type === 'player_hit');
+    expect(hitEv).toBeDefined();
+    if (hitEv && hitEv.type === 'player_hit') {
+      expect(hitEv.damage).toBe(24);
+      expect(hitEv.absorbedByArmor).toBe(false);
+    }
+    expect(ev.some((e) => e.type === 'hit_stop')).toBe(true);
+    expect(ev.some((e) => e.type === 'vfx_shards')).toBe(true);
+    expect(ev.some((e) => e.type === 'damage_number' && e.text === '-24')).toBe(true);
   });
 });

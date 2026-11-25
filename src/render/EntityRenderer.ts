@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { computeBlockedRayLength } from '../sim/ArenaGeometry';
 import { getShipDef } from '../sim/Ships';
 import { ELEMENT_META, EnemyEntity, QueueElement, ShipId, SimSnapshot } from '../sim/types';
 import { createGlowSprite } from './GlowUtil';
@@ -492,7 +493,13 @@ export class EntityRenderer {
     this.playerGroup.rotation.z = p.aimAngle;
 
     const shipDef = getShipDef(snapshot.shipId);
-    const activeColor = p.channel
+    const isHurt = p.invulnTimer > 0 && p.dashTimer <= 0;
+    const isHurtFlash = isHurt && p.invulnTimer > 0.48;
+    const activeColor = isHurtFlash
+      ? Math.sin(timeSec * 60) > 0
+        ? 0xffffff
+        : 0xff1e2d
+      : p.channel
       ? p.channel.composition.primaryColorHex
       : p.charge
       ? p.charge.composition.primaryColorHex
@@ -505,6 +512,14 @@ export class EntityRenderer {
     }
     (this.noseTipMesh.material as THREE.MeshBasicMaterial).color.setHex(activeColor).multiplyScalar(1.05);
     this.shipGlow.material.color.setHex(activeColor);
+    if (isHurtFlash) {
+      this.shipGlow.scale.set(58, 58, 1);
+      this.shipGlow.material.opacity = 0.45;
+    } else {
+      this.shipGlow.scale.set(38, 38, 1);
+      this.shipGlow.material.opacity = 0.16;
+    }
+    this.playerHullGroup.visible = !isHurt || p.invulnTimer > 0.48 || Math.sin(timeSec * 48) > -0.35;
     setRibbonColor(this.rearHaloMesh, activeColor);
     setRibbonColor(this.thrusterMesh, activeColor);
 
@@ -630,10 +645,27 @@ export class EntityRenderer {
       }
     }
 
-    this.syncEnemies(snapshot.enemies, timeSec);
+    this.syncEnemies(snapshot, timeSec);
   }
 
-  private syncEnemies(enemies: readonly EnemyEntity[], timeSec: number): void {
+  private makeTelegraphGroup(colorHex: number, width: number): THREE.Group {
+    const g = new THREE.Group();
+    const line = new THREE.Mesh(
+      buildRibbonGeometry([{ x: 0, y: 0 }, { x: 1, y: 0 }], width, false, 0.8),
+      createNeonRibbonMaterial(colorHex, 1.2, 0.72)
+    );
+    const dot = new THREE.Mesh(
+      new THREE.CircleGeometry(width * 2.2, 12),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending })
+    );
+    dot.position.z = 1.6;
+    g.add(line, dot);
+    g.visible = false;
+    return g;
+  }
+
+  private syncEnemies(snapshot: SimSnapshot, timeSec: number): void {
+    const enemies = snapshot.enemies;
     const alive = new Set<number>();
     for (const e of enemies) {
       alive.add(e.id);
@@ -706,11 +738,34 @@ export class EntityRenderer {
         }
       }
 
-      const telegraph = bodyGroup.userData.telegraph as THREE.Mesh | undefined;
-      if (telegraph) {
-        telegraph.visible = e.aiState === 'CHARGE';
-        if (telegraph.visible) {
-          telegraph.rotation.z = e.beamAngle - hullRot;
+      const telegraphs = bodyGroup.userData.telegraphs as THREE.Group[] | undefined;
+      if (telegraphs && telegraphs.length > 0) {
+        const showTele = e.aiState === 'CHARGE';
+        const offsets =
+          e.archetype === 'WARDEN'
+            ? (e.bossPhase ?? 1) === 3
+              ? [-0.38, 0, 0.38]
+              : (e.bossPhase ?? 1) === 2
+              ? [-0.26, 0.26]
+              : [0]
+            : [0];
+        const maxLen = e.archetype === 'WARDEN' ? 1900 : 1850;
+        const pulseOp = 0.55 + Math.sin(timeSec * 28) * 0.25;
+        for (let ti = 0; ti < telegraphs.length; ti++) {
+          const tg = telegraphs[ti]!;
+          if (showTele && ti < offsets.length) {
+            const rayAngle = e.beamAngle + offsets[ti]!;
+            const len = computeBlockedRayLength(e.x, e.y, rayAngle, maxLen, snapshot);
+            tg.visible = true;
+            tg.rotation.z = rayAngle - hullRot;
+            const lineMesh = tg.children[0] as THREE.Mesh;
+            const dotMesh = tg.children[1] as THREE.Mesh;
+            lineMesh.scale.set(len, 1, 1);
+            dotMesh.position.set(len, 0, 1.6);
+            setShaderUniform(lineMesh.material, 'uOpacity', pulseOp);
+          } else {
+            tg.visible = false;
+          }
         }
       }
 
@@ -998,13 +1053,9 @@ export class EntityRenderer {
       spire.position.z = 11;
       bodyGroup.add(trimObj, spire, createGlowSprite(baseColor, r * 2.4, 0.2));
 
-      const tele = new THREE.Mesh(
-        buildRibbonGeometry([{ x: 0, y: 0 }, { x: 1850, y: 0 }], 2.4, false, 0.5),
-        createNeonRibbonMaterial(0xb429ff, 1.15, 0.6)
-      );
-      tele.visible = false;
+      const tele = this.makeTelegraphGroup(0xb429ff, 2.8);
       bodyGroup.add(tele);
-      bodyGroup.userData.telegraph = tele;
+      bodyGroup.userData.telegraphs = [tele];
     } else if (e.archetype === 'SPLITTER') {
       // Twin-hull Volt yellow catamaran carrier with central splitting reactor (weak to KINETIC)
       baseColor = 0xfff733;
@@ -1087,13 +1138,13 @@ export class EntityRenderer {
       }
       bodyGroup.userData.bossPlates = bossPlates;
       bodyGroup.add(createGlowSprite(baseColor, r * 2.6, 0.24));
-      const tele = new THREE.Mesh(
-        buildRibbonGeometry([{ x: 0, y: 0 }, { x: 1900, y: 0 }], 3.0, false, 1),
-        createNeonRibbonMaterial(0xff2e97, 1.15, 0.65)
-      );
-      tele.visible = false;
-      bodyGroup.add(tele);
-      bodyGroup.userData.telegraph = tele;
+      const telegraphs: THREE.Group[] = [];
+      for (let ti = 0; ti < 3; ti++) {
+        const tele = this.makeTelegraphGroup(0xff2e97, 3.2);
+        bodyGroup.add(tele);
+        telegraphs.push(tele);
+      }
+      bodyGroup.userData.telegraphs = telegraphs;
     }
 
     root.userData.hullMat = hullMat;

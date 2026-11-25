@@ -6,7 +6,9 @@ import {
   ArenaObstacleStyle,
   ArenaPillar,
   ArenaShapeKind,
+  ShieldBarrierEntity,
   Vec2,
+  WallPylonEntity,
 } from './types';
 
 export const DEFAULT_RECT_BOUNDARY: readonly Vec2[] = [
@@ -474,4 +476,179 @@ export function pushPointClearOfObstacles(
     }
   }
   return clampPointToConvexPoly(px, py, r + 4, boundary);
+}
+
+function normAngleRad(a: number): number {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
+function rayCircleHit(
+  ox: number,
+  oy: number,
+  dx: number,
+  dy: number,
+  maxDist: number,
+  cx: number,
+  cy: number,
+  r: number
+): number | null {
+  const rx = ox - cx;
+  const ry = oy - cy;
+  const bProj = rx * dx + ry * dy;
+  const cDist = rx * rx + ry * ry - r * r;
+  const disc = bProj * bProj - cDist;
+  if (disc < 0) return null;
+  const sqrtDisc = Math.sqrt(disc);
+  const t1 = -bProj - sqrtDisc;
+  const t2 = -bProj + sqrtDisc;
+  const t = t1 > 8 ? t1 : t2 > 8 ? t2 : null;
+  return t !== null && t <= maxDist ? t : null;
+}
+
+function raySegHit(
+  ox: number,
+  oy: number,
+  dx: number,
+  dy: number,
+  maxDist: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number
+): number | null {
+  const sx = bx - ax;
+  const sy = by - ay;
+  const denom = dx * sy - dy * sx;
+  if (Math.abs(denom) < 1e-5) return null;
+  const qpx = ax - ox;
+  const qpy = ay - oy;
+  const t = (qpx * sy - qpy * sx) / denom;
+  const u = (qpx * dy - qpy * dx) / denom;
+  if (t > 8 && t <= maxDist && u >= -0.05 && u <= 1.05) {
+    return t;
+  }
+  return null;
+}
+
+function rayAabbHit(
+  ox: number,
+  oy: number,
+  dx: number,
+  dy: number,
+  maxDist: number,
+  b: ArenaBlock
+): number | null {
+  const minX = b.x - b.halfW;
+  const maxX = b.x + b.halfW;
+  const minY = b.y - b.halfH;
+  const maxY = b.y + b.halfH;
+  let tmin = 0;
+  let tmax = maxDist;
+  if (Math.abs(dx) < 1e-6) {
+    if (ox < minX || ox > maxX) return null;
+  } else {
+    let t1 = (minX - ox) / dx;
+    let t2 = (maxX - ox) / dx;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+  if (Math.abs(dy) < 1e-6) {
+    if (oy < minY || oy > maxY) return null;
+  } else {
+    let t1 = (minY - oy) / dy;
+    let t2 = (maxY - oy) / dy;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+  return tmin > 8 && tmin <= maxDist ? tmin : null;
+}
+
+export interface BlockedRayScene {
+  arenaBoundary: readonly Vec2[];
+  pillars: readonly ArenaPillar[];
+  blocks: readonly ArenaBlock[];
+  obstacles: readonly ArenaObstacle[];
+  walls: readonly WallPylonEntity[];
+  shields: readonly ShieldBarrierEntity[];
+}
+
+export function computeBlockedRayLength(
+  ox: number,
+  oy: number,
+  angle: number,
+  maxDist: number,
+  scene: BlockedRayScene
+): number {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  let limit = rayVsArenaBoundary(ox, oy, cos, sin, maxDist, scene.arenaBoundary);
+
+  for (const pil of scene.pillars) {
+    const t = rayCircleHit(ox, oy, cos, sin, limit, pil.x, pil.y, pil.radius + 2);
+    if (t !== null && t < limit) limit = t;
+  }
+
+  for (const blk of scene.blocks) {
+    const t = rayAabbHit(ox, oy, cos, sin, limit, blk);
+    if (t !== null && t < limit) limit = t;
+  }
+
+  for (const obs of scene.obstacles) {
+    const t = rayVsConvexPoly(ox, oy, cos, sin, limit, obs);
+    if (t !== null && t < limit) limit = t;
+  }
+
+  const wallGroups = new Map<number, WallPylonEntity[]>();
+  for (const w of scene.walls) {
+    let arr = wallGroups.get(w.groupId);
+    if (!arr) {
+      arr = [];
+      wallGroups.set(w.groupId, arr);
+    }
+    arr.push(w);
+    const t = rayCircleHit(ox, oy, cos, sin, limit, w.x, w.y, w.radius + 4);
+    if (t !== null && t < limit) limit = t;
+  }
+  for (const arr of wallGroups.values()) {
+    for (let i = 0; i < arr.length - 1; i++) {
+      const a = arr[i]!;
+      const b = arr[i + 1]!;
+      const t = raySegHit(ox, oy, cos, sin, limit, a.x, a.y, b.x, b.y);
+      if (t !== null && t < limit) limit = t;
+    }
+    if (arr.length >= 3 && arr[0]!.isNova) {
+      const a = arr[arr.length - 1]!;
+      const b = arr[0]!;
+      const t = raySegHit(ox, oy, cos, sin, limit, a.x, a.y, b.x, b.y);
+      if (t !== null && t < limit) limit = t;
+    }
+  }
+
+  for (const s of scene.shields) {
+    const rx = ox - s.x;
+    const ry = oy - s.y;
+    const bProj = rx * cos + ry * sin;
+    const cDist = rx * rx + ry * ry - s.radius * s.radius;
+    const disc = bProj * bProj - cDist;
+    if (disc < 0) continue;
+    const sqrtDisc = Math.sqrt(disc);
+    for (const t of [-bProj - sqrtDisc, -bProj + sqrtDisc]) {
+      if (t > 8 && t < limit) {
+        if (!s.isNova) {
+          const hitAng = Math.atan2(oy + sin * t - s.y, ox + cos * t - s.x);
+          if (Math.abs(normAngleRad(hitAng - s.angle)) > s.arc) continue;
+        }
+        limit = t;
+        break;
+      }
+    }
+  }
+
+  return Math.max(8, limit);
 }

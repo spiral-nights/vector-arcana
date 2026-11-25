@@ -501,6 +501,7 @@ export type SimEvent =
   | { type: 'wave_start'; wave: number; isBoss: boolean }
   | { type: 'gate_open'; wave: number }
   | { type: 'augment_offer'; choices: AugmentDef[] }
+  | { type: 'player_hit'; x: number; y: number; damage: number; hpRatio: number; absorbedByArmor: boolean }
   | { type: 'game_over'; score: number; wave: number };
 
 export interface SimSnapshot {
