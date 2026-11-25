@@ -210,13 +210,88 @@ export function createNeonRibbonMaterial(
 }
 
 /**
- * Volumetric Silk-Braided Energy Beam Shader directly modeled on images/bream.svg:
- * 1. Continuous solid luminous volume core (never shows dark holes)
- * 2. 5 organic undulating braided plasma ribbons in mixed element colors
- * 3. Thin razor-sharp bright center filaments along the strands
- * 4. Braid intersection node hotspot flares
- * When uIsVoid > 0.5: transforms into a menacing void/death beam with dark obsidian edge,
- * jagged high-frequency violet/crimson crackling tendrils, and fierce unstable core.
+ * Normal-blended beam core shader:
+ * - Nano/standard (!isVoid): almost-solid white-hot core with vibrant saturated border
+ * - Void (isVoid): pitch-dark obsidian/black-violet center core occluding background grid,
+ *   rimmed tightly by blazing neon violet-magenta lightning edges.
+ */
+export function createBeamCoreMaterial(
+  colorA: number,
+  colorB: number,
+  isVoid = false
+): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uColorA: { value: new THREE.Color(colorA) },
+      uColorB: { value: new THREE.Color(colorB) },
+      uIsVoid: { value: isVoid ? 1.0 : 0.0 },
+      uTime: { value: 0 },
+      uLength: { value: 10 },
+      uFade: { value: 1 },
+    },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uColorA;
+      uniform vec3 uColorB;
+      uniform float uIsVoid;
+      uniform float uTime;
+      uniform float uLength;
+      uniform float uFade;
+      varying vec2 vUv;
+
+      void main() {
+        float x = vUv.x * max(uLength, 1.0);
+        float y = (vUv.y - 0.5) * 2.0;
+
+        float muzzle = smoothstep(0.0, 0.16, x);
+        float tail = 1.0 - smoothstep(max(uLength - 0.35, 0.0), uLength, x);
+        float env = muzzle * tail * uFade;
+
+        float ay = abs(y);
+        float surge = 0.88 + 0.16 * sin(x * 6.0 - uTime * 34.0);
+
+        if (uIsVoid > 0.5) {
+          float ripple = sin(x * 7.5 - uTime * 28.0) * 0.025 + sin(x * 13.0 + uTime * 19.0) * 0.015;
+          float d = abs(y + ripple);
+          float darkMask = smoothstep(0.21, 0.08, d);
+          float rimMask = exp(-pow((d - 0.21) * 18.0, 2.0));
+          float outerGlow = exp(-d * d * 12.0) * 0.6;
+
+          vec3 darkCore = vec3(0.04, 0.0, 0.08);
+          vec3 rimCol = mix(uColorA, uColorB, 0.5 + 0.5 * sin(x * 3.0 - uTime * 14.0)) * 1.45;
+          vec3 col = mix(rimCol, darkCore, darkMask);
+          float alpha = clamp((darkMask * 0.96 + rimMask * 0.92 + outerGlow) * env, 0.0, 0.98);
+          gl_FragColor = vec4(col, alpha);
+        } else {
+          float whiteMask = smoothstep(0.23, 0.055, ay);
+          float rimMask = exp(-pow((ay - 0.22) * 14.0, 2.0));
+          float outerGlow = exp(-ay * ay * 9.0) * 0.55;
+
+          vec3 edgeTint = mix(uColorA, uColorB, 0.45 + 0.35 * sin(x * 3.5 - uTime * 16.0));
+          vec3 whiteCore = mix(edgeTint, vec3(1.0, 0.99, 0.96), 0.88) * (1.28 * surge);
+          vec3 col = mix(edgeTint * 1.15, whiteCore, whiteMask);
+          float alpha = clamp((whiteMask * 0.97 + rimMask * 0.88 + outerGlow) * env, 0.0, 0.98);
+          gl_FragColor = vec4(col, alpha);
+        }
+      }
+    `,
+    transparent: true,
+    blending: THREE.NormalBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+}
+
+/**
+ * Volumetric Silk-Braided Energy Beam Shader wrapping around the beam core:
+ * - Organic undulating braided plasma ribbons in mixed element colors
+ * - Thin crisp center filaments along strands & intersection node flares
  */
 export function createBraidedBeamMaterial(
   colorA: number,

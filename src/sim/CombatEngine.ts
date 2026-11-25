@@ -182,6 +182,7 @@ export class CombatEngine {
   private clashProgress = new Map<string, number>();
   private hitNumberAccum = new Map<number, { dmg: number; timer: number; color: number; x: number; y: number }>();
   private comboTextCooldown = new Map<number, number>();
+  private splashCooldown = new Map<number, number>();
 
   public reset(): void {
     this.nextId = 1;
@@ -198,6 +199,7 @@ export class CombatEngine {
     this.clashProgress.clear();
     this.hitNumberAccum.clear();
     this.comboTextCooldown.clear();
+    this.splashCooldown.clear();
   }
 
   public clearTransientForSector(): void {
@@ -212,6 +214,7 @@ export class CombatEngine {
     this.clashProgress.clear();
     this.hitNumberAccum.clear();
     this.comboTextCooldown.clear();
+    this.splashCooldown.clear();
   }
 
   public spawnEnemy(archetype: EnemyArchetype, x: number, y: number, wave: number): EnemyEntity {
@@ -260,6 +263,7 @@ export class CombatEngine {
             life: 6,
             maxLife: 6,
             isNova: true,
+            followPlayer: true,
             colorHex: selfCast.colorHex,
             colors: comp.colors,
           });
@@ -274,24 +278,11 @@ export class CombatEngine {
       case 'KINETIC_ARMOR': {
         player.armorHp = Math.min(player.maxArmorHp, player.armorHp + selfCast.armorAmount);
         const radius = 120 + comp.totalPower * 25;
-        const hits = this.applyAoEDamage(player.x, player.y, radius, 26 * (counts.KINETIC ?? 1), selfCast.elements, 260, events);
+        this.applyAoEDamage(player.x, player.y, radius, 26 * (counts.KINETIC ?? 1), selfCast.elements, 260, events);
         events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius, colorHex: selfCast.colorHex });
         events.push({ type: 'vfx_shards', x: player.x, y: player.y, colors: comp.colors, count: 14, speedScale: 0.9 });
         events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 200, radius: radius + 20 });
         events.push({ type: 'screen_shake', intensity: 4 });
-        if (selfCast.elements.includes('FLUX') && hits.length > 0 && this.pools.length < 24) {
-          this.pools.push({
-            id: this.nextId++,
-            kind: 'FLUX',
-            x: hits[0]!.x,
-            y: hits[0]!.y,
-            radius: 78,
-            life: 5,
-            maxLife: 5,
-            colorHex: ELEMENT_META.FLUX.colorHex,
-            tickTimer: 0.25,
-          });
-        }
         events.push({ type: 'sfx', sound: 'rock' });
         break;
       }
@@ -330,7 +321,7 @@ export class CombatEngine {
         }
         const radius = 135 + comp.totalPower * 45;
         const knockback = selfCast.elements.includes('FLUX') ? 220 : 0;
-        const hits = this.applyAoEDamage(player.x, player.y, radius, 28 * comp.totalPower, selfCast.elements, knockback, events);
+        this.applyAoEDamage(player.x, player.y, radius, 28 * comp.totalPower, selfCast.elements, knockback, events);
         events.push({
           type: 'vfx_spray',
           x: player.x,
@@ -343,21 +334,6 @@ export class CombatEngine {
         });
         events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius, colorHex: selfCast.colorHex });
         events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 150 + comp.totalPower * 35, radius: radius + 20 });
-
-        if (selfCast.elements.includes('FLUX') && hits.length > 0 && this.pools.length < 24) {
-          const stack = counts.FLUX ?? 1;
-          this.pools.push({
-            id: this.nextId++,
-            kind: 'FLUX',
-            x: hits[0]!.x,
-            y: hits[0]!.y,
-            radius: 75 + stack * 25,
-            life: 5,
-            maxLife: 5,
-            colorHex: ELEMENT_META.FLUX.colorHex,
-            tickTimer: 0.25,
-          });
-        }
         events.push({ type: 'sfx', sound: selfCast.elements.includes('FLUX') ? 'cleanse' : 'spray' });
         break;
       }
@@ -511,8 +487,8 @@ export class CombatEngine {
     if (ch.delivery === 'SPRAY') {
       const range = 320 + comp.totalPower * 45;
       const spread = 0.88;
-      const knockback = ch.elements.includes('FLUX') ? 230 : 0;
-      const hits = this.applyConeDamage(player.x, player.y, angle, spread, range, 11 + comp.totalPower * 4, ch.elements, events, knockback);
+      const knockback = ch.elements.includes('FLUX') ? 245 : 0;
+      this.applyConeDamage(player.x, player.y, angle, spread, range, 11 + comp.totalPower * 4, ch.elements, events, knockback);
       events.push({
         type: 'vfx_spray',
         x: player.x + Math.cos(angle) * 20,
@@ -530,23 +506,6 @@ export class CombatEngine {
         strength: 55 + comp.totalPower * 15,
         radius: 110,
       });
-
-      if (ch.elements.includes('FLUX') && hits.length > 0 && Math.random() < 0.35 && this.pools.length < 24) {
-        const stack = counts.FLUX ?? 1;
-        const target = hits[Math.floor(Math.random() * hits.length)]!;
-        const pos = clampArena(target.x, target.y, 45);
-        this.pools.push({
-          id: this.nextId++,
-          kind: 'FLUX',
-          x: pos.x,
-          y: pos.y,
-          radius: 56 + stack * 20,
-          life: 5,
-          maxLife: 5,
-          colorHex: ELEMENT_META.FLUX.colorHex,
-          tickTimer: 0.25,
-        });
-      }
       if (Math.random() < 0.35) {
         events.push({ type: 'sfx', sound: 'spray' });
       }
@@ -598,16 +557,21 @@ export class CombatEngine {
 
       if (firstEnemy) {
         let cur: EnemyEntity | null = firstEnemy;
-        let maxJumps = cur.statuses.PRIMED ? 8 : 4;
+        let maxJumps = cur.statuses.PRIMED ? 9 : 6;
         while (cur && hitEnemyIds.size < maxJumps) {
           hitEnemyIds.add(cur.id);
           pts.push({ x: cur.x, y: cur.y });
           const isPrimed = Boolean(cur.statuses.PRIMED);
-          if (isPrimed) maxJumps = 8;
+          if (isPrimed) maxJumps = 9;
+          // Lightning interrupts enemy beam charge / stalker windup
+          if (cur.aiState === 'CHARGE' || cur.aiState === 'TELEPORT_WINDUP') {
+            cur.aiState = 'SEEK';
+            cur.aiTimer = Math.max(cur.aiTimer, 1.2);
+          }
           this.applyElementalHit(cur, baseDamage, elements, cur.x - ox, cur.y - oy, events);
           events.push({ type: 'vfx_burst', x: cur.x, y: cur.y, colorHex: comp.primaryColorHex, count: 6, radius: 24 });
 
-          const jumpRange = isPrimed ? 360 : 180;
+          const jumpRange = isPrimed ? 400 : 240;
           let nextTarget: EnemyEntity | null = null;
           let nextDist = jumpRange;
           for (const candidate of this.enemies) {
@@ -666,6 +630,7 @@ export class CombatEngine {
           life: shieldLife,
           maxLife: shieldLife,
           isNova,
+          followPlayer: false,
           colorHex: color,
           colors: comp.colors,
         });
@@ -703,13 +668,13 @@ export class CombatEngine {
             });
           }
         } else {
-          const halfSpan = nonBarrierPower >= 2 ? 3 : 2;
-          const cx = player.x + Math.cos(angle) * 130;
-          const cy = player.y + Math.sin(angle) * 130;
-          const perpX = -Math.sin(angle);
-          const perpY = Math.cos(angle);
-          for (let i = -halfSpan; i <= halfSpan; i++) {
-            const pos = clampArena(cx + perpX * i * 44, cy + perpY * i * 44);
+          // Curved defensive barrier arc in front of player
+          const totalPylons = nonBarrierPower >= 2 ? 7 : 5;
+          const arcSpan = nonBarrierPower >= 2 ? 1.44 : 1.08;
+          const arcR = 148;
+          for (let i = 0; i < totalPylons; i++) {
+            const a = angle - arcSpan * 0.5 + (i / (totalPylons - 1)) * arcSpan;
+            const pos = clampArena(player.x + Math.cos(a) * arcR, player.y + Math.sin(a) * arcR);
             this.walls.push({
               id: this.nextId++,
               groupId,
@@ -888,7 +853,7 @@ export class CombatEngine {
       case 'SPRAY': {
         const range = 165 + (comp.totalPower - 1) * 90;
         const knockback = spell.elements.includes('FLUX') ? 260 : 0;
-        const hits = this.applyAoEDamage(player.x, player.y, range, 32 * comp.totalPower, spell.elements, knockback, events);
+        this.applyAoEDamage(player.x, player.y, range, 32 * comp.totalPower, spell.elements, knockback, events);
         events.push({
           type: 'vfx_spray',
           x: player.x,
@@ -903,26 +868,6 @@ export class CombatEngine {
           const ringR = range * (0.55 + rIdx * 0.25);
           const ringColor = comp.colors[rIdx % comp.colors.length]!;
           events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: ringR, colorHex: ringColor, duration: 0.32 + rIdx * 0.08 });
-        }
-
-        if (spell.elements.includes('FLUX') && hits.length > 0) {
-          const stack = counts.FLUX ?? 1;
-          const puddleCount = Math.min(hits.length, 2 + comp.totalPower);
-          for (let i = 0; i < puddleCount && this.pools.length < 24; i++) {
-            const target = hits[i % hits.length]!;
-            const pos = clampArena(target.x, target.y, 45);
-            this.pools.push({
-              id: this.nextId++,
-              kind: 'FLUX',
-              x: pos.x,
-              y: pos.y,
-              radius: 56 + stack * 20,
-              life: 5,
-              maxLife: 5,
-              colorHex: ELEMENT_META.FLUX.colorHex,
-              tickTimer: 0.25,
-            });
-          }
         }
         events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 140 + comp.totalPower * 55, radius: range * 0.85 });
         events.push({ type: 'sfx', sound: 'spray' });
@@ -1045,30 +990,28 @@ export class CombatEngine {
     events.push({ type: 'vfx_ring', x: p.x, y: p.y, radius: blastRadius, colorHex: p.colorHex });
     events.push({ type: 'screen_shake', intensity: 5 + kineticCount * 2 });
 
-    if (p.elements.includes('FLUX') && (hitTarget || hits.length > 0) && this.pools.length < 24) {
-      const stack = counts.FLUX ?? 1;
-      for (let i = 0; i < stack && this.pools.length < 24; i++) {
-        const a = (i / stack) * Math.PI * 2 + Math.random() * 0.5;
-        const offset = stack > 1 ? 36 : 0;
-        const pos = clampArena(p.x + Math.cos(a) * offset, p.y + Math.sin(a) * offset, 45);
-        this.pools.push({
-          id: this.nextId++,
-          kind: 'FLUX',
-          x: pos.x,
-          y: pos.y,
-          radius: 52 + stack * 22,
-          life: 5.5,
-          maxLife: 5.5,
-          colorHex: ELEMENT_META.FLUX.colorHex,
-          tickTimer: 0.25,
-        });
-      }
+    if (p.elements.includes('FLUX') && (hitTarget || hits.length > 0)) {
+      this.applyWaterSplash(p.x, p.y, 110, events);
     }
 
     const voidCount = counts.VOID ?? 0;
     if (voidCount > 0) {
       events.push({ type: 'grid_well', x: p.x, y: p.y, strength: 220 * voidCount, radius: 170 });
     }
+  }
+
+  private applyWaterSplash(x: number, y: number, radius: number, events: SimEvent[], sourceId?: number): void {
+    if (sourceId !== undefined && this.splashCooldown.has(sourceId)) return;
+    if (sourceId !== undefined) this.splashCooldown.set(sourceId, 0.25);
+
+    for (const other of this.enemies) {
+      if (other.hp <= 0) continue;
+      if (Math.hypot(other.x - x, other.y - y) <= radius + other.radius) {
+        this.setStatus(other, 'PRIMED', 5, 1);
+      }
+    }
+    events.push({ type: 'vfx_burst', x, y, colorHex: ELEMENT_META.FLUX.colorHex, count: 10, radius: radius * 0.55 });
+    events.push({ type: 'vfx_ring', x, y, radius, colorHex: ELEMENT_META.FLUX.colorHex, duration: 0.22 });
   }
 
   public applyElementalHit(
@@ -1081,6 +1024,9 @@ export class CombatEngine {
     isAoE = false
   ): void {
     if (e.hp <= 0) return;
+
+    const effectiveDamage =
+      elements.length > 0 && elements.every((el) => el === 'FLUX' || el === 'BARRIER') ? 0 : rawDamage;
 
     const nonBarrier = elements.find((el) => el !== 'BARRIER') ?? elements[0];
     const hitColor = nonBarrier ? ELEMENT_META[nonBarrier].colorHex : 0x00f5ff;
@@ -1122,7 +1068,7 @@ export class CombatEngine {
       }
     }
 
-    let dmg = rawDamage;
+    let dmg = effectiveDamage;
 
     // Primer combos
     if (e.statuses.PRIMED && elements.includes('VOLT')) {
@@ -1130,6 +1076,13 @@ export class CombatEngine {
       if (!this.comboTextCooldown.has(e.id)) {
         this.comboTextCooldown.set(e.id, 0.35);
         events.push({ type: 'damage_number', x: e.x, y: e.y - e.radius - 10, text: 'OVERLOAD!', colorHex: 0xfff733, big: true });
+        events.push({ type: 'vfx_ring', x: e.x, y: e.y, radius: 105, colorHex: 0xfff733, duration: 0.25 });
+        for (const other of this.enemies) {
+          if (other.id !== e.id && other.hp > 0 && Math.hypot(other.x - e.x, other.y - e.y) <= 105 + other.radius) {
+            other.hp -= 24 / (1 + other.baseArmor);
+            other.hitFlash = 0.08;
+          }
+        }
       }
     }
 
@@ -1176,11 +1129,16 @@ export class CombatEngine {
     }
 
     // Apply armor mitigation (IGNITED shreds 50%)
-    const effectiveArmor = e.statuses.IGNITED ? e.baseArmor * 0.5 : e.baseArmor;
-    dmg = dmg / (1 + effectiveArmor);
-
-    e.hp -= dmg;
+    if (dmg > 0) {
+      const effectiveArmor = e.statuses.IGNITED ? e.baseArmor * 0.5 : e.baseArmor;
+      dmg = dmg / (1 + effectiveArmor);
+      e.hp -= dmg;
+    }
     e.hitFlash = 0.1;
+
+    if (elements.includes('FLUX')) {
+      this.applyWaterSplash(e.x, e.y, 105, events, e.id);
+    }
 
     if (dmg >= 8 && !isAoE) {
       const jitter = (Math.random() - 0.5) * 18;
@@ -1366,6 +1324,11 @@ export class CombatEngine {
       if (next <= 0) this.comboTextCooldown.delete(eid);
       else this.comboTextCooldown.set(eid, next);
     }
+    for (const [eid, cd] of this.splashCooldown.entries()) {
+      const next = cd - dt;
+      if (next <= 0) this.splashCooldown.delete(eid);
+      else this.splashCooldown.set(eid, next);
+    }
     for (const [eid, acc] of this.hitNumberAccum.entries()) {
       acc.timer -= dt;
       if (acc.timer <= 0) {
@@ -1443,6 +1406,37 @@ export class CombatEngine {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i]!;
       p.life -= dt;
+
+      // Subtle homing for VOID-infused player projectiles
+      if (p.owner === 'PLAYER' && p.elements.includes('VOID')) {
+        const curSpd = Math.hypot(p.vx, p.vy);
+        if (curSpd > 1) {
+          let bestTarget: EnemyEntity | null = null;
+          let bestDist = 360;
+          for (const e of this.enemies) {
+            if (e.hp <= 0 || p.hitIds.includes(e.id)) continue;
+            const dx = e.x - p.x;
+            const dy = e.y - p.y;
+            const d = Math.hypot(dx, dy);
+            if (d > bestDist || d < 4) continue;
+            const dot = (dx * p.vx + dy * p.vy) / (d * curSpd);
+            if (dot > -0.2) {
+              bestDist = d;
+              bestTarget = e;
+            }
+          }
+          if (bestTarget) {
+            const desiredA = Math.atan2(bestTarget.y - p.y, bestTarget.x - p.x);
+            const curA = Math.atan2(p.vy, p.vx);
+            const diff = normalizeAngle(desiredA - curA);
+            const turn = Math.max(-3.6 * dt, Math.min(3.6 * dt, diff));
+            const nextA = curA + turn;
+            p.vx = Math.cos(nextA) * curSpd;
+            p.vy = Math.sin(nextA) * curSpd;
+          }
+        }
+      }
+
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.spin += dt * 7;
@@ -1554,18 +1548,8 @@ export class CombatEngine {
           this.detonateRock(p, events, hitWall || hitPillar || hitBlock);
         } else if (hitPillar || hitBlock) {
           events.push({ type: 'vfx_burst', x: p.x, y: p.y, colorHex: p.colorHex, count: 6, radius: 22 });
-          if (p.owner === 'PLAYER' && p.elements.includes('FLUX') && this.pools.length < 24) {
-            this.pools.push({
-              id: this.nextId++,
-              kind: 'FLUX',
-              x: p.x,
-              y: p.y,
-              radius: 46,
-              life: 4.5,
-              maxLife: 4.5,
-              colorHex: ELEMENT_META.FLUX.colorHex,
-              tickTimer: 0.25,
-            });
+          if (p.owner === 'PLAYER' && p.elements.includes('FLUX')) {
+            this.applyWaterSplash(p.x, p.y, 95, events);
           }
         }
         this.projectiles.splice(i, 1);
@@ -1649,25 +1633,9 @@ export class CombatEngine {
         const effectiveLen = b.clashing ? b.clashDist : b.length;
         for (const e of this.enemies) {
           if (e.hp <= 0) continue;
-          const { perpDist, along } = pointToRayDist(e.x, e.y, b.x, b.y, cos, sin, effectiveLen);
+          const { perpDist } = pointToRayDist(e.x, e.y, b.x, b.y, cos, sin, effectiveLen);
           if (perpDist <= e.radius + b.width * 0.5) {
             this.applyElementalHit(e, b.damagePerSec * dt, b.elements, cos, sin, events);
-            // Spawn water puddle ONLY at object hit point!
-            if (b.elements.includes('FLUX') && Math.random() < 0.08 && this.pools.length < 24) {
-              const hx = b.x + cos * along;
-              const hy = b.y + sin * along;
-              this.pools.push({
-                id: this.nextId++,
-                kind: 'FLUX',
-                x: hx,
-                y: hy,
-                radius: 48,
-                life: 5,
-                maxLife: 5,
-                colorHex: ELEMENT_META.FLUX.colorHex,
-                tickTimer: 0.25,
-              });
-            }
           }
         }
       } else {
@@ -1726,13 +1694,15 @@ export class CombatEngine {
       }
     }
 
-    // Update shields
+    // Update shields (only personal self-cast shields follow player)
     for (let i = this.shields.length - 1; i >= 0; i--) {
       const s = this.shields[i]!;
       s.life -= dt;
-      s.x = player.x;
-      s.y = player.y;
-      s.angle = player.aimAngle;
+      if (s.followPlayer) {
+        s.x = player.x;
+        s.y = player.y;
+        s.angle = player.aimAngle;
+      }
       if (s.life <= 0 || s.hp <= 0) {
         this.shields.splice(i, 1);
       }
@@ -1818,26 +1788,12 @@ export class CombatEngine {
         w.pulseTimer = 0.45;
         if (w.elements.includes('THERMAL')) {
           this.applyAoEDamage(w.x, w.y, 92, 14, ['THERMAL'], 45, events);
-          events.push({ type: 'vfx_ring', x: w.x, y: w.y, radius: 85, colorHex: ELEMENT_META.THERMAL.colorHex, duration: 0.28 });
         }
         if (w.elements.includes('CRYO') || w.elements.includes('CRYSTAL')) {
-          this.applyAoEDamage(w.x, w.y, 92, 8, ['CRYO'], 20, events);
+          this.applyAoEDamage(w.x, w.y, 92, 8, ['CRYO'], 0, events);
         }
         if (w.elements.includes('FLUX')) {
-          const hitWater = this.applyAoEDamage(w.x, w.y, 70, 0, [], 0, events);
-          if (hitWater.length > 0 && this.pools.length < 24) {
-            this.pools.push({
-              id: this.nextId++,
-              kind: 'FLUX',
-              x: hitWater[0]!.x,
-              y: hitWater[0]!.y,
-              radius: 52,
-              life: 4.5,
-              maxLife: 4.5,
-              colorHex: ELEMENT_META.FLUX.colorHex,
-              tickTimer: 0.25,
-            });
-          }
+          this.applyAoEDamage(w.x, w.y, 85, 0, ['FLUX'], 160, events);
         }
         if (w.elements.includes('VOID')) {
           this.applyAoEDamage(w.x, w.y, 135, 10, ['VOID'], -75, events);
@@ -1926,9 +1882,31 @@ export class CombatEngine {
         const d = Math.random() * s.radius * 0.78;
         const sx = s.x + Math.cos(a) * d;
         const sy = s.y + Math.sin(a) * d;
-        const strikeRadius = 56 + nonBarrierPower * 22;
+        const strikeRadius =
+          s.elements.includes('CRYO') || s.elements.includes('CRYSTAL')
+            ? (56 + nonBarrierPower * 22) * 1.25
+            : 56 + nonBarrierPower * 22;
+        const knockback = s.elements.includes('FLUX') ? 210 : 0;
 
-        const hits = this.applyAoEDamage(sx, sy, strikeRadius, 28 * nonBarrierPower, s.elements, 90, events);
+        this.applyAoEDamage(sx, sy, strikeRadius, 11 * nonBarrierPower, s.elements, knockback, events);
+
+        if (s.elements.includes('VOID')) {
+          this.applyAoEDamage(s.x, s.y, s.radius, 0, [], -220, events);
+        }
+        if (s.elements.includes('VOLT')) {
+          for (const e of this.enemies) {
+            if (Math.hypot(e.x - sx, e.y - sy) <= strikeRadius + e.radius) {
+              if (e.aiState === 'CHARGE' || e.aiState === 'TELEPORT_WINDUP') {
+                e.aiState = 'SEEK';
+                e.aiTimer = Math.max(e.aiTimer, 1.2);
+              }
+            }
+          }
+        }
+        if (s.elements.includes('NANO') && Math.hypot(player.x - s.x, player.y - s.y) <= s.radius) {
+          player.hp = Math.min(player.maxHp, player.hp + 8);
+          events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: ELEMENT_META.NANO.colorHex, count: 6, radius: 30 });
+        }
 
         const payloadColors = s.colors.filter((c) => c !== ELEMENT_META.BARRIER.colorHex);
         const palette = payloadColors.length > 0 ? payloadColors : [s.colorHex];
@@ -1956,21 +1934,6 @@ export class CombatEngine {
           });
         }
         events.push({ type: 'grid_impulse', x: sx, y: sy, strength: 155 + nonBarrierPower * 45, radius: 120 });
-
-        if (s.elements.includes('FLUX') && hits.length > 0 && this.pools.length < 24) {
-          const stack = counts.FLUX ?? 1;
-          this.pools.push({
-            id: this.nextId++,
-            kind: 'FLUX',
-            x: hits[0]!.x,
-            y: hits[0]!.y,
-            radius: 52 + stack * 20,
-            life: 5,
-            maxLife: 5,
-            colorHex: ELEMENT_META.FLUX.colorHex,
-            tickTimer: 0.25,
-          });
-        }
       }
       if (s.life <= 0) {
         this.storms.splice(i, 1);

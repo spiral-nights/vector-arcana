@@ -104,8 +104,8 @@ export class GameSim {
       this.combat.cancelCharge(p);
       p.moveTarget = null;
       p.dashTimer = 0.19;
-      p.dashCooldown = 0.75;
-      p.invulnTimer = 0.24;
+      p.dashCooldown = 0.55;
+      p.invulnTimer = 0.28;
       p.dashDirX = Math.cos(p.aimAngle);
       p.dashDirY = Math.sin(p.aimAngle);
       this.events.push({ type: 'grid_impulse', x: p.x, y: p.y, strength: 180, radius: 130 });
@@ -168,7 +168,7 @@ export class GameSim {
 
     if (p.dashTimer > 0) {
       p.dashTimer = Math.max(0, p.dashTimer - FIXED_DT);
-      const dashSpeed = 180 / 0.19;
+      const dashSpeed = 235 / 0.19;
       p.vx = p.dashDirX * dashSpeed;
       p.vy = p.dashDirY * dashSpeed;
       p.moving = true;

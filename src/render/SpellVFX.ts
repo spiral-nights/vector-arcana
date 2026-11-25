@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createGlowSprite } from './GlowUtil';
 import {
   buildRibbonGeometry,
+  createBeamCoreMaterial,
   createBraidedBeamMaterial,
   createCrystalBladeMaterial,
   createCurvedBarrierMaterial,
@@ -837,7 +838,7 @@ export class SpellVFX {
     this.currentThemeIdx = Math.max(0, snapshot.wave - 1) % SECTOR_PILLAR_COLORS.length;
     this.syncSprayCone(snapshot, timeSec);
     this.syncProjectiles(snapshot.projectiles, timeSec);
-    this.syncBeams(snapshot.beams, timeSec);
+    this.syncBeams(snapshot.beams, timeSec, snapshot.player.channel?.beamId ?? null);
     this.syncWalls(snapshot.walls, timeSec);
     this.syncMines(snapshot.mines, timeSec);
     this.syncStorms(snapshot.storms, timeSec);
@@ -1006,17 +1007,18 @@ export class SpellVFX {
           const s = p.radius * 1.12;
           const rockGeo = new THREE.DodecahedronGeometry(s, 0);
           const wire = new THREE.WireframeGeometry(rockGeo);
-          const secondary = p.colors.find((c) => c !== p.colorHex) ?? 0xff9e44;
+          const infused = p.colors.find((c) => c !== ELEMENT_META.KINETIC.colorHex) ?? p.colorHex;
+          const bodyTint = new THREE.Color(0x3a2a24).lerp(new THREE.Color(infused), 0.45);
 
-          // Solid opaque shaded 3D basalt/molten boulder
+          // Solid opaque shaded 3D boulder strongly tinted by infused element(s)
           g.add(
             new THREE.Mesh(
               rockGeo,
               new THREE.MeshStandardMaterial({
-                color: 0x3b2c26,
-                emissive: p.colorHex,
-                emissiveIntensity: 0.45,
-                roughness: 0.65,
+                color: bodyTint,
+                emissive: infused,
+                emissiveIntensity: 0.65,
+                roughness: 0.55,
                 metalness: 0.25,
               })
             )
@@ -1024,10 +1026,10 @@ export class SpellVFX {
           g.add(
             new THREE.LineSegments(
               wire,
-              new THREE.LineBasicMaterial({ color: p.colorHex })
+              new THREE.LineBasicMaterial({ color: infused })
             )
           );
-          g.add(createGlowSprite(secondary, s * 2.4, 0.24));
+          g.add(createGlowSprite(infused, s * 2.8, 0.3));
         } else {
           // Crystal Shard Blade blending CRYSTAL cyan + any mixed element color cleanly
           const mixedColor =
@@ -1089,7 +1091,7 @@ export class SpellVFX {
       if (p.kind === 'ROCK') {
         g.rotation.x = p.spin;
         g.rotation.y = p.spin * 0.7;
-        if (Math.random() < 0.35) this.emitElementEmission(p.x, p.y, 14, p.elements, 6);
+        this.emitElementEmission(p.x, p.y, 14, p.elements, 10);
       } else {
         g.rotation.z = Math.atan2(p.vy, p.vx);
         const blade = g.children[0];
@@ -1104,7 +1106,7 @@ export class SpellVFX {
     this.pruneMap(this.projMeshes, alive);
   }
 
-  private syncBeams(items: readonly BeamEntity[], timeSec: number): void {
+  private syncBeams(items: readonly BeamEntity[], timeSec: number, channeledBeamId: number | null): void {
     const alive = new Set<number>();
     for (const b of items) {
       alive.add(b.id);
@@ -1121,24 +1123,30 @@ export class SpellVFX {
       let cC = b.colors[2] ?? cB;
 
       if (!isVoid && b.colors.length === 1 && b.elements.includes('NANO')) {
-        cA = 0xf59e0b;
-        cB = 0xfef08a;
-        cC = 0x39ff14;
+        cA = 0x39ff14;
+        cB = 0xf59e0b;
+        cC = 0xa7f3d0;
       } else if (isVoid && b.colors.length === 1) {
-        cA = 0x7a12ff;
+        cA = 0x8b2cf5;
         cB = 0xff2e97;
-        cC = 0x4c0678;
+        cC = 0x581c87;
       }
 
       if (!group) {
         group = new THREE.Group();
-        const stripW = Math.max(54, b.width * 2.9);
+        const stripW = Math.max(40, Math.min(64, b.width * 2.1));
 
-        const beamPlane = new THREE.PlaneGeometry(1, stripW);
-        beamPlane.translate(0.5, 0, 0);
-        const beamMat = createBraidedBeamMaterial(cA, cB, cC, isVoid);
-        group.add(new THREE.Mesh(beamPlane, beamMat));
+        // 0: Solid White-Hot (Nano/Standard) or Dark-Core (Void) Normal-blended beam body
+        const corePlane = new THREE.PlaneGeometry(1, stripW);
+        corePlane.translate(0.5, 0, 0);
+        group.add(new THREE.Mesh(corePlane, createBeamCoreMaterial(cA, cB, isVoid)));
 
+        // 1: Additive swirling colored braided wrappings around core
+        const braidPlane = new THREE.PlaneGeometry(1, stripW * 1.15);
+        braidPlane.translate(0.5, 0, 0);
+        group.add(new THREE.Mesh(braidPlane, createBraidedBeamMaterial(cA, cB, cC, isVoid)));
+
+        // 2: End impact crystal / flare
         const impactDiamond = [
           { x: 14, y: 0 },
           { x: 0, y: 9 },
@@ -1147,13 +1155,15 @@ export class SpellVFX {
         ];
         group.add(
           new THREE.Mesh(
-            buildRibbonGeometry(impactDiamond, 2.4, true, 14.5),
+            buildRibbonGeometry(impactDiamond, 2.4, true, 15.0),
             createNeonRibbonMaterial(cB, 1.25, 0.9)
           )
         );
 
-        group.add(createGlowSprite(cB, 32, 0.24));
+        // 3: End impact sprite halo
+        group.add(createGlowSprite(cB, 32, 0.28));
 
+        // 4: Twinkling 4-point star-sparks riding along the beam
         const sparkContainer = new THREE.Group();
         for (let s = 0; s < 8; s++) {
           const sp = new THREE.Sprite(
@@ -1161,7 +1171,7 @@ export class SpellVFX {
               map: this.starTexture,
               color: s % 2 === 0 ? cB : 0xffffff,
               transparent: true,
-              opacity: 0.85,
+              opacity: 0.88,
               blending: THREE.AdditiveBlending,
               depthWrite: false,
             })
@@ -1176,28 +1186,41 @@ export class SpellVFX {
         this.scene.add(group);
       }
 
-      const beamMesh = group.children[0] as THREE.Mesh;
-      beamMesh.position.set(b.x, b.y, 14);
-      beamMesh.rotation.z = b.angle;
-      beamMesh.scale.set(len, 1, 1);
-      setShaderUniform(beamMesh.material, 'uTime', timeSec);
-      setShaderUniform(beamMesh.material, 'uLength', len / 24);
-      setShaderUniform(beamMesh.material, 'uFade', Math.min(1, (b.life / Math.max(0.05, b.maxLife)) * 2.5));
+      const fade =
+        b.id === channeledBeamId
+          ? 1.0
+          : Math.min(1, (b.life / Math.max(0.05, b.maxLife)) * 2.5);
 
-      const impactMesh = group.children[1] as THREE.Mesh;
+      const coreMesh = group.children[0] as THREE.Mesh;
+      coreMesh.position.set(b.x, b.y, 13.8);
+      coreMesh.rotation.z = b.angle;
+      coreMesh.scale.set(len, 1, 1);
+      setShaderUniform(coreMesh.material, 'uTime', timeSec);
+      setShaderUniform(coreMesh.material, 'uLength', len / 24);
+      setShaderUniform(coreMesh.material, 'uFade', fade);
+
+      const braidMesh = group.children[1] as THREE.Mesh;
+      braidMesh.position.set(b.x, b.y, 14.4);
+      braidMesh.rotation.z = b.angle;
+      braidMesh.scale.set(len, 1, 1);
+      setShaderUniform(braidMesh.material, 'uTime', timeSec);
+      setShaderUniform(braidMesh.material, 'uLength', len / 24);
+      setShaderUniform(braidMesh.material, 'uFade', fade);
+
+      const impactMesh = group.children[2] as THREE.Mesh;
       impactMesh.position.set(b.x + cos * len, b.y + sin * len, 0);
       impactMesh.rotation.z = timeSec * 10 + b.id;
 
-      group.children[2]!.position.set(b.x + cos * len, b.y + sin * len, 14);
+      group.children[3]!.position.set(b.x + cos * len, b.y + sin * len, 14);
 
-      const sparks = group.children[3] as THREE.Group;
+      const sparks = group.children[4] as THREE.Group;
       for (let s = 0; s < sparks.children.length; s++) {
         const sp = sparks.children[s] as THREE.Sprite;
         const frac = (s / sparks.children.length + timeSec * 0.85) % 1;
         const along = frac * len;
-        const lat = Math.sin(along * 0.04 - timeSec * 10 + s * 1.9) * (b.width * 0.45);
+        const lat = Math.sin(along * 0.04 - timeSec * 10 + s * 1.9) * (b.width * 0.42);
         sp.position.set(b.x + cos * along + nx * lat, b.y + sin * along + ny * lat, 15.5);
-        sp.material.opacity = Math.sin(frac * Math.PI) * 0.85;
+        sp.material.opacity = Math.sin(frac * Math.PI) * 0.88 * fade;
       }
 
       this.spawnBeamFlowParticle(b.x, b.y, cos, sin, nx, ny, len, b.width, b.composition.weightedColors, b.elements);
@@ -1351,57 +1374,64 @@ export class SpellVFX {
         const p2 = payloadColors[1] ?? p1;
         const p3 = payloadColors[2] ?? p2;
 
-        // 0: Solid opaque colored 3D core sphere + rotating inner crystal gem for mixed colors
-        const coreGroup = new THREE.Group();
-        coreGroup.add(
+        // 0: Cybernetic Hexagonal Circuit Emitter Base Pad
+        const padGroup = new THREE.Group();
+        const padGeo = new THREE.CylinderGeometry(m.radius * 0.85, m.radius * 0.96, 5, 6);
+        padGeo.rotateX(Math.PI / 2);
+        padGroup.add(
           new THREE.Mesh(
-            new THREE.SphereGeometry(m.radius * 0.52, 14, 12),
+            padGeo,
             new THREE.MeshStandardMaterial({
-              color: p1,
+              color: 0x162236,
               emissive: p1,
-              emissiveIntensity: 0.72,
-              roughness: 0.3,
-              metalness: 0.25,
+              emissiveIntensity: 0.35,
+              roughness: 0.4,
+              metalness: 0.6,
+            })
+          ),
+          new THREE.Mesh(
+            buildRibbonGeometry(createPolygonPoints(6, m.radius * 0.94), 2.4, true, 3.0),
+            createNeonRibbonMaterial(p1, 1.25, 0.95)
+          )
+        );
+        padGroup.position.z = 3;
+        g.add(padGroup);
+
+        // 1: Hovering Holographic Multi-Color Prism
+        const holoGroup = new THREE.Group();
+        holoGroup.add(
+          new THREE.Mesh(
+            new THREE.OctahedronGeometry(m.radius * 0.46, 0),
+            new THREE.MeshStandardMaterial({
+              color: p2,
+              emissive: p2,
+              emissiveIntensity: 0.75,
+              roughness: 0.25,
+              metalness: 0.35,
             })
           )
         );
-        if (p2 !== p1) {
-          coreGroup.add(
+        if (p3 !== p2 || p1 !== p2) {
+          holoGroup.add(
             new THREE.Mesh(
-              new THREE.OctahedronGeometry(m.radius * 0.62, 0),
-              new THREE.MeshStandardMaterial({
-                color: p2,
-                emissive: p2,
-                emissiveIntensity: 0.68,
-                roughness: 0.35,
-              })
+              buildRibbonGeometry(createPolygonPoints(4, m.radius * 0.62), 2.0, true, 0),
+              createNeonRibbonMaterial(p3 !== p2 ? p3 : p1, 1.25, 0.95)
             )
           );
         }
-        g.add(coreGroup);
+        g.add(holoGroup);
 
-        // 1: Counter-rotating orbital rings tinted by p1/p2/p3
-        const ringGroup = new THREE.Group();
-        ringGroup.add(
-          new THREE.Mesh(
-            buildRibbonGeometry(createPolygonPoints(16, m.radius * 0.95), 2.5, true, 0),
-            createNeonRibbonMaterial(p2, 1.2, 0.95)
-          )
+        // 2: Horizontal Animated Circuit Scan Ring
+        const scanRing = new THREE.Mesh(
+          buildRibbonGeometry(createPolygonPoints(16, m.radius * 1.15), 2.0, true, 0),
+          createNeonRibbonMaterial(p2, 1.2, 0.85)
         );
-        if (p3 !== p2 || payloadColors.length >= 2) {
-          const r2 = new THREE.Mesh(
-            buildRibbonGeometry(createPolygonPoints(14, m.radius * 0.8), 2.2, true, 0),
-            createNeonRibbonMaterial(p3, 1.2, 0.9)
-          );
-          r2.rotation.x = Math.PI * 0.5;
-          ringGroup.add(r2);
-        }
-        g.add(ringGroup);
+        g.add(scanRing);
 
-        // 2: Pulsing core halo
-        g.add(createGlowSprite(p1, 28, 0.26));
+        // 3: Subtle Hologram Glow
+        g.add(createGlowSprite(p1, 26, 0.24));
 
-        // 3: Ground proximity trigger ring
+        // 4: Ground proximity trigger ring
         g.add(
           new THREE.Mesh(
             buildRibbonGeometry(createPolygonPoints(24, m.triggerRadius), 2.0, true, 0.9),
@@ -1414,24 +1444,25 @@ export class SpellVFX {
         this.scene.add(g);
       }
 
-      const bobZ = 14 + Math.sin(timeSec * 4.5 + m.id) * 3.5;
-      const pulse = 0.88 + Math.sin(timeSec * 8.5 + m.id) * 0.16;
+      const bobZ = 15 + Math.sin(timeSec * 4.5 + m.id) * 3.5;
+      const pulse = 0.88 + Math.sin(timeSec * 7.5 + m.id) * 0.14;
 
-      const coreGroup = g.children[0]!;
-      coreGroup.position.z = bobZ;
-      coreGroup.rotation.z = -timeSec * 2.2 + m.id;
-      coreGroup.scale.set(pulse, pulse, pulse);
+      const holoGroup = g.children[1]!;
+      holoGroup.position.z = bobZ;
+      holoGroup.rotation.z = timeSec * 2.8 + m.id;
+      holoGroup.scale.set(pulse, pulse, pulse);
 
-      const ringGroup = g.children[1]!;
-      ringGroup.position.z = bobZ;
-      ringGroup.rotation.x = 0.65 + Math.sin(timeSec * 2.0 + m.id) * 0.2;
-      ringGroup.rotation.z = timeSec * 3.8 + m.id;
+      const scanRing = g.children[2]!;
+      scanRing.position.z = 8 + Math.sin(timeSec * 4.5 + m.id) * 1.5;
+      const scanPulse = 0.85 + Math.sin(timeSec * 6.0 + m.id) * 0.18;
+      scanRing.scale.set(scanPulse, scanPulse, 1);
+      scanRing.rotation.z = -timeSec * 2.0;
 
-      const glow = g.children[2]!;
+      const glow = g.children[3]!;
       glow.position.z = bobZ;
-      glow.scale.set(28 * pulse, 28 * pulse, 1);
+      glow.scale.set(26 * pulse, 26 * pulse, 1);
 
-      if (Math.random() < 0.28) {
+      if (Math.random() < 0.32) {
         this.emitElementEmission(m.x, m.y, bobZ, m.elements, m.radius * 0.7);
       }
     }
@@ -1477,6 +1508,91 @@ export class SpellVFX {
       const cloud = g.children[1] as THREE.Mesh;
       setShaderUniform(cloud.material, 'uTime', timeSec);
       setShaderUniform(cloud.material, 'uOpacity', fade);
+
+      // Distinct per-element atmospheric particle effects throughout storm volume
+      for (let k = 0; k < 2; k++) {
+        const a = Math.random() * Math.PI * 2;
+        const dist = Math.random() * s.radius * 0.85;
+        const px = s.x + Math.cos(a) * dist;
+        const py = s.y + Math.sin(a) * dist;
+        if (s.elements.includes('CRYO') || s.elements.includes('CRYSTAL')) {
+          this.snowPool.add({
+            x: px,
+            y: py,
+            z: 65 + Math.random() * 55,
+            vx: -Math.sin(a) * 45,
+            vy: Math.cos(a) * 45,
+            vz: -48 - Math.random() * 35,
+            life: 0.75,
+            maxLife: 0.75,
+            color: new THREE.Color(0x80ffff),
+          });
+        }
+        if (s.elements.includes('NANO')) {
+          this.crossPool.add({
+            x: px,
+            y: py,
+            z: 6 + Math.random() * 45,
+            vx: (Math.random() - 0.5) * 20,
+            vy: (Math.random() - 0.5) * 20,
+            vz: 45 + Math.random() * 40,
+            life: 0.65,
+            maxLife: 0.65,
+            color: new THREE.Color(0x39ff14),
+          });
+        }
+        if (s.elements.includes('THERMAL') || s.elements.includes('PLASMA')) {
+          this.orbPool.add({
+            x: px,
+            y: py,
+            z: 50 + Math.random() * 65,
+            vx: (Math.random() - 0.5) * 35,
+            vy: (Math.random() - 0.5) * 35,
+            vz: -75 - Math.random() * 65,
+            life: 0.55,
+            maxLife: 0.55,
+            color: new THREE.Color(Math.random() < 0.5 ? 0xff4518 : 0xffaa22),
+          });
+        }
+        if (s.elements.includes('FLUX')) {
+          this.orbPool.add({
+            x: px,
+            y: py,
+            z: 90 + Math.random() * 35,
+            vx: 0,
+            vy: 0,
+            vz: -145 - Math.random() * 60,
+            life: 0.45,
+            maxLife: 0.45,
+            color: new THREE.Color(0x3898ff),
+          });
+        }
+        if (s.elements.includes('VOID')) {
+          this.orbPool.add({
+            x: px,
+            y: py,
+            z: 10 + Math.random() * 45,
+            vx: (s.x - px) * 1.4 - Math.sin(a) * 65,
+            vy: (s.y - py) * 1.4 + Math.cos(a) * 65,
+            vz: -15,
+            life: 0.5,
+            maxLife: 0.5,
+            color: new THREE.Color(Math.random() < 0.5 ? 0x8b2cf5 : 0xff2e97),
+          });
+        }
+      }
+      if (s.elements.includes('VOLT') && Math.random() < 0.25) {
+        const a1 = Math.random() * Math.PI * 2;
+        const a2 = a1 + (Math.random() - 0.5) * 2.2;
+        const r1 = s.radius * 0.7;
+        this.spawnLightning(
+          [
+            { x: s.x + Math.cos(a1) * r1, y: s.y + Math.sin(a1) * r1 },
+            { x: s.x + Math.cos(a2) * r1, y: s.y + Math.sin(a2) * r1 },
+          ],
+          [0xfff733]
+        );
+      }
     }
     this.pruneMap(this.stormMeshes, alive);
   }

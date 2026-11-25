@@ -683,4 +683,78 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     sim.step(makeInput());
     expect(Math.abs(e.x - -700)).toBeGreaterThanOrEqual(50);
   });
+
+  it('pure FLUX spray deals 0 damage, pushes strongly, leaves 0 puddles, and splashes PRIMED nearby', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    const px = sim.getSnapshot().player.x;
+    const target = sim.combat.spawnEnemy('BASTION', px + 110, 0, 1);
+    target.hasFrontShield = false;
+    const bystander = sim.combat.spawnEnemy('BASTION', px + 165, 50, 1);
+    bystander.hasFrontShield = false;
+
+    queueAndStep(sim, ['FLUX']);
+    sim.step(makeInput({ castAction: 'FORWARD', castHeld: true, aimX: target.x, aimY: 0 }));
+
+    const snap = sim.getSnapshot();
+    expect(target.hp).toBe(target.maxHp);
+    expect(bystander.hp).toBe(bystander.maxHp);
+    expect(target.vx).toBeGreaterThan(100);
+    expect(target.statuses.PRIMED).toBeDefined();
+    expect(bystander.statuses.PRIMED).toBeDefined();
+    expect(snap.pools.length).toBe(0);
+  });
+
+  it('keeps Forward Shield static in place while Self-Cast BARRIER follows player movement', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+
+    // Forward Barrier stays anchored
+    queueAndStep(sim, ['BARRIER']);
+    sim.step(makeInput({ castAction: 'FORWARD', aimX: sim.getSnapshot().player.x + 200, aimY: 0 }));
+    const forwardShieldId = sim.getSnapshot().shields[0]!.id;
+    const initShieldX = sim.getSnapshot().shields[0]!.x;
+
+    // Move player away for > castCooldown (12 ticks = 0.2s)
+    for (let i = 0; i < 12; i++) {
+      sim.step(makeInput({ moveX: -1, moveY: 0 }));
+    }
+    const movedForwardShield = sim.getSnapshot().shields.find((s) => s.id === forwardShieldId)!;
+    expect(movedForwardShield.x).toBe(initShieldX);
+
+    // Self-Cast Barrier follows player (step 15 ticks right so player velocity reverses cleanly)
+    queueAndStep(sim, ['BARRIER']);
+    sim.step(makeInput({ castAction: 'SELF' }));
+    const selfShield = sim.getSnapshot().shields.find((s) => s.id !== forwardShieldId)!;
+    const selfId = selfShield.id;
+    const beforeX = selfShield.x;
+    for (let i = 0; i < 15; i++) {
+      sim.step(makeInput({ moveX: 1, moveY: 0 }));
+    }
+    const afterX = sim.getSnapshot().shields.find((s) => s.id === selfId)!.x;
+    expect(afterX).toBeGreaterThan(beforeX);
+  });
+
+  it('VOID-infused crystal shards steer toward a nearby off-axis enemy', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    const px = sim.getSnapshot().player.x;
+    const offAxisEnemy = sim.combat.spawnEnemy('BASTION', px + 260, 75, 1);
+    offAxisEnemy.hasFrontShield = false;
+
+    queueAndStep(sim, ['VOID', 'FLUX', 'CRYO']);
+    sim.step(makeInput({ castAction: 'FORWARD', aimX: px + 300, aimY: 0 }));
+    const projId = sim.getSnapshot().projectiles[0]!.id;
+    const initialVy = sim.getSnapshot().projectiles[0]!.vy;
+
+    for (let i = 0; i < 6; i++) {
+      sim.step(makeInput({ aimX: px + 300, aimY: 0 }));
+    }
+    const steeredProj = sim.getSnapshot().projectiles.find((p) => p.id === projId)!;
+    expect(steeredProj).toBeDefined();
+    expect(steeredProj.vy).toBeGreaterThan(initialVy);
+  });
 });

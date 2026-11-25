@@ -286,6 +286,7 @@ export interface ShieldBarrierEntity {
   life: number;
   maxLife: number;
   isNova: boolean;
+  followPlayer?: boolean;
   colorHex: number;
   colors: number[];
 }
