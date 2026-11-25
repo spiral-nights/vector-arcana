@@ -1952,6 +1952,150 @@ export class SpellVFX {
     return { style: 6, isKinetic: false, isVoid };
   }
 
+  private emitWallElementParticles(
+    x: number,
+    y: number,
+    z: number,
+    elements: readonly QueueElement[],
+    colors: readonly number[],
+    spreadRadius: number,
+    count: number
+  ): void {
+    const scaled = this.scaleCount(count);
+    if (scaled <= 0) return;
+
+    const vp = this.getVoidPalette(elements, colors);
+    const hasNonVoid = elements.some((e) => e !== 'VOID' && e !== 'BARRIER');
+    const activeEls = elements.filter((e) => e !== 'BARRIER' && !(e === 'VOID' && hasNonVoid));
+
+    if (activeEls.length === 0) {
+      // Pure BARRIER wall: bright upward cyan-white energy motes
+      for (let i = 0; i < scaled; i++) {
+        this.orbPool.add({
+          x: x + (Math.random() - 0.5) * spreadRadius * 2,
+          y: y + (Math.random() - 0.5) * spreadRadius * 2,
+          z: z + Math.random() * 14,
+          vx: (Math.random() - 0.5) * 45,
+          vy: (Math.random() - 0.5) * 45,
+          vz: 45 + Math.random() * 65,
+          life: 0.42 + Math.random() * 0.25,
+          maxLife: 0.67,
+          color: new THREE.Color(0xe6f0ff),
+        });
+      }
+      return;
+    }
+
+    for (let i = 0; i < scaled; i++) {
+      const el = activeEls[i % activeEls.length]!;
+      const ox = x + (Math.random() - 0.5) * spreadRadius * 2;
+      const oy = y + (Math.random() - 0.5) * spreadRadius * 2;
+      const oz = z + Math.random() * 16;
+
+      if (el === 'THERMAL' || el === 'PLASMA') {
+        this.addElementParticle(el, {
+          x: ox,
+          y: oy,
+          z: oz,
+          vx: (Math.random() - 0.5) * 62,
+          vy: (Math.random() - 0.5) * 62,
+          vz: 78 + Math.random() * 88,
+          life: 0.45 + Math.random() * 0.3,
+          maxLife: 0.75,
+        });
+      } else if (el === 'CRYO' || el === 'CRYSTAL') {
+        this.addElementParticle(el, {
+          x: ox,
+          y: oy,
+          z: oz,
+          vx: (Math.random() - 0.5) * 65,
+          vy: (Math.random() - 0.5) * 65,
+          vz: 20 + Math.random() * 52,
+          life: 0.55 + Math.random() * 0.35,
+          maxLife: 0.9,
+        });
+      } else if (el === 'FLUX') {
+        this.addElementParticle(el, {
+          x: ox,
+          y: oy,
+          z: oz,
+          vx: (Math.random() - 0.5) * 85,
+          vy: (Math.random() - 0.5) * 85,
+          vz: 38 + Math.random() * 64,
+          life: 0.42 + Math.random() * 0.25,
+          maxLife: 0.67,
+        });
+      } else if (el === 'VOLT') {
+        this.addElementParticle(el, {
+          x: ox,
+          y: oy,
+          z: oz,
+          vx: (Math.random() - 0.5) * 145,
+          vy: (Math.random() - 0.5) * 145,
+          vz: 30 + Math.random() * 75,
+          life: 0.24 + Math.random() * 0.16,
+          maxLife: 0.4,
+        });
+      } else if (el === 'VOID') {
+        const voidCol = vp.particleColors[i % vp.particleColors.length] ?? ELEMENT_META.VOID.colorHex;
+        this.addElementParticle(
+          'VOID',
+          {
+            x: ox,
+            y: oy,
+            z: oz,
+            vx: (Math.random() - 0.5) * 70,
+            vy: (Math.random() - 0.5) * 70,
+            vz: 35 + Math.random() * 65,
+            life: 0.4 + Math.random() * 0.25,
+            maxLife: 0.65,
+          },
+          voidCol
+        );
+      } else if (el === 'NANO') {
+        this.addElementParticle('NANO', {
+          x: ox,
+          y: oy,
+          z: oz,
+          vx: (Math.random() - 0.5) * 48,
+          vy: (Math.random() - 0.5) * 48,
+          vz: 55 + Math.random() * 65,
+          life: 0.5 + Math.random() * 0.3,
+          maxLife: 0.8,
+        });
+      } else {
+        // KINETIC: stone dust + infused glowing mineral sparks
+        this.addElementParticle(el, {
+          x: ox,
+          y: oy,
+          z: oz,
+          vx: (Math.random() - 0.5) * 58,
+          vy: (Math.random() - 0.5) * 58,
+          vz: 35 + Math.random() * 55,
+          life: 0.42 + Math.random() * 0.25,
+          maxLife: 0.67,
+        });
+      }
+    }
+
+    if (vp.isVoid && hasNonVoid && Math.random() < 0.65) {
+      this.addElementParticle(
+        'VOID',
+        {
+          x: x + (Math.random() - 0.5) * spreadRadius * 1.8,
+          y: y + (Math.random() - 0.5) * spreadRadius * 1.8,
+          z: z + Math.random() * 14,
+          vx: (Math.random() - 0.5) * 65,
+          vy: (Math.random() - 0.5) * 65,
+          vz: 35 + Math.random() * 60,
+          life: 0.45,
+          maxLife: 0.45,
+        },
+        vp.outlineA
+      );
+    }
+  }
+
   private syncWalls(items: readonly WallPylonEntity[], timeSec: number): void {
     const alive = new Set<number>();
     const activePanelKeys = new Set<string>();
@@ -2091,6 +2235,9 @@ export class SpellVFX {
         this.wallMeshes.set(w.id, g);
         this.scene.add(g);
       }
+
+      // Continuous elemental aura emitted directly off each pylon
+      this.emitWallElementParticles(w.x, w.y, 12 + Math.random() * 34, w.elements, w.colors, 16, 1);
     }
 
     const pairs: Array<{ a: WallPylonEntity; b: WallPylonEntity }> = [];
@@ -2214,10 +2361,30 @@ export class SpellVFX {
         }
       });
 
-      // Emit themed elemental particles along forcefield span
-      if (Math.random() < 0.35) {
+      // Richly emit themed elemental particles along the full wall span so its element is unmistakable
+      const emitSamples = 4;
+      for (let s = 0; s < emitSamples; s++) {
         const t = Math.random();
-        this.emitElementEmission(a.x + dx * t, a.y + dy * t, 6 + Math.random() * 28, a.elements, 6);
+        this.emitWallElementParticles(
+          a.x + dx * t,
+          a.y + dy * t,
+          4 + Math.random() * 44,
+          a.elements,
+          a.colors,
+          14,
+          1
+        );
+      }
+      if (ws.style === 4 && Math.random() < 0.18) {
+        const t1 = Math.random();
+        const t2 = Math.min(1, t1 + 0.15 + Math.random() * 0.35);
+        this.spawnLightning(
+          [
+            { x: a.x + dx * t1, y: a.y + dy * t1 },
+            { x: a.x + dx * t2, y: a.y + dy * t2 },
+          ],
+          [p1, p2]
+        );
       }
     }
 
