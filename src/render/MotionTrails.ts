@@ -8,11 +8,13 @@ interface TrailSample {
   x: number;
   y: number;
   z: number;
+  age: number;
 }
 
 interface TrailRecord {
   samples: TrailSample[];
   maxPts: number;
+  maxAge: number;
   halfWidth: number;
   mesh: THREE.Mesh;
   positions: Float32Array;
@@ -46,6 +48,7 @@ export class MotionTrails {
 
   private createTrailRecord(
     maxPts: number,
+    maxAge: number,
     halfWidth: number,
     colorHex: number,
     tailColorHex = colorHex
@@ -65,7 +68,7 @@ export class MotionTrails {
     const material = new THREE.MeshBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.82,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
@@ -77,6 +80,7 @@ export class MotionTrails {
     return {
       samples: [],
       maxPts,
+      maxAge,
       halfWidth,
       mesh,
       positions,
@@ -87,29 +91,61 @@ export class MotionTrails {
     };
   }
 
-  private pushSample(rec: TrailRecord, x: number, y: number, z: number): void {
-    const first = rec.samples[0];
-    if (!first || Math.hypot(x - first.x, y - first.y) >= 3.5) {
-      rec.samples.unshift({ x, y, z });
-      if (rec.samples.length > rec.maxPts) rec.samples.pop();
-    } else {
-      first.x = x;
-      first.y = y;
-      first.z = z;
+  private updateTrailBuffer(
+    rec: TrailRecord,
+    x: number,
+    y: number,
+    z: number,
+    dt: number,
+    emitNew: boolean
+  ): void {
+    for (let i = rec.samples.length - 1; i >= 0; i--) {
+      const s = rec.samples[i]!;
+      s.age += dt;
+      if (s.age >= rec.maxAge) {
+        rec.samples.splice(i, 1);
+      }
+    }
+
+    if (emitNew) {
+      if (rec.samples.length > 0 && Math.hypot(x - rec.samples[0]!.x, y - rec.samples[0]!.y) > 120) {
+        rec.samples.length = 0;
+      }
+      const first = rec.samples[0];
+      if (!first) {
+        rec.samples.push({ x, y, z, age: 0 });
+      } else if (Math.hypot(x - first.x, y - first.y) >= 4.0) {
+        rec.samples.unshift({ x, y, z, age: 0 });
+        if (rec.samples.length > rec.maxPts) rec.samples.pop();
+      } else {
+        first.x = x;
+        first.y = y;
+        first.z = z;
+        first.age = 0;
+      }
     }
 
     const n = rec.samples.length;
     if (n < 2) {
-      rec.positions.fill(0);
+      for (let i = 0; i < rec.maxPts * 2; i++) {
+        rec.positions[i * 3] = 0;
+        rec.positions[i * 3 + 1] = 0;
+        rec.positions[i * 3 + 2] = -9999;
+        rec.colors[i * 3] = 0;
+        rec.colors[i * 3 + 1] = 0;
+        rec.colors[i * 3 + 2] = 0;
+      }
       (rec.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+      (rec.geometry.attributes.color as THREE.BufferAttribute).needsUpdate = true;
       return;
     }
 
     const colTmp = new THREE.Color();
     for (let i = 0; i < rec.maxPts; i++) {
-      const s = rec.samples[Math.min(i, n - 1)]!;
-      const prev = rec.samples[Math.min(Math.max(0, i - 1), n - 1)]!;
-      const next = rec.samples[Math.min(i + 1, n - 1)]!;
+      const idx = Math.min(i, n - 1);
+      const s = rec.samples[idx]!;
+      const prev = rec.samples[Math.max(0, idx - 1)]!;
+      const next = rec.samples[Math.min(n - 1, idx + 1)]!;
       let dx = prev.x - next.x;
       let dy = prev.y - next.y;
       const len = Math.hypot(dx, dy);
@@ -123,9 +159,10 @@ export class MotionTrails {
       const nx = -dy;
       const ny = dx;
 
-      const t = i / Math.max(1, n - 1);
-      const fade = i >= n ? 0 : Math.pow(1 - t, 1.45);
-      const hw = rec.halfWidth * (1 - t * 0.92);
+      const t = Math.min(1, s.age / rec.maxAge);
+      const isTailDup = i >= n;
+      const fade = isTailDup ? 0 : Math.pow(1 - t, 1.65);
+      const hw = isTailDup ? 0 : rec.halfWidth * (1 - t * 0.92);
 
       colTmp.copy(rec.color).lerp(rec.tailColor, t);
       const cr = colTmp.r * fade;
@@ -158,21 +195,25 @@ export class MotionTrails {
     x: number,
     y: number,
     z: number,
+    dt: number,
+    emitNew: boolean,
     maxPts: number,
+    maxAge: number,
     halfWidth: number,
     colorHex: number,
     tailColorHex = colorHex
   ): void {
     let rec = this.trails.get(key);
     if (!rec) {
-      rec = this.createTrailRecord(maxPts, halfWidth, colorHex, tailColorHex);
+      rec = this.createTrailRecord(maxPts, maxAge, halfWidth, colorHex, tailColorHex);
       this.trails.set(key, rec);
     } else {
+      rec.maxAge = maxAge;
       rec.halfWidth = halfWidth;
       rec.color.setHex(colorHex);
       rec.tailColor.setHex(tailColorHex);
     }
-    this.pushSample(rec, x, y, z);
+    this.updateTrailBuffer(rec, x, y, z, dt, emitNew);
   }
 
   private spawnDashGhost(x: number, y: number, angle: number, colorHex: number): void {
@@ -193,19 +234,34 @@ export class MotionTrails {
   }
 
   public update(snapshot: SimSnapshot, dt: number): void {
+    const safeDt = Math.max(0.001, Math.min(0.05, dt));
     const alive = new Set<string>();
     const p = snapshot.player;
     const shipCol = p.queue[0] ? ELEMENT_META[p.queue[0]].colorHex : getShipDef(snapshot.shipId).colorHex;
 
-    // 1. Player wake ribbon & Phase Dash ghost afterimages
+    // 1. Velocity-anchored Player Wake (retracts cleanly when stationary, never tethered to mouse)
     if (snapshot.phase === 'PLAYING' && p.hp > 0) {
       alive.add('player');
       const isDash = p.dashTimer > 0;
-      const tailX = p.x - Math.cos(p.aimAngle) * 14;
-      const tailY = p.y - Math.sin(p.aimAngle) * 14;
-      this.updateEntityTrail('player', tailX, tailY, 12.5, 16, isDash ? 11.5 : 5.6, shipCol, 0x1a6bff);
+      const spd = Math.hypot(p.vx, p.vy);
+      const emitNew = spd > 28 || isDash;
+      const headX = spd > 28 ? p.x - (p.vx / spd) * 10 : p.x;
+      const headY = spd > 28 ? p.y - (p.vy / spd) * 10 : p.y;
+      this.updateEntityTrail(
+        'player',
+        headX,
+        headY,
+        12.5,
+        safeDt,
+        emitNew,
+        16,
+        0.22,
+        isDash ? 11.0 : 5.4,
+        shipCol,
+        0x1a6bff
+      );
 
-      this.dashGhostCooldown = Math.max(0, this.dashGhostCooldown - dt);
+      this.dashGhostCooldown = Math.max(0, this.dashGhostCooldown - safeDt);
       if (isDash && this.dashGhostCooldown <= 0) {
         this.dashGhostCooldown = 0.032;
         this.spawnDashGhost(p.x, p.y, p.aimAngle, shipCol);
@@ -225,7 +281,10 @@ export class MotionTrails {
         pr.x,
         pr.y,
         12,
+        safeDt,
+        true,
         isHeavy ? 9 : 11,
+        0.16,
         isHeavy ? pr.radius * 0.55 : 4.2,
         pr.colorHex,
         tailCol
@@ -240,6 +299,7 @@ export class MotionTrails {
         const key = `e:${e.id}`;
         alive.add(key);
         const col = e.archetype === 'STALKER' ? 0x00f5ff : 0xff2e97;
+        const eSpd = Math.hypot(e.vx, e.vy);
         if (e.archetype === 'STALKER') {
           stalkersAlive.add(e.id);
           const prev = this.lastStalkerPos.get(e.id);
@@ -253,7 +313,18 @@ export class MotionTrails {
           }
           this.lastStalkerPos.set(e.id, { x: e.x, y: e.y });
         }
-        this.updateEntityTrail(key, e.x, e.y, 12, 9, e.archetype === 'STALKER' ? 5.2 : 3.2, col);
+        this.updateEntityTrail(
+          key,
+          e.x,
+          e.y,
+          12,
+          safeDt,
+          eSpd > 22,
+          9,
+          0.18,
+          e.archetype === 'STALKER' ? 5.0 : 3.2,
+          col
+        );
       }
     }
     for (const id of this.lastStalkerPos.keys()) {
@@ -273,7 +344,7 @@ export class MotionTrails {
     // Fade dash ghosts & teleport streaks
     for (let i = this.ghosts.length - 1; i >= 0; i--) {
       const gh = this.ghosts[i]!;
-      gh.life -= dt;
+      gh.life -= safeDt;
       if (gh.life <= 0) {
         this.scene.remove(gh.mesh);
         gh.mesh.geometry.dispose();

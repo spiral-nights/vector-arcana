@@ -547,14 +547,22 @@ export function createStormCloudMaterial(colorA: number, colorB: number, style =
 }
 
 /**
- * Full Vertical Forcefield Wall Panel Shader (with rising organic fire mode for THERMAL walls).
+ * Element-Specific Vertical Barrier Wall Shader:
+ * 0 = Kinetic stone glow seam, 1 = Cryo jagged glacier curtain, 2 = Thermal rising fire wall,
+ * 3 = Flux cascading waterfall, 4 = Volt Tesla lightning fence, 5 = Void dark-matter rift (NormalBlending),
+ * 6 = Nano emerald bio-cross lattice.
  */
-export function createForcefieldWallMaterial(colorA: number, colorB: number, isFire = false): THREE.ShaderMaterial {
+export function createForcefieldWallMaterial(
+  colorA: number,
+  colorB: number,
+  wallStyle = 6,
+  isVoid = false
+): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uColorA: { value: new THREE.Color(colorA) },
       uColorB: { value: new THREE.Color(colorB) },
-      uIsFire: { value: isFire ? 1.0 : 0.0 },
+      uStyle: { value: wallStyle },
       uTime: { value: 0 },
       uOpacity: { value: 1 },
     },
@@ -568,7 +576,7 @@ export function createForcefieldWallMaterial(colorA: number, colorB: number, isF
     fragmentShader: /* glsl */ `
       uniform vec3 uColorA;
       uniform vec3 uColorB;
-      uniform float uIsFire;
+      uniform float uStyle;
       uniform float uTime;
       uniform float uOpacity;
       varying vec2 vUv;
@@ -589,44 +597,107 @@ export function createForcefieldWallMaterial(colorA: number, colorB: number, isF
       }
 
       void main() {
-        if (uIsFire > 0.5) {
-          float n1 = noise(vec2(vUv.x * 7.5, vUv.y * 4.5 - uTime * 3.8));
-          float n2 = noise(vec2(vUv.x * 15.0 + 3.1, vUv.y * 8.0 - uTime * 6.2));
-          float tongues = smoothstep(0.18, 0.95, (1.0 - vUv.y * 0.72) * (0.45 + 0.55 * n1) + n2 * 0.25);
-          float baseEmber = exp(-pow(vUv.y * 6.5, 2.0));
-          vec3 col = mix(uColorA, uColorB, n2) * (tongues * 0.95 + baseEmber * 0.85);
+        int st = int(uStyle + 0.5);
+
+        if (st == 2) {
+          // THERMAL / PLASMA: tall freely licking flames with molten base hearth
+          float n1 = noise(vec2(vUv.x * 8.5, vUv.y * 3.8 - uTime * 4.4));
+          float n2 = noise(vec2(vUv.x * 16.0 + 3.1, vUv.y * 7.5 - uTime * 6.8));
+          float ridge = 0.55 + 0.45 * n1;
+          float flameMask = smoothstep(vUv.y * 0.92, vUv.y * 0.92 + 0.28, ridge + n2 * 0.25);
+          float hearth = exp(-pow(vUv.y * 5.2, 2.0));
+          vec3 hot = mix(uColorA, uColorB, clamp(n2 * 0.8 + hearth * 0.4, 0.0, 1.0));
+          vec3 col = hot * (flameMask * 1.05 + hearth * 0.95);
           float peak = max(col.r, max(col.g, col.b));
           if (peak > 1.2) col *= 1.2 / peak;
-          col *= uOpacity;
-          float alpha = clamp((tongues * 0.65 + baseEmber * 0.5) * uOpacity, 0.0, 0.88);
+          float alpha = clamp((flameMask * 0.82 + hearth * 0.55) * (1.0 - smoothstep(0.86, 1.0, vUv.y)) * uOpacity, 0.0, 0.92);
+          gl_FragColor = vec4(col * uOpacity, alpha);
+          return;
+        }
+
+        if (st == 1) {
+          // CRYO / CRYSTAL: jagged crystalline glacier silhouette & sharp frost facets
+          float spike1 = abs(fract(vUv.x * 5.0 + 0.2) * 2.0 - 1.0);
+          float spike2 = abs(fract(vUv.x * 9.0 + 0.6) * 2.0 - 1.0);
+          float topCut = 0.62 + 0.26 * (1.0 - spike1) + 0.12 * (1.0 - spike2);
+          if (vUv.y > topCut) discard;
+          float edgeGlow = exp(-pow((topCut - vUv.y) * 14.0, 2.0));
+          float facet = smoothstep(0.35, 0.85, noise(vec2(vUv.x * 14.0, vUv.y * 10.0)));
+          float diag = pow(0.5 + 0.5 * sin(vUv.x * 34.0 + vUv.y * 20.0), 8.0) * 0.55;
+          vec3 col = mix(uColorA, uColorB, facet * 0.65) * (0.48 + facet * 0.42)
+            + vec3(0.85, 0.98, 1.0) * (edgeGlow * 0.85 + diag);
+          float baseFrost = exp(-pow(vUv.y * 8.0, 2.0));
+          col += uColorA * baseFrost * 0.7;
+          float peak = max(col.r, max(col.g, col.b));
+          if (peak > 1.2) col *= 1.2 / peak;
+          float alpha = clamp((0.48 + edgeGlow * 0.45 + baseFrost * 0.3) * uOpacity, 0.0, 0.9);
+          gl_FragColor = vec4(col * uOpacity, alpha);
+          return;
+        }
+
+        if (st == 3) {
+          // FLUX: undulating hydro-wave wall with cresting foam ripples
+          float waveTop = 0.72 + 0.14 * sin(vUv.x * 14.0 - uTime * 4.5) + 0.08 * cos(vUv.x * 23.0 + uTime * 3.2);
+          if (vUv.y > waveTop) discard;
+          float crest = exp(-pow((waveTop - vUv.y) * 16.0, 2.0));
+          float n = noise(vec2(vUv.x * 9.0 - uTime * 2.8, vUv.y * 7.0 + uTime * 1.8));
+          float stream = pow(0.5 + 0.5 * sin(vUv.y * 22.0 + n * 5.0 - uTime * 4.2), 3.0);
+          vec3 col = mix(uColorA, vec3(0.45, 0.88, 1.0), stream * 0.55) * (0.55 + n * 0.5)
+            + vec3(0.85, 0.96, 1.0) * crest * 0.9;
+          float peak = max(col.r, max(col.g, col.b));
+          if (peak > 1.2) col *= 1.2 / peak;
+          float alpha = clamp((0.46 + crest * 0.48 + stream * 0.25) * uOpacity, 0.0, 0.88);
+          gl_FragColor = vec4(col * uOpacity, alpha);
+          return;
+        }
+
+        if (st == 4) {
+          // VOLT: high-voltage Tesla lightning fence with 3 crackling arcs
+          float arcs = 0.0;
+          for (int k = 0; k < 3; k++) {
+            float fk = float(k);
+            float centerY = 0.25 + fk * 0.26;
+            float j = (noise(vec2(vUv.x * 22.0 + fk * 7.1, uTime * 18.0 + fk * 3.3)) - 0.5) * 0.16;
+            arcs += exp(-pow((vUv.y - (centerY + j)) * 28.0, 2.0));
+          }
+          float haze = noise(vec2(vUv.x * 12.0, vUv.y * 8.0 + uTime * 9.0)) * 0.22;
+          vec3 col = uColorA * (haze + arcs * 0.85) + vec3(1.0, 0.98, 0.85) * min(1.0, arcs) * 0.72;
+          float peak = max(col.r, max(col.g, col.b));
+          if (peak > 1.25) col *= 1.25 / peak;
+          float alpha = clamp((haze * 0.7 + min(1.0, arcs) * 0.92) * uOpacity, 0.0, 0.95);
+          gl_FragColor = vec4(col * uOpacity, alpha);
+          return;
+        }
+
+        if (st == 5) {
+          // VOID: pitch-black dark-matter rift framed by crackling elemental edges
+          float swirl = noise(vec2(vUv.x * 8.0 - uTime * 1.8, vUv.y * 6.0 + uTime * 2.1));
+          float edgeY = min(vUv.y, 1.0 - vUv.y);
+          float rim = exp(-pow(edgeY * 9.0, 2.0));
+          float tear = pow(0.5 + 0.5 * sin(vUv.x * 18.0 + swirl * 6.0 - uTime * 4.0), 6.0);
+          vec3 darkCore = vec3(0.02, 0.01, 0.04);
+          vec3 edgeGlow = mix(uColorA, uColorB, tear) * (rim * 1.1 + tear * 0.45);
+          vec3 col = mix(darkCore, edgeGlow, clamp(rim + tear * 0.35, 0.0, 1.0));
+          float alpha = clamp((0.86 - abs(vUv.y - 0.5) * 0.2 + rim * 0.15) * uOpacity, 0.0, 0.94);
           gl_FragColor = vec4(col, alpha);
           return;
         }
 
-        float bottomRail = exp(-pow(vUv.y * 12.0, 2.0));
-        float topRail = exp(-pow((1.0 - vUv.y) * 12.0, 2.0));
-        float midBeam = exp(-pow((vUv.y - 0.5) * 5.0, 2.0)) * 0.45;
-
-        float bars = pow(0.5 + 0.5 * sin(vUv.x * 24.0), 6.0) * 0.55;
-        float chev = pow(0.5 + 0.5 * sin(vUv.x * 16.0 - abs(vUv.y - 0.5) * 14.0 - uTime * 5.0), 5.0);
-        float scan = exp(-pow(fract(vUv.y - uTime * 0.75) * 10.0, 2.0)) * 0.5;
-
-        vec3 glassTint = mix(uColorA, uColorB, 0.35) * 0.32;
-        vec3 col = glassTint;
-        col += uColorA * (bottomRail * 1.05 + topRail * 1.05 + midBeam + bars);
-        col += uColorB * (chev * 0.75 + scan);
-        col += vec3(1.0) * (bottomRail + topRail) * 0.22;
-
+        // NANO / BARRIER (st == 6 or fallback): cellular bio-cross energy matrix
+        vec2 cell = fract(vec2(vUv.x * 10.0, vUv.y * 4.5 - uTime * 1.4)) - 0.5;
+        float crossH = step(abs(cell.x), 0.24) * step(abs(cell.y), 0.065);
+        float crossV = step(abs(cell.y), 0.24) * step(abs(cell.x), 0.065);
+        float crossGlyph = max(crossH, crossV);
+        float rim = exp(-pow(vUv.y * 10.0, 2.0)) + exp(-pow((1.0 - vUv.y) * 10.0, 2.0));
+        vec3 col = uColorA * (0.28 + rim * 0.75) + mix(uColorA, uColorB, 0.5) * crossGlyph * 0.85;
         float peak = max(col.r, max(col.g, col.b));
         if (peak > 1.2) col *= 1.2 / peak;
-        col *= uOpacity;
-
-        float alpha = clamp((0.34 + bottomRail * 0.6 + topRail * 0.6 + chev * 0.28 + scan * 0.25) * uOpacity, 0.0, 0.9);
-        gl_FragColor = vec4(col, alpha);
+        float alpha = clamp((0.28 + crossGlyph * 0.42 + rim * 0.45) * uOpacity, 0.0, 0.9);
+        gl_FragColor = vec4(col * uOpacity, alpha);
       }
     `,
     transparent: true,
-    blending: THREE.AdditiveBlending,
+    blending: isVoid || wallStyle === 5 ? THREE.NormalBlending : THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
   });

@@ -1936,6 +1936,22 @@ export class SpellVFX {
     this.pruneMap(this.beamMeshes, alive);
   }
 
+  private getWallStyle(elements: readonly QueueElement[]): {
+    style: number;
+    isKinetic: boolean;
+    isVoid: boolean;
+  } {
+    const isVoid = elements.includes('VOID');
+    const isKinetic = elements.includes('KINETIC');
+    if (isKinetic) return { style: 0, isKinetic: true, isVoid };
+    if (elements.includes('THERMAL') || elements.includes('PLASMA')) return { style: 2, isKinetic: false, isVoid };
+    if (elements.includes('CRYO') || elements.includes('CRYSTAL')) return { style: 1, isKinetic: false, isVoid };
+    if (elements.includes('FLUX')) return { style: 3, isKinetic: false, isVoid };
+    if (elements.includes('VOLT')) return { style: 4, isKinetic: false, isVoid };
+    if (isVoid) return { style: 5, isKinetic: false, isVoid: true };
+    return { style: 6, isKinetic: false, isVoid };
+  }
+
   private syncWalls(items: readonly WallPylonEntity[], timeSec: number): void {
     const alive = new Set<number>();
     const activePanelKeys = new Set<string>();
@@ -1955,34 +1971,123 @@ export class SpellVFX {
       const payloadColors = w.colors.filter((c) => c !== 0xe6f0ff);
       const p1 = vp.isVoid ? vp.outlineA : (payloadColors[0] ?? w.colorHex);
       const p2 = vp.isVoid ? vp.outlineB : (payloadColors[1] ?? p1);
+      const ws = this.getWallStyle(w.elements);
 
       if (!g) {
         g = new THREE.Group();
-        const cyl = new THREE.CylinderGeometry(7, 10, 56, 6, 1);
-        cyl.rotateX(Math.PI / 2);
-        const wire = new THREE.WireframeGeometry(cyl);
-        g.add(
-          new THREE.Mesh(
-            cyl,
-            new THREE.MeshStandardMaterial({
-              color: vp.isVoid ? 0x060508 : 0x182236,
-              emissive: p1,
-              emissiveIntensity: vp.isVoid ? 0.15 : 0.45,
-              roughness: 0.4,
-              metalness: 0.4,
-            })
-          )
-        );
-        g.add(
-          new THREE.LineSegments(
-            wire,
-            new THREE.LineBasicMaterial({ color: p1 })
-          )
-        );
-        const cap = createGlowSprite(p2, 24, 0.25);
-        cap.position.z = 28;
-        g.add(cap);
-        g.position.set(w.x, w.y, 28);
+        if (ws.isKinetic) {
+          // Stacked faceted rock monolith boulder pylon
+          const rockBase = new THREE.DodecahedronGeometry(14, 0);
+          rockBase.scale(1.0, 1.0, 1.85);
+          g.add(
+            new THREE.Mesh(
+              rockBase,
+              new THREE.MeshStandardMaterial({
+                color: ws.isVoid ? 0x07060a : 0x3b271a,
+                emissive: p1,
+                emissiveIntensity: 0.25,
+                roughness: 0.72,
+                metalness: 0.15,
+              })
+            ),
+            new THREE.LineSegments(
+              new THREE.WireframeGeometry(rockBase),
+              new THREE.LineBasicMaterial({ color: p1, transparent: true, opacity: 0.7 })
+            )
+          );
+        } else if (ws.style === 1) {
+          // Cluster of sharp tilted hexagonal ice crystal spires
+          const iceMat = new THREE.MeshStandardMaterial({
+            color: 0x0f3b52,
+            emissive: p1,
+            emissiveIntensity: 0.6,
+            roughness: 0.18,
+            metalness: 0.55,
+          });
+          const specs = [
+            { x: 0, y: 0, h: 56, r: 9, rx: 0, ry: 0 },
+            { x: -6, y: 4, h: 38, r: 6.5, rx: 0.16, ry: -0.22 },
+            { x: 6, y: -4, h: 34, r: 6.0, rx: -0.18, ry: 0.2 },
+          ];
+          for (const sp of specs) {
+            const cone = new THREE.ConeGeometry(sp.r, sp.h, 6);
+            cone.rotateX(Math.PI / 2);
+            const m = new THREE.Mesh(cone, iceMat);
+            m.position.set(sp.x, sp.y, sp.h * 0.5 - 26);
+            m.rotation.set(sp.rx, sp.ry, 0);
+            g.add(m);
+          }
+          const cap = createGlowSprite(0x80ffff, 26, 0.28);
+          cap.position.z = 28;
+          g.add(cap);
+        } else if (ws.style === 4) {
+          // Tesla coil tower with glowing brass/yellow coil rings
+          const rod = new THREE.CylinderGeometry(3.5, 6.5, 54, 8);
+          rod.rotateX(Math.PI / 2);
+          g.add(
+            new THREE.Mesh(
+              rod,
+              new THREE.MeshStandardMaterial({ color: 0x1a2234, emissive: p1, emissiveIntensity: 0.35, metalness: 0.6 })
+            )
+          );
+          for (const rz of [-14, 0, 14]) {
+            g.add(
+              new THREE.Mesh(
+                buildRibbonGeometry(createPolygonPoints(14, 10.5), 2.8, true, rz),
+                createNeonRibbonMaterial(p1, 1.3, 0.95)
+              )
+            );
+          }
+          const tip = new THREE.Mesh(
+            new THREE.SphereGeometry(6.5, 10, 10),
+            new THREE.MeshBasicMaterial({ color: 0xffffff })
+          );
+          tip.position.z = 28;
+          g.add(tip, createGlowSprite(p1, 30, 0.35));
+        } else if (ws.style === 5) {
+          // Void pitch-black obsidian monolith with tilted glowing halo ring
+          const spire = new THREE.OctahedronGeometry(11, 0);
+          spire.scale(0.95, 0.95, 2.5);
+          g.add(
+            new THREE.Mesh(
+              spire,
+              new THREE.MeshStandardMaterial({ color: 0x040308, emissive: p1, emissiveIntensity: 0.16, roughness: 0.4 })
+            )
+          );
+          const ring = new THREE.Mesh(
+            buildRibbonGeometry(createPolygonPoints(16, 15), 2.8, true, 0),
+            createNeonRibbonMaterial(p1, 1.25, 0.92)
+          );
+          ring.rotation.x = 0.65;
+          g.add(ring);
+        } else if (ws.style === 2) {
+          // Thermal obsidian lava brazier obelisk
+          const base = new THREE.CylinderGeometry(7, 11, 46, 6);
+          base.rotateX(Math.PI / 2);
+          g.add(
+            new THREE.Mesh(
+              base,
+              new THREE.MeshStandardMaterial({ color: 0x1f0c06, emissive: p1, emissiveIntensity: 0.55, roughness: 0.55 })
+            ),
+            createGlowSprite(p1, 34, 0.34)
+          );
+        } else {
+          // Flux / Nano streamlined elemental emitter pylon
+          const cyl = new THREE.CylinderGeometry(6, 9, 52, 8);
+          cyl.rotateX(Math.PI / 2);
+          g.add(
+            new THREE.Mesh(
+              cyl,
+              new THREE.MeshStandardMaterial({ color: 0x102438, emissive: p1, emissiveIntensity: 0.48, roughness: 0.3 })
+            ),
+            new THREE.Mesh(
+              buildRibbonGeometry(createPolygonPoints(12, 11), 2.6, true, 16),
+              createNeonRibbonMaterial(p2, 1.2, 0.9)
+            ),
+            createGlowSprite(p2, 26, 0.26)
+          );
+        }
+        g.position.set(w.x, w.y, 26);
         this.wallMeshes.set(w.id, g);
         this.scene.add(g);
       }
@@ -2011,26 +2116,85 @@ export class SpellVFX {
       const payloadColors = a.colors.filter((c) => c !== 0xe6f0ff);
       const p1 = vpPanel.isVoid ? vpPanel.outlineA : (payloadColors[0] ?? a.colorHex);
       const p2 = vpPanel.isVoid ? vpPanel.outlineB : (payloadColors[1] ?? p1);
-      const isFire = a.elements.includes('THERMAL') || a.elements.includes('PLASMA');
+      const ws = this.getWallStyle(a.elements);
 
       if (!panelGroup) {
         panelGroup = new THREE.Group();
-        const panelGeo = new THREE.PlaneGeometry(dist, 54);
-        panelGeo.rotateX(Math.PI / 2);
-        const wallMesh = new THREE.Mesh(panelGeo, createForcefieldWallMaterial(p1, p2, isFire));
-        wallMesh.position.z = 27;
-        panelGroup.add(wallMesh);
+        if (ws.isKinetic) {
+          // Solid 3D craggy rock barrier slabs between pylons with glowing mineral seams
+          const segs = 3;
+          const slabW = dist / segs + 6;
+          const stoneMat = new THREE.MeshStandardMaterial({
+            color: ws.isVoid ? 0x07060a : 0x3a2618,
+            emissive: p1,
+            emissiveIntensity: 0.2,
+            roughness: 0.78,
+            metalness: 0.14,
+          });
+          const seamMat = new THREE.LineBasicMaterial({ color: p1, transparent: true, opacity: 0.75 });
+          for (let s = 0; s < segs; s++) {
+            const frac = (s + 0.5) / segs - 0.5;
+            const h = 38 + (s % 2 === 0 ? 10 : -4);
+            const slabGeo = new THREE.BoxGeometry(slabW, 20, h);
+            const slab = new THREE.Mesh(slabGeo, stoneMat);
+            slab.position.set(frac * dist, (s % 2 === 0 ? 1 : -1) * 2.5, h * 0.5);
+            slab.rotation.z = (s % 2 === 0 ? 1 : -1) * 0.08;
+            const wire = new THREE.LineSegments(new THREE.WireframeGeometry(slabGeo), seamMat);
+            wire.position.copy(slab.position);
+            wire.rotation.copy(slab.rotation);
+            panelGroup.add(slab, wire);
+          }
+          // Glowing ground fracture seam along stone base
+          panelGroup.add(
+            new THREE.Mesh(
+              buildRibbonGeometry([{ x: -dist * 0.5, y: 0 }, { x: dist * 0.5, y: 0 }], 3.8, false, 1.5),
+              createNeonRibbonMaterial(p1, 1.2, 0.88)
+            )
+          );
+        } else {
+          const panelH = ws.style === 2 ? 64 : 56;
+          const panelGeo = new THREE.PlaneGeometry(dist, panelH);
+          panelGeo.rotateX(Math.PI / 2);
+          const wallMesh = new THREE.Mesh(panelGeo, createForcefieldWallMaterial(p1, p2, ws.style, ws.isVoid));
+          wallMesh.position.z = panelH * 0.5;
+          panelGroup.add(wallMesh);
 
-        panelGroup.add(
-          new THREE.Mesh(
-            buildRibbonGeometry([{ x: -dist * 0.5, y: 0 }, { x: dist * 0.5, y: 0 }], 3.5, false, 1.5),
-            createNeonRibbonMaterial(p1, 1.25, 0.9)
-          ),
-          new THREE.Mesh(
-            buildRibbonGeometry([{ x: -dist * 0.5, y: 0 }, { x: dist * 0.5, y: 0 }], 3.0, false, 54),
-            createNeonRibbonMaterial(p2, 1.2, 0.85)
-          )
-        );
+          // Ground contact energy ribbon for all non-stone walls
+          panelGroup.add(
+            new THREE.Mesh(
+              buildRibbonGeometry([{ x: -dist * 0.5, y: 0 }, { x: dist * 0.5, y: 0 }], 3.5, false, 1.4),
+              createNeonRibbonMaterial(p1, 1.25, 0.9)
+            )
+          );
+
+          if (ws.style === 1) {
+            // Protruding 3D crystal ice shards along Cryo glacier wall
+            const shardMat = new THREE.MeshStandardMaterial({
+              color: 0x0e425e,
+              emissive: 0x80ffff,
+              emissiveIntensity: 0.55,
+              roughness: 0.2,
+              metalness: 0.5,
+            });
+            for (const f of [-0.26, 0.04, 0.28]) {
+              const cone = new THREE.ConeGeometry(7.5, 42, 5);
+              cone.rotateX(Math.PI / 2);
+              const sp = new THREE.Mesh(cone, shardMat);
+              sp.position.set(dist * f, 0, 22);
+              sp.rotation.y = f * 0.9;
+              panelGroup.add(sp);
+            }
+          } else if (ws.style === 4 || ws.style === 5 || ws.style === 6) {
+            // Top conductor / containment rail for Volt fence, Void rift, and Nano matrix
+            panelGroup.add(
+              new THREE.Mesh(
+                buildRibbonGeometry([{ x: -dist * 0.5, y: 0 }, { x: dist * 0.5, y: 0 }], 2.8, false, panelH),
+                createNeonRibbonMaterial(p2, 1.2, 0.85)
+              )
+            );
+          }
+        }
+
         this.wallPanels.set(panelKey, panelGroup);
         this.scene.add(panelGroup);
       }
@@ -2038,11 +2202,17 @@ export class SpellVFX {
       panelGroup.position.set((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, 0);
       panelGroup.rotation.z = Math.atan2(dy, dx);
       const fade = Math.min(1, (Math.min(a.life, b.life) / Math.max(0.1, a.maxLife)) * 2.0);
-      const wallMesh = panelGroup.children[0] as THREE.Mesh;
-      setShaderUniform(wallMesh.material, 'uTime', timeSec);
-      setShaderUniform(wallMesh.material, 'uOpacity', fade);
-      setShaderUniform((panelGroup.children[1] as THREE.Mesh).material, 'uOpacity', fade);
-      setShaderUniform((panelGroup.children[2] as THREE.Mesh).material, 'uOpacity', fade);
+      panelGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
+          const mat = child.material;
+          if (mat instanceof THREE.ShaderMaterial) {
+            if (mat.uniforms.uTime) mat.uniforms.uTime.value = timeSec;
+            if (mat.uniforms.uOpacity) mat.uniforms.uOpacity.value = fade;
+          } else if (mat instanceof THREE.LineBasicMaterial) {
+            mat.opacity = 0.75 * fade;
+          }
+        }
+      });
 
       // Emit themed elemental particles along forcefield span
       if (Math.random() < 0.35) {

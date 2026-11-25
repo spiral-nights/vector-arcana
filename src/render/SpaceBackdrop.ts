@@ -1,15 +1,6 @@
 import * as THREE from 'three';
 
-const SECTOR_THEMES = [0x00d8ff, 0xff5522, 0x44f5ff, 0x39ff88, 0xb429ff] as const;
-
-interface DeepMonolith {
-  obj: THREE.LineSegments;
-  baseX: number;
-  baseY: number;
-  rotSpeedX: number;
-  rotSpeedY: number;
-  rotSpeedZ: number;
-}
+const SECTOR_STAR_TINTS = [0x6fd8ff, 0xffaa66, 0x70f8ff, 0x6bffb8, 0xc878ff] as const;
 
 function createStarSpriteTexture(): THREE.CanvasTexture {
   const size = 32;
@@ -20,7 +11,7 @@ function createStarSpriteTexture(): THREE.CanvasTexture {
   const half = size * 0.5;
   const g = ctx.createRadialGradient(half, half, 0, half, half, half);
   g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.35, 'rgba(255,255,255,0.65)');
+  g.addColorStop(0.32, 'rgba(255,255,255,0.62)');
   g.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
@@ -31,134 +22,77 @@ function createStarSpriteTexture(): THREE.CanvasTexture {
 
 export class SpaceBackdrop {
   private readonly starGroup = new THREE.Group();
-  private readonly subGridMat: THREE.LineBasicMaterial;
-  private readonly monolithMats: THREE.LineBasicMaterial[] = [];
-  private readonly monoliths: DeepMonolith[] = [];
+  private readonly tintedMat: THREE.PointsMaterial;
   private currentThemeIdx = -1;
 
   constructor(scene: THREE.Scene) {
     const tex = createStarSpriteTexture();
 
-    // Layer A: Deep parallax starfield in two depth strata
-    const starPalette = [0xffffff, 0x70d8ff, 0x9ab8ff, 0x66ffe0, 0xc89bff];
-    const starCount = 860;
-    const positions = new Float32Array(starCount * 3);
-    const colors = new Float32Array(starCount * 3);
-    const col = new THREE.Color();
-    for (let i = 0; i < starCount; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * 4600;
-      positions[i * 3 + 1] = (Math.random() - 0.5) * 3400;
-      positions[i * 3 + 2] = -140 - Math.random() * 420;
-      col.setHex(starPalette[i % starPalette.length]!);
-      const bright = 0.4 + Math.random() * 0.6;
-      colors[i * 3] = col.r * bright;
-      colors[i * 3 + 1] = col.g * bright;
-      colors[i * 3 + 2] = col.b * bright;
+    // Subtle deep white starfield well below the arena plane
+    const baseCount = 480;
+    const basePos = new Float32Array(baseCount * 3);
+    const baseCol = new Float32Array(baseCount * 3);
+    for (let i = 0; i < baseCount; i++) {
+      basePos[i * 3] = (Math.random() - 0.5) * 4600;
+      basePos[i * 3 + 1] = (Math.random() - 0.5) * 3400;
+      basePos[i * 3 + 2] = -260 - Math.random() * 420;
+      const b = 0.32 + Math.random() * 0.45;
+      baseCol[i * 3] = b * 0.85;
+      baseCol[i * 3 + 1] = b * 0.92;
+      baseCol[i * 3 + 2] = b;
     }
-    const starGeo = new THREE.BufferGeometry();
-    starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    starGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    const starPts = new THREE.Points(
-      starGeo,
+    const baseGeo = new THREE.BufferGeometry();
+    baseGeo.setAttribute('position', new THREE.BufferAttribute(basePos, 3));
+    baseGeo.setAttribute('color', new THREE.BufferAttribute(baseCol, 3));
+    const basePts = new THREE.Points(
+      baseGeo,
       new THREE.PointsMaterial({
-        size: 11,
+        size: 7.5,
         map: tex,
         vertexColors: true,
         transparent: true,
-        opacity: 0.78,
+        opacity: 0.48,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       })
     );
-    starPts.frustumCulled = false;
-    this.starGroup.add(starPts);
-    scene.add(this.starGroup);
+    basePts.frustumCulled = false;
 
-    // Layer B: Sub-floor architectural circuit lattice at z = -54
-    const subPts: number[] = [];
-    const extentX = 1650;
-    const extentY = 1200;
-    const step = 220;
-    for (let x = -extentX; x <= extentX; x += step) {
-      subPts.push(x, -extentY, -54, x, extentY, -54);
+    // Sparse sector-tinted distant stars for calm atmosphere without clutter
+    const tintCount = 170;
+    const tintPos = new Float32Array(tintCount * 3);
+    for (let i = 0; i < tintCount; i++) {
+      tintPos[i * 3] = (Math.random() - 0.5) * 4400;
+      tintPos[i * 3 + 1] = (Math.random() - 0.5) * 3200;
+      tintPos[i * 3 + 2] = -280 - Math.random() * 380;
     }
-    for (let y = -extentY; y <= extentY; y += step) {
-      subPts.push(-extentX, y, -54, extentX, y, -54);
-    }
-    // Diagonal cyber trusses every other cell
-    for (let x = -extentX; x < extentX; x += step * 2) {
-      for (let y = -extentY; y < extentY; y += step * 2) {
-        subPts.push(x, y, -58, x + step, y + step, -58);
-      }
-    }
-    const subGeo = new THREE.BufferGeometry();
-    subGeo.setAttribute('position', new THREE.Float32BufferAttribute(subPts, 3));
-    this.subGridMat = new THREE.LineBasicMaterial({
-      color: 0x00d8ff,
+    const tintGeo = new THREE.BufferGeometry();
+    tintGeo.setAttribute('position', new THREE.BufferAttribute(tintPos, 3));
+    this.tintedMat = new THREE.PointsMaterial({
+      size: 9.0,
+      map: tex,
+      color: SECTOR_STAR_TINTS[0],
       transparent: true,
-      opacity: 0.16,
+      opacity: 0.32,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    const subGrid = new THREE.LineSegments(subGeo, this.subGridMat);
-    subGrid.frustumCulled = false;
-    scene.add(subGrid);
+    const tintPts = new THREE.Points(tintGeo, this.tintedMat);
+    tintPts.frustumCulled = false;
 
-    // Layer C: Slowly rotating deep geometric monolith rings/polyhedra below floor
-    const geos = [
-      new THREE.WireframeGeometry(new THREE.OctahedronGeometry(95, 0)),
-      new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(110, 0)),
-      new THREE.WireframeGeometry(new THREE.TorusGeometry(130, 18, 6, 12)),
-    ];
-    for (let i = 0; i < 14; i++) {
-      const geo = geos[i % geos.length]!;
-      const mat = new THREE.LineBasicMaterial({
-        color: 0x00d8ff,
-        transparent: true,
-        opacity: 0.15 + (i % 3) * 0.04,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      });
-      const mesh = new THREE.LineSegments(geo, mat);
-      const bx = ((i % 5) - 2) * 520 + (Math.random() - 0.5) * 180;
-      const by = (Math.floor(i / 5) - 1) * 480 + (Math.random() - 0.5) * 160;
-      mesh.position.set(bx, by, -150 - (i % 4) * 55);
-      mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-      scene.add(mesh);
-      this.monolithMats.push(mat);
-      this.monoliths.push({
-        obj: mesh,
-        baseX: bx,
-        baseY: by,
-        rotSpeedX: (Math.random() - 0.5) * 0.16,
-        rotSpeedY: (Math.random() - 0.5) * 0.16,
-        rotSpeedZ: (Math.random() - 0.5) * 0.2,
-      });
-    }
-
+    this.starGroup.add(basePts, tintPts);
+    scene.add(this.starGroup);
     this.setSectorTheme(1);
   }
 
   public setSectorTheme(wave: number): void {
-    const idx = Math.max(0, wave - 1) % SECTOR_THEMES.length;
+    const idx = Math.max(0, wave - 1) % SECTOR_STAR_TINTS.length;
     if (idx === this.currentThemeIdx) return;
     this.currentThemeIdx = idx;
-    const col = SECTOR_THEMES[idx]!;
-    this.subGridMat.color.setHex(col);
-    for (const mat of this.monolithMats) {
-      mat.color.setHex(col);
-    }
+    this.tintedMat.color.setHex(SECTOR_STAR_TINTS[idx]!);
   }
 
-  public update(dt: number, timeSec: number, focusX: number, focusY: number): void {
-    this.starGroup.position.set(-focusX * 0.14, -focusY * 0.14, 0);
-    for (let i = 0; i < this.monoliths.length; i++) {
-      const m = this.monoliths[i]!;
-      m.obj.rotation.x += m.rotSpeedX * dt;
-      m.obj.rotation.y += m.rotSpeedY * dt;
-      m.obj.rotation.z += m.rotSpeedZ * dt;
-      m.obj.position.x = m.baseX - focusX * 0.08 + Math.sin(timeSec * 0.25 + i) * 24;
-      m.obj.position.y = m.baseY - focusY * 0.08 + Math.cos(timeSec * 0.22 + i) * 20;
-    }
+  public update(_dt: number, _timeSec: number, focusX: number, focusY: number): void {
+    this.starGroup.position.set(-focusX * 0.08, -focusY * 0.08, 0);
   }
 }
