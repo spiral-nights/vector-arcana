@@ -7,6 +7,7 @@ import { SceneManager } from './render/SceneManager';
 import { SpaceBackdrop } from './render/SpaceBackdrop';
 import { SpellVFX } from './render/SpellVFX';
 import { WarpingGrid } from './render/WarpingGrid';
+import { setWatercolorTime } from './render/WatercolorAssets';
 import { GameSim } from './sim/GameSim';
 import { getShipDef } from './sim/Ships';
 import { BaseElement, CastMode, ELEMENT_META, FIXED_DT } from './sim/types';
@@ -71,6 +72,7 @@ const sim = new GameSim('TITLE');
 
 let settings: GameSettings = loadSettings();
 let hitStopTimer = 0;
+let calloutCooldown = 0;
 let highScores = loadHighScores();
 
 const keysDown = new Set<string>();
@@ -108,11 +110,17 @@ function applyAllSettings(next: GameSettings): void {
   musicPlayer.setMuted(settings.muted);
   musicPlayer.setVolumes(settings.masterVolume, settings.musicVolume);
   sceneManager.setTilt(settings.cameraTilt);
+  sceneManager.setArtStyle(settings.artStyle);
   sceneManager.setBloomIntensity(settings.bloomIntensity);
   sceneManager.setScreenShakeScale(settings.screenShake);
   sceneManager.setPixelRatioCap(settings.pixelRatioCap);
+  spaceBackdrop.setArtStyle(settings.artStyle);
+  warpingGrid.setArtStyle(settings.artStyle);
   warpingGrid.setWarpEnabled(settings.gridWarp);
+  entityRenderer.setArtStyle(settings.artStyle);
+  spellVFX.setArtStyle(settings.artStyle);
   spellVFX.setParticleQuality(settings.particleQuality);
+  motionTrails.setArtStyle(settings.artStyle);
   motionTrails.setParticleQuality(settings.particleQuality);
   sim.setDifficulty(settings.difficulty);
   sim.setShip(settings.selectedShip);
@@ -292,9 +300,23 @@ let lastTime = performance.now();
 let accumulator = 0;
 let hudTimer = 0;
 
+const COMIC_KILL_WORDS = ['BAM!', 'BOM!', 'POP!'] as const;
+
+function pickCalloutVariant(elements: readonly string[]): 'FIRE' | 'CYAN' | 'MAGENTA' | 'LIME' {
+  if (elements.includes('NANO')) return 'LIME';
+  if (elements.includes('CRYO') || elements.includes('CRYSTAL') || elements.includes('FLUX')) return 'CYAN';
+  if (elements.includes('VOID') || elements.includes('PLASMA')) return 'MAGENTA';
+  return 'FIRE';
+}
+
 function frame(now: number): void {
   const rawDt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
+  calloutCooldown = Math.max(0, calloutCooldown - rawDt);
+  const timeSec = now / 1000;
+  if (settings.artStyle === 'WATERCOLOR_INK') {
+    setWatercolorTime(timeSec);
+  }
 
   if (hitStopTimer > 0) {
     hitStopTimer = Math.max(0, hitStopTimer - rawDt);
@@ -359,6 +381,18 @@ function frame(now: number): void {
     } else if (ev.type === 'vfx_element_explosion') {
       spellVFX.spawnElementExplosion(ev.x, ev.y, ev.radius, ev.elements, ev.colors, ev.power);
       warpingGrid.stampColorSplash(ev.x, ev.y, ev.radius, ev.colors[0] ?? 0x00f5ff, 0.95);
+      if (settings.artStyle === 'WATERCOLOR_INK' && (ev.power >= 1.35 || calloutCooldown <= 0)) {
+        const pt = sceneManager.worldToScreen(ev.x, ev.y, 24);
+        if (pt.visible) {
+          const word = ev.elements.includes('VOLT')
+            ? 'ZAP!'
+            : ev.elements.includes('FLUX')
+            ? 'SPLASH!'
+            : COMIC_KILL_WORDS[Math.floor(Math.random() * COMIC_KILL_WORDS.length)]!;
+          hud.spawnComicCallout(pt.x, pt.y - 12, word, pickCalloutVariant(ev.elements));
+          calloutCooldown = 0.14;
+        }
+      }
     } else if (ev.type === 'vfx_enemy_death') {
       spellVFX.spawnEnemyDeath(
         ev.x,
@@ -372,6 +406,15 @@ function frame(now: number): void {
       sceneManager.addScreenShake(ev.isBoss ? 12 : 3.5);
       sceneManager.triggerImpactPost(ev.x, ev.y, ev.isBoss ? 0.011 : 0.0025, ev.isBoss ? 0.024 : 0);
       warpingGrid.stampColorSplash(ev.x, ev.y, ev.radius * 3.2, ev.colorHex, ev.isBoss ? 1.0 : 0.65);
+      if (settings.artStyle === 'WATERCOLOR_INK' && (ev.isBoss || calloutCooldown <= 0)) {
+        const pt = sceneManager.worldToScreen(ev.x, ev.y, 24);
+        if (pt.visible) {
+          const word = ev.isBoss ? 'BOOM!' : COMIC_KILL_WORDS[Math.floor(Math.random() * COMIC_KILL_WORDS.length)]!;
+          const variant = ev.isBoss ? 'FIRE' : ev.statuses.includes('PRIMED') ? 'CYAN' : 'FIRE';
+          hud.spawnComicCallout(pt.x, pt.y - 16, word, variant);
+          calloutCooldown = ev.isBoss ? 0.05 : 0.14;
+        }
+      }
     } else if (ev.type === 'damage_number') {
       if (settings.damageNumbers) {
         const pt = sceneManager.worldToScreen(ev.x, ev.y, 28);
@@ -384,11 +427,24 @@ function frame(now: number): void {
       spellVFX.spawnFloorDecal(ev.x, ev.y, 64, 0x00f5ff, 4.5);
       warpingGrid.stampColorSplash(ev.x, ev.y, 130, 0x00f5ff, 0.9);
       sceneManager.triggerImpactPost(ev.x, ev.y, 0.0055, 0.015);
+      if (settings.artStyle === 'WATERCOLOR_INK') {
+        const pt = sceneManager.worldToScreen(ev.x, ev.y, 24);
+        if (pt.visible) {
+          hud.spawnComicCallout(pt.x, pt.y - 14, 'CRACK!', 'CYAN');
+        }
+      }
     } else if (ev.type === 'beam_clash') {
       spellVFX.spawnBurst(ev.x, ev.y, ev.colorHex, 8, 1.1);
       spellVFX.spawnShards(ev.x, ev.y, [0x00f5ff, 0xb429ff], 3, 0.9);
       sceneManager.addScreenShake(2.5);
       sceneManager.triggerImpactPost(ev.x, ev.y, 0.004, 0);
+      if (settings.artStyle === 'WATERCOLOR_INK' && calloutCooldown <= 0) {
+        const pt = sceneManager.worldToScreen(ev.x, ev.y, 20);
+        if (pt.visible) {
+          hud.spawnComicCallout(pt.x, pt.y - 10, 'ZAP!', 'MAGENTA');
+          calloutCooldown = 0.18;
+        }
+      }
     } else if (ev.type === 'wave_start') {
       hud.showWaveBanner(ev.wave, ev.isBoss);
     } else if (ev.type === 'gate_open') {
@@ -412,7 +468,6 @@ function frame(now: number): void {
   warpingGrid.setArenaBoundary(snapshot.arenaBoundary);
   warpingGrid.setSectorTheme(snapshot.wave);
   spaceBackdrop.setSectorTheme(snapshot.wave);
-  const timeSec = now / 1000;
   spaceBackdrop.update(rawDt, timeSec, snapshot.player.x, snapshot.player.y);
   sceneManager.setCameraTarget(snapshot.player.x, snapshot.player.y, aimWorld.x, aimWorld.y, rawDt);
   if (snapshot.player.moving || snapshot.player.dashTimer > 0) {

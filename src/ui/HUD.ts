@@ -1,4 +1,4 @@
-import { GameSettings, ParticleQuality } from '../settings';
+import { ArtStyle, GameSettings, ParticleQuality } from '../settings';
 import { getAugmentDef } from '../sim/Augments';
 import { SHIP_CATALOG } from '../sim/Ships';
 import { formatSpellPreview } from '../sim/SpellResolver';
@@ -96,8 +96,10 @@ export class HUD {
   private readonly bossFill: HTMLElement;
   private readonly waveBanner: HTMLElement;
   private readonly combatTextLayer: HTMLElement;
+  private readonly comicCalloutLayer: HTMLElement;
   private readonly damageVignette: HTMLElement;
   private readonly statsPanel: HTMLElement;
+  private artStyle: ArtStyle = 'VECTOR_NEON';
   private damageFlashTimer: number | null = null;
   private hitJoltTimer: number | null = null;
   private readonly minimapCanvas: HTMLCanvasElement;
@@ -109,6 +111,7 @@ export class HUD {
   private readonly channelFill: HTMLElement;
   private readonly hintEl: HTMLElement;
   private readonly slotEls = new Map<QueueElement, HTMLElement>();
+  private readonly styleBtn: HTMLButtonElement;
   private readonly tiltBtn: HTMLButtonElement;
   private readonly ctrlBtn: HTMLButtonElement;
   private readonly muteBtn: HTMLButtonElement;
@@ -173,6 +176,7 @@ export class HUD {
           <div class="augments-strip" id="hud-augments"></div>
         </div>
         <div class="hud-controls">
+          <button class="hud-btn" id="btn-style">STYLE: NEON</button>
           <button class="hud-btn active" id="btn-tilt">TILT: 26°</button>
           <button class="hud-btn" id="btn-ctrl">CLASSIC</button>
           <button class="hud-btn" id="btn-mute">AUDIO: ON</button>
@@ -182,6 +186,7 @@ export class HUD {
 
       <div class="damage-vignette" id="damage-vignette"></div>
       <div class="combat-text-layer" id="combat-text-layer"></div>
+      <div class="comic-callout-layer" id="comic-callout-layer"></div>
 
       <div class="boss-bar-wrap" id="boss-wrap">
         <div class="boss-label">SECTOR WARDEN</div>
@@ -211,6 +216,11 @@ export class HUD {
           <div class="modal-sub">
             Queue up to 3 elements with <strong>Q W E R</strong> / <strong>A S D F</strong>.<br/>
             Hold <strong>LMB</strong> or <strong>Arrows</strong> to move · <strong>RMB</strong> Forward Cast · <strong>Space</strong> / <strong>Shift+RMB</strong> Nova · <strong>MMB/C</strong> Self · <strong>Shift+LMB</strong> Phase Dash.
+          </div>
+          <div class="hangar-label">Art Style</div>
+          <div class="seg-group" style="max-width:340px;margin:0 auto 14px;">
+            <button class="seg-btn active" data-art-style="VECTOR_NEON">Vector Neon</button>
+            <button class="seg-btn" data-art-style="WATERCOLOR_INK">Ink &amp; Wash</button>
           </div>
           <div class="hangar-label">Select Construct Vessel</div>
           <div class="ship-grid" id="title-ship-grid"></div>
@@ -275,6 +285,13 @@ export class HUD {
 
             <div class="settings-section">
               <div class="settings-heading">Graphics</div>
+              <div class="setting-row">
+                <div class="setting-label"><span>Art Style</span></div>
+                <div class="seg-group">
+                  <button class="seg-btn active" data-art-style="VECTOR_NEON">Vector Neon</button>
+                  <button class="seg-btn" data-art-style="WATERCOLOR_INK">Ink &amp; Wash</button>
+                </div>
+              </div>
               <div class="setting-row">
                 <div class="setting-label"><span>Bloom Glow</span><span class="setting-val" id="val-bloom">100%</span></div>
                 <input class="setting-slider" id="set-bloom" type="range" min="0" max="150" value="100" />
@@ -345,6 +362,7 @@ export class HUD {
     this.bossFill = this.root.querySelector('#boss-fill')!;
     this.waveBanner = this.root.querySelector('#wave-banner')!;
     this.combatTextLayer = this.root.querySelector('#combat-text-layer')!;
+    this.comicCalloutLayer = this.root.querySelector('#comic-callout-layer')!;
     this.damageVignette = this.root.querySelector('#damage-vignette')!;
     this.statsPanel = this.root.querySelector('.hud-stats')!;
     this.minimapCanvas = this.root.querySelector('#hud-minimap')!;
@@ -354,6 +372,7 @@ export class HUD {
     this.channelLabel = this.root.querySelector('#hud-channel-label')!;
     this.channelFill = this.root.querySelector('#hud-channel-fill')!;
     this.hintEl = this.root.querySelector('#hud-hint')!;
+    this.styleBtn = this.root.querySelector('#btn-style')!;
     this.tiltBtn = this.root.querySelector('#btn-tilt')!;
     this.ctrlBtn = this.root.querySelector('#btn-ctrl')!;
     this.muteBtn = this.root.querySelector('#btn-mute')!;
@@ -398,6 +417,11 @@ export class HUD {
       this.slotEls.set(el, slot);
     }
 
+    this.styleBtn.addEventListener('click', () => {
+      callbacks.onSettingsChange({
+        artStyle: this.artStyle === 'WATERCOLOR_INK' ? 'VECTOR_NEON' : 'WATERCOLOR_INK',
+      });
+    });
     this.tiltBtn.addEventListener('click', callbacks.onToggleTilt);
     this.ctrlBtn.addEventListener('click', callbacks.onToggleControls);
     this.muteBtn.addEventListener('click', callbacks.onToggleMute);
@@ -459,14 +483,25 @@ export class HUD {
         callbacks.onSettingsChange({ pixelRatioCap: Number(ratioBtn.dataset.pixelRatio) === 1 ? 1 : 2 });
         return;
       }
+      const artBtn = target.closest<HTMLElement>('[data-art-style]');
+      if (artBtn) {
+        callbacks.onSettingsChange({ artStyle: artBtn.dataset.artStyle as ArtStyle });
+        return;
+      }
       const shipCard = target.closest<HTMLElement>('[data-ship-id]');
       if (shipCard) {
         callbacks.onSettingsChange({ selectedShip: shipCard.dataset.shipId as ShipId });
       }
     });
 
-    this.titleShipGrid.addEventListener('click', (ev) => {
-      const shipCard = (ev.target as HTMLElement).closest<HTMLElement>('[data-ship-id]');
+    this.startModal.addEventListener('click', (ev) => {
+      const target = ev.target as HTMLElement;
+      const artBtn = target.closest<HTMLElement>('[data-art-style]');
+      if (artBtn) {
+        callbacks.onSettingsChange({ artStyle: artBtn.dataset.artStyle as ArtStyle });
+        return;
+      }
+      const shipCard = target.closest<HTMLElement>('[data-ship-id]');
       if (shipCard) {
         callbacks.onSettingsChange({ selectedShip: shipCard.dataset.shipId as ShipId });
       }
@@ -482,6 +517,15 @@ export class HUD {
   }
 
   public applySettings(s: GameSettings): void {
+    this.artStyle = s.artStyle;
+    const isWc = s.artStyle === 'WATERCOLOR_INK';
+    document.body.classList.toggle('style-watercolor', isWc);
+    this.styleBtn.textContent = isWc ? 'STYLE: INK' : 'STYLE: NEON';
+    this.styleBtn.classList.toggle('active', isWc);
+    for (const el of this.root.querySelectorAll<HTMLElement>('[data-art-style]')) {
+      el.classList.toggle('active', el.dataset.artStyle === s.artStyle);
+    }
+
     this.setTilt(s.cameraTilt);
     this.setPreset(s.controlPreset);
     this.setMuted(s.muted);
@@ -551,6 +595,32 @@ export class HUD {
     }, big ? 820 : 620);
   }
 
+  public spawnComicCallout(
+    screenX: number,
+    screenY: number,
+    word: string,
+    variant: 'FIRE' | 'CYAN' | 'MAGENTA' | 'LIME' = 'FIRE'
+  ): void {
+    while (this.comicCalloutLayer.childElementCount >= 7) {
+      this.comicCalloutLayer.firstElementChild?.remove();
+    }
+    const el = document.createElement('span');
+    el.className = `comic-callout variant-${variant.toLowerCase()}`;
+    el.setAttribute('data-text', word);
+    const tilt = ((Math.random() * 2 - 1) * 14).toFixed(1);
+    el.style.setProperty('--tilt', `${tilt}deg`);
+    el.style.left = `${Math.round(screenX)}px`;
+    el.style.top = `${Math.round(screenY)}px`;
+    const fill = document.createElement('span');
+    fill.className = 'comic-callout-fill';
+    fill.textContent = word;
+    el.appendChild(fill);
+    this.comicCalloutLayer.appendChild(el);
+    window.setTimeout(() => {
+      el.remove();
+    }, 580);
+  }
+
   public setMuted(muted: boolean): void {
     this.muteBtn.textContent = muted ? 'AUDIO: OFF' : 'AUDIO: ON';
   }
@@ -615,7 +685,8 @@ export class HUD {
     const scale = w / (ARENA_HALF_W * 2);
 
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = 'rgba(3, 5, 12, 0.94)';
+    const isWc = this.artStyle === 'WATERCOLOR_INK';
+    ctx.fillStyle = isWc ? '#0b0f1a' : 'rgba(3, 5, 12, 0.94)';
     ctx.fillRect(0, 0, w, h);
 
     // Arena floor polygon shape
@@ -628,17 +699,17 @@ export class HUD {
         ctx.lineTo(toX(v.x), toY(v.y));
       }
       ctx.closePath();
-      ctx.fillStyle = 'rgba(9, 16, 36, 0.95)';
+      ctx.fillStyle = isWc ? 'rgba(15, 22, 40, 0.96)' : 'rgba(9, 16, 36, 0.95)';
       ctx.fill();
-      ctx.strokeStyle = 'rgba(0, 229, 255, 0.55)';
-      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = isWc ? '#38e8ff' : 'rgba(0, 229, 255, 0.55)';
+      ctx.lineWidth = isWc ? 1.8 : 1.4;
       ctx.stroke();
     }
 
     // Subtle grid
-    ctx.strokeStyle = 'rgba(26, 107, 255, 0.14)';
     ctx.lineWidth = 1;
     for (let gx = 1; gx < 6; gx++) {
+      ctx.strokeStyle = isWc ? 'rgba(168, 56, 255, 0.25)' : 'rgba(26, 107, 255, 0.14)';
       const px = (gx / 6) * w;
       ctx.beginPath();
       ctx.moveTo(px, 0);
@@ -646,6 +717,7 @@ export class HUD {
       ctx.stroke();
     }
     for (let gy = 1; gy < 4; gy++) {
+      ctx.strokeStyle = isWc ? 'rgba(31, 162, 255, 0.28)' : 'rgba(26, 107, 255, 0.14)';
       const py = (gy / 4) * h;
       ctx.beginPath();
       ctx.moveTo(0, py);

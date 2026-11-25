@@ -1,8 +1,14 @@
 import * as THREE from 'three';
-import { ParticleQuality } from '../settings';
+import { ArtStyle, ParticleQuality } from '../settings';
 import { getShipDef } from '../sim/Ships';
 import { ELEMENT_META, SimSnapshot } from '../sim/types';
 import { buildRibbonGeometry, createNeonRibbonMaterial } from './NeonShaders';
+import {
+  buildInkOutlineGeometry,
+  createSumiInkMaterial,
+  createWatercolorTrailMaterial,
+  getWatercolorAssets,
+} from './WatercolorAssets';
 
 interface TrailSample {
   x: number;
@@ -36,10 +42,28 @@ export class MotionTrails {
   private readonly ghosts: DashGhost[] = [];
   private dashGhostCooldown = 0;
   private particleQuality: ParticleQuality = 'HIGH';
+  private artStyle: ArtStyle = 'VECTOR_NEON';
   private readonly lastStalkerPos = new Map<number, { x: number; y: number }>();
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
+  }
+
+  public setArtStyle(style: ArtStyle): void {
+    if (this.artStyle === style) return;
+    this.artStyle = style;
+    for (const rec of this.trails.values()) {
+      this.scene.remove(rec.mesh);
+      rec.geometry.dispose();
+      (rec.mesh.material as THREE.Material).dispose();
+    }
+    this.trails.clear();
+    for (const gh of this.ghosts) {
+      this.scene.remove(gh.mesh);
+      gh.mesh.geometry.dispose();
+      (gh.mesh.material as THREE.Material).dispose();
+    }
+    this.ghosts.length = 0;
   }
 
   public setParticleQuality(quality: ParticleQuality): void {
@@ -55,7 +79,15 @@ export class MotionTrails {
   ): TrailRecord {
     const positions = new Float32Array(maxPts * 2 * 3);
     const colors = new Float32Array(maxPts * 2 * 3);
+    const uvs = new Float32Array(maxPts * 2 * 2);
     const indices: number[] = [];
+    for (let i = 0; i < maxPts; i++) {
+      const u = i / Math.max(1, maxPts - 1);
+      uvs[i * 4] = u;
+      uvs[i * 4 + 1] = 0;
+      uvs[i * 4 + 2] = u;
+      uvs[i * 4 + 3] = 1;
+    }
     for (let i = 0; i < maxPts - 1; i++) {
       const v0 = i * 2;
       indices.push(v0, v0 + 1, v0 + 2, v0 + 2, v0 + 1, v0 + 3);
@@ -63,25 +95,30 @@ export class MotionTrails {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     geometry.setIndex(indices);
 
-    const material = new THREE.MeshBasicMaterial({
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.82,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
+    const isWc = this.artStyle === 'WATERCOLOR_INK';
+    const material = isWc
+      ? createWatercolorTrailMaterial(getWatercolorAssets().brushStrokeTex)
+      : new THREE.MeshBasicMaterial({
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.82,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.frustumCulled = false;
+    if (isWc) mesh.renderOrder = 9;
     this.scene.add(mesh);
 
     return {
       samples: [],
       maxPts,
       maxAge,
-      halfWidth,
+      halfWidth: isWc ? halfWidth * 1.35 : halfWidth,
       mesh,
       positions,
       colors,
@@ -223,12 +260,14 @@ export class MotionTrails {
       { x: -8, y: 0 },
       { x: -14, y: -15.5 },
     ];
+    const isWc = this.artStyle === 'WATERCOLOR_INK';
     const mesh = new THREE.Mesh(
-      buildRibbonGeometry(pts, 2.8, true, 13.5),
-      createNeonRibbonMaterial(colorHex, 1.25, 0.72)
+      isWc ? buildInkOutlineGeometry(pts, 3.2, true, 13.5, 2.0, 0.45) : buildRibbonGeometry(pts, 2.8, true, 13.5),
+      isWc ? createSumiInkMaterial(0.75, 0.5) : createNeonRibbonMaterial(colorHex, 1.25, 0.72)
     );
     mesh.position.set(x, y, 0);
     mesh.rotation.z = angle;
+    if (isWc) mesh.renderOrder = 14;
     this.scene.add(mesh);
     this.ghosts.push({ mesh, life: 0.28, maxLife: 0.28 });
   }

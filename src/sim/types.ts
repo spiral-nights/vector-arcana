@@ -68,6 +68,8 @@ export interface ChannelState {
   maxDuration: number;
   tickTimer: number;
   beamId: number | null;
+  range?: number;
+  spread?: number;
 }
 
 export interface ChargeState {

@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { ArtStyle } from '../settings';
+import { createPaperSubstrateMaterial, getWatercolorAssets } from './WatercolorAssets';
 
 const SECTOR_STAR_TINTS = [0x6fd8ff, 0xffaa66, 0x70f8ff, 0x6bffb8, 0xc878ff] as const;
 
@@ -21,11 +23,15 @@ function createStarSpriteTexture(): THREE.CanvasTexture {
 }
 
 export class SpaceBackdrop {
+  private readonly scene: THREE.Scene;
   private readonly starGroup = new THREE.Group();
   private readonly tintedMat: THREE.PointsMaterial;
   private currentThemeIdx = -1;
+  private artStyle: ArtStyle = 'VECTOR_NEON';
+  private paperMesh: THREE.Mesh | null = null;
 
   constructor(scene: THREE.Scene) {
+    this.scene = scene;
     const tex = createStarSpriteTexture();
 
     // Subtle deep white starfield well below the arena plane
@@ -83,6 +89,26 @@ export class SpaceBackdrop {
     this.starGroup.add(basePts, tintPts);
     scene.add(this.starGroup);
     this.setSectorTheme(1);
+  }
+
+  public setArtStyle(style: ArtStyle): void {
+    if (this.artStyle === style) return;
+    this.artStyle = style;
+    const isWatercolor = style === 'WATERCOLOR_INK';
+    this.starGroup.visible = !isWatercolor;
+    if (isWatercolor && !this.paperMesh) {
+      const assets = getWatercolorAssets();
+      const geo = new THREE.PlaneGeometry(4600, 3600);
+      const mat = createPaperSubstrateMaterial(assets.paperTileTex, assets.paperCloudTex);
+      this.paperMesh = new THREE.Mesh(geo, mat);
+      this.paperMesh.position.set(0, 0, -18);
+      this.paperMesh.renderOrder = -10;
+      this.paperMesh.frustumCulled = false;
+      this.scene.add(this.paperMesh);
+    }
+    if (this.paperMesh) {
+      this.paperMesh.visible = isWatercolor;
+    }
   }
 
   public setSectorTheme(wave: number): void {

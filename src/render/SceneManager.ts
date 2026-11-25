@@ -4,10 +4,18 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { ArtStyle } from '../settings';
 import { DEFAULT_RECT_BOUNDARY } from '../sim/ArenaGeometry';
 import { ARENA_HALF_H, ARENA_HALF_W, Vec2 } from '../sim/types';
 import { createGlowSprite } from './GlowUtil';
 import { buildRibbonGeometry, createNeonRibbonMaterial } from './NeonShaders';
+import {
+  buildInkOutlineGeometry,
+  createDropShadowMaterial,
+  createSumiInkMaterial,
+  createWatercolorWashMaterial,
+  getPolygonWashTexture,
+} from './WatercolorAssets';
 
 const SECTOR_BORDER_COLORS = [0x00d8ff, 0xff5522, 0x44f5ff, 0x39ff88, 0xb429ff] as const;
 
@@ -114,8 +122,12 @@ export class SceneManager {
   private readonly hitVec = new THREE.Vector3();
 
   private readonly borderGroup = new THREE.Group();
+  private artStyle: ArtStyle = 'VECTOR_NEON';
+  private userBloomIntensity = 1.0;
   private currentThemeWave = -1;
   private lastBoundaryKey = '';
+  private lastBoundary: readonly Vec2[] = DEFAULT_RECT_BOUNDARY;
+  private lastWaveNum = 1;
 
   private tiltEnabled = true;
   private shakeIntensity = 0;
@@ -185,8 +197,10 @@ export class SceneManager {
   }
 
   public setArenaBoundary(boundary: readonly Vec2[], wave: number): void {
+    this.lastBoundary = boundary;
+    this.lastWaveNum = wave;
     const themeIdx = Math.max(0, wave - 1) % SECTOR_BORDER_COLORS.length;
-    const key = `${themeIdx}:${boundary.map((v) => `${v.x},${v.y}`).join(';')}`;
+    const key = `${this.artStyle}:${themeIdx}:${boundary.map((v) => `${v.x},${v.y}`).join(';')}`;
     if (key === this.lastBoundaryKey) return;
     this.lastBoundaryKey = key;
     this.currentThemeWave = themeIdx;
@@ -210,6 +224,56 @@ export class SceneManager {
       const len = Math.max(1, Math.hypot(dx, dy));
       return { x: v.x + (dx / len) * 16, y: v.y + (dy / len) * 16 };
     });
+
+    if (this.artStyle === 'WATERCOLOR_INK') {
+      const borderGlow = new THREE.Mesh(
+        buildRibbonGeometry(boundary, 11.0, true, 1.0),
+        createNeonRibbonMaterial(0x1fa2ff, 1.05, 0.56)
+      );
+      borderGlow.renderOrder = 3;
+      const outerWash = new THREE.Mesh(
+        buildRibbonGeometry(outerPts, 5.2, true, 0.8),
+        createNeonRibbonMaterial(0xa838ff, 0.95, 0.42)
+      );
+      outerWash.renderOrder = 3;
+      const inkBorder = new THREE.Mesh(
+        buildInkOutlineGeometry(boundary, 6.2, true, 3.0, 4.0, 0.9),
+        createSumiInkMaterial(0.98, 0.65)
+      );
+      inkBorder.renderOrder = 14;
+      this.borderGroup.add(borderGlow, outerWash, inkBorder);
+
+      const capPts = createPolygonPts(6, 12);
+      const stamp = getPolygonWashTexture('arena-beacon-hex', capPts, 0.32);
+      for (const v of boundary) {
+        const shadow = new THREE.Mesh(
+          new THREE.PlaneGeometry(stamp.size * 0.92, stamp.size * 0.92),
+          createDropShadowMaterial(stamp.texture, 0.58)
+        );
+        shadow.position.set(v.x + 6, v.y - 8, 1.2);
+        shadow.renderOrder = 5;
+
+        const wash = new THREE.Mesh(
+          new THREE.PlaneGeometry(stamp.size, stamp.size),
+          createWatercolorWashMaterial(stamp.texture, colHex, undefined, undefined, 0.92)
+        );
+        wash.position.set(v.x + 2.4, v.y - 2.0, 4.0);
+        wash.renderOrder = 10;
+
+        const inkCap = new THREE.Mesh(
+          buildInkOutlineGeometry(capPts, 3.4, true, 6.0, 2.0, 0.45),
+          createSumiInkMaterial(0.97, 0.55)
+        );
+        inkCap.position.set(v.x, v.y, 0);
+        inkCap.renderOrder = 15;
+
+        const glow = createGlowSprite(colHex, 36, 0.22);
+        glow.position.set(v.x, v.y, 3.0);
+        glow.renderOrder = 8;
+        this.borderGroup.add(shadow, glow, wash, inkCap);
+      }
+      return;
+    }
 
     // Primary neon border ribbon rail + soft outer rail
     this.borderGroup.add(
@@ -281,6 +345,32 @@ export class SceneManager {
     beaconMat.dispose();
   }
 
+  public setArtStyle(style: ArtStyle): void {
+    if (this.artStyle === style) return;
+    this.artStyle = style;
+    const isWatercolor = style === 'WATERCOLOR_INK';
+    this.scene.background = new THREE.Color(isWatercolor ? 0x0b0f1a : 0x04050c);
+    this.impactPass.uniforms.uVignette!.value = isWatercolor ? 0.36 : 0.24;
+    this.applyBloomParams();
+    this.lastBoundaryKey = '';
+    this.setArenaBoundary(this.lastBoundary, this.lastWaveNum);
+  }
+
+  private applyBloomParams(): void {
+    const clamped = this.userBloomIntensity;
+    this.bloomPass.enabled = clamped > 0.01;
+    if (this.artStyle === 'WATERCOLOR_INK') {
+      // Tight selective neon bloom (> 0.72 luminance threshold) so black ink outlines stay razor-sharp
+      this.bloomPass.threshold = 0.72;
+      this.bloomPass.radius = 0.2;
+      this.bloomPass.strength = 0.4 * clamped;
+    } else {
+      this.bloomPass.threshold = 0.64;
+      this.bloomPass.radius = 0.36;
+      this.bloomPass.strength = 0.56 * clamped;
+    }
+  }
+
   public setSectorTheme(wave: number): void {
     const idx = Math.max(0, wave - 1) % SECTOR_BORDER_COLORS.length;
     if (idx !== this.currentThemeWave) {
@@ -289,9 +379,8 @@ export class SceneManager {
   }
 
   public setBloomIntensity(intensity: number): void {
-    const clamped = Math.max(0, Math.min(1.5, intensity));
-    this.bloomPass.enabled = clamped > 0.01;
-    this.bloomPass.strength = 0.56 * clamped;
+    this.userBloomIntensity = Math.max(0, Math.min(1.5, intensity));
+    this.applyBloomParams();
   }
 
   public setScreenShakeScale(scale: number): void {

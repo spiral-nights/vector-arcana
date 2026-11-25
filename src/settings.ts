@@ -1,6 +1,7 @@
 import { ControlPreset, DifficultyId, ShipId } from './sim/types';
 
 export type ParticleQuality = 'LOW' | 'MEDIUM' | 'HIGH' | 'ULTRA';
+export type ArtStyle = 'VECTOR_NEON' | 'WATERCOLOR_INK';
 
 export interface GameSettings {
   muted: boolean;
@@ -17,6 +18,7 @@ export interface GameSettings {
   gridWarp: boolean;
   pixelRatioCap: 1 | 2;
   selectedShip: ShipId;
+  artStyle: ArtStyle;
 }
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -34,6 +36,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   gridWarp: true,
   pixelRatioCap: 2,
   selectedShip: 'VANGUARD',
+  artStyle: 'VECTOR_NEON',
 };
 
 const SETTINGS_KEY = 'vector-arcana-settings-v1';
@@ -80,6 +83,10 @@ export function loadSettings(): GameSettings {
         p.selectedShip === 'PRISM'
           ? p.selectedShip
           : DEFAULT_SETTINGS.selectedShip,
+      artStyle:
+        p.artStyle === 'VECTOR_NEON' || p.artStyle === 'WATERCOLOR_INK'
+          ? p.artStyle
+          : DEFAULT_SETTINGS.artStyle,
     };
   } catch {
     return { ...DEFAULT_SETTINGS };

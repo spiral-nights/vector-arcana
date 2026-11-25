@@ -1,9 +1,18 @@
 import * as THREE from 'three';
+import { ArtStyle } from '../settings';
 import { computeBlockedRayLength } from '../sim/ArenaGeometry';
 import { getShipDef } from '../sim/Ships';
 import { ELEMENT_META, EnemyEntity, QueueElement, ShipId, SimSnapshot } from '../sim/types';
 import { createGlowSprite } from './GlowUtil';
 import { buildRibbonGeometry, createNeonRibbonMaterial, setShaderUniform } from './NeonShaders';
+import {
+  buildInkOutlineGeometry,
+  createDropShadowMaterial,
+  createSumiInkMaterial,
+  createWatercolorWashMaterial,
+  getPolygonWashTexture,
+  setWatercolorWashColor,
+} from './WatercolorAssets';
 
 function createArcPts(radius: number, span: number, segs = 26): Array<{ x: number; y: number }> {
   const pts: Array<{ x: number; y: number }> = [];
@@ -33,13 +42,42 @@ function setRibbonColor(mesh: THREE.Mesh, colorHex: number): void {
   }
 }
 
+function getEnemyWatercolorPalette(archetype: EnemyEntity['archetype']): {
+  base: number;
+  highlight: number;
+  pool: number;
+} {
+  switch (archetype) {
+    case 'SWARMER':
+      return { base: 0xff2a85, highlight: 0xff8dc4, pool: 0xa30b4d };
+    case 'BASTION':
+      return { base: 0x38d8ff, highlight: 0xe0f8ff, pool: 0x0c749e };
+    case 'STALKER':
+      return { base: 0x00c8ff, highlight: 0x85ecff, pool: 0x086e99 };
+    case 'PYRO_SPRAYER':
+      return { base: 0xff6a00, highlight: 0xffe066, pool: 0xa62e00 };
+    case 'GEO_BOMBER':
+      return { base: 0xd98842, highlight: 0xffd494, pool: 0x733c12 };
+    case 'WEAVER':
+      return { base: 0xc44dff, highlight: 0xf5a6ff, pool: 0x621299 };
+    case 'SPLITTER':
+      return { base: 0xffe600, highlight: 0xfff899, pool: 0xb87600 };
+    case 'WARDEN':
+      return { base: 0xff2a85, highlight: 0xffad66, pool: 0x8f0d47 };
+  }
+}
+
 export class EntityRenderer {
   private readonly scene: THREE.Scene;
+  private artStyle: ArtStyle = 'VECTOR_NEON';
   private readonly playerGroup = new THREE.Group();
+  private readonly playerGroundRing: THREE.Mesh;
   private readonly playerHullGroup = new THREE.Group();
   private currentShipId: ShipId | null = null;
   private shipChevrons: THREE.Mesh[] = [];
-  private noseTipMesh!: THREE.Mesh;
+  private noseTipMesh: THREE.Mesh | null = null;
+  private playerShadowMesh: THREE.Mesh | null = null;
+  private playerWashMesh: THREE.Mesh | null = null;
   private readonly shipGlow: THREE.Sprite;
   private readonly muzzleSparkle: THREE.Group;
   private thrusterMesh!: THREE.Mesh;
@@ -66,11 +104,11 @@ export class EntityRenderer {
     this.scene = scene;
 
     // Ground altitude shadow ring for pseudo-3D depth
-    const groundRing = new THREE.Mesh(
+    this.playerGroundRing = new THREE.Mesh(
       buildRibbonGeometry(createPolygonPts(24, 18), 2.2, true, -13.2),
       createNeonRibbonMaterial(0x00a8ff, 0.75, 0.32)
     );
-    this.playerGroup.add(groundRing);
+    this.playerGroup.add(this.playerGroundRing);
 
     this.playerGroup.add(this.playerHullGroup);
     this.rebuildPlayerHull('VANGUARD');
@@ -219,6 +257,84 @@ export class EntityRenderer {
     this.scene.add(this.gatePointer);
   }
 
+  public setArtStyle(style: ArtStyle): void {
+    if (this.artStyle === style) return;
+    this.artStyle = style;
+    const isWatercolor = style === 'WATERCOLOR_INK';
+    this.playerGroundRing.visible = !isWatercolor;
+
+    for (const group of this.enemyMeshes.values()) {
+      this.scene.remove(group);
+      this.disposeGroup(group);
+    }
+    this.enemyMeshes.clear();
+
+    for (let i = 0; i < 3; i++) {
+      this.pipSlots[i] = null;
+      const pip = this.pipMeshes[i]!;
+      while (pip.children.length > 0) {
+        const child = pip.children[0]!;
+        pip.remove(child);
+        this.disposeGroup(child);
+      }
+      pip.visible = false;
+    }
+
+    this.rebuildPlayerHull(this.currentShipId ?? 'VANGUARD');
+  }
+
+  private createWatercolorEntityVisual(
+    cacheKey: string,
+    outerPts: ReadonlyArray<{ x: number; y: number }>,
+    innerStrokes: Array<{ pts: ReadonlyArray<{ x: number; y: number }>; w?: number; closed?: boolean }>,
+    baseColor: number,
+    highlightColor: number,
+    poolColor: number,
+    shadowZ: number,
+    inkWidth = 3.8
+  ): { shadowMesh: THREE.Mesh; washMesh: THREE.Mesh; glow: THREE.Sprite; inkGroup: THREE.Group } {
+    const stamp = getPolygonWashTexture(cacheKey, outerPts, 0.28);
+
+    const shadowGeo = new THREE.PlaneGeometry(stamp.size, stamp.size);
+    shadowGeo.translate(stamp.centerX, stamp.centerY, 0);
+    const shadowMesh = new THREE.Mesh(shadowGeo, createDropShadowMaterial(stamp.texture, 0.6));
+    shadowMesh.position.set(10, -13, shadowZ);
+    shadowMesh.scale.set(0.92, 0.92, 1);
+    shadowMesh.renderOrder = 5;
+
+    const glow = createGlowSprite(baseColor, stamp.size * 1.15, 0.24);
+    glow.position.set(0, 0, 0.8);
+    glow.renderOrder = 8;
+
+    const washGeo = new THREE.PlaneGeometry(stamp.size, stamp.size);
+    washGeo.translate(stamp.centerX, stamp.centerY, 0);
+    const washMesh = new THREE.Mesh(
+      washGeo,
+      createWatercolorWashMaterial(stamp.texture, baseColor, highlightColor, poolColor, 0.92)
+    );
+    washMesh.position.set(2.8, -2.4, 1.5);
+    washMesh.renderOrder = 10;
+
+    const inkGroup = new THREE.Group();
+    const outerInk = new THREE.Mesh(
+      buildInkOutlineGeometry(outerPts, inkWidth, true, 5.0, 2.2, 0.52),
+      createSumiInkMaterial(0.98, 0.58)
+    );
+    outerInk.renderOrder = 15;
+    inkGroup.add(outerInk);
+
+    for (const seg of innerStrokes) {
+      const innerInk = new THREE.Mesh(
+        buildInkOutlineGeometry(seg.pts, seg.w ?? 2.2, seg.closed ?? false, 5.4, 1.4, 0.35),
+        createSumiInkMaterial(0.95, 0.45)
+      );
+      innerInk.renderOrder = 15;
+      inkGroup.add(innerInk);
+    }
+
+    return { shadowMesh, washMesh, glow, inkGroup };
+  }
+
   private rebuildPlayerHull(shipId: ShipId): void {
     this.currentShipId = shipId;
     while (this.playerHullGroup.children.length > 0) {
@@ -226,10 +342,147 @@ export class EntityRenderer {
       this.playerHullGroup.remove(child);
       this.disposeGroup(child);
     }
+    if (this.playerShadowMesh) {
+      this.playerGroup.remove(this.playerShadowMesh);
+      this.disposeGroup(this.playerShadowMesh);
+      this.playerShadowMesh = null;
+    }
+    this.playerWashMesh = null;
+    this.noseTipMesh = null;
     this.shipChevrons = [];
 
     const shipDef = getShipDef(shipId);
     const baseHex = shipDef.colorHex;
+
+    if (this.artStyle === 'WATERCOLOR_INK') {
+      let outerPts: Array<{ x: number; y: number }>;
+      let innerStrokes: Array<{ pts: Array<{ x: number; y: number }>; w?: number; closed?: boolean }>;
+      let thrusterPts: Array<{ x: number; y: number }>;
+
+      if (shipId === 'SPECTRE') {
+        outerPts = [
+          { x: 27, y: 3.2 },
+          { x: -16, y: 20 },
+          { x: -11, y: 0 },
+          { x: -16, y: -20 },
+          { x: 27, y: -3.2 },
+          { x: 14, y: 0 },
+        ];
+        innerStrokes = [
+          {
+            pts: [
+              { x: 16, y: 0 },
+              { x: -9, y: 11.5 },
+              { x: -5, y: 0 },
+              { x: -9, y: -11.5 },
+            ],
+            closed: true,
+            w: 2.2,
+          },
+          { pts: [{ x: 18, y: 0 }, { x: 4, y: 0 }], w: 2.0 },
+        ];
+        thrusterPts = [
+          { x: -13, y: 6.5 },
+          { x: -30, y: 2.5 },
+          { x: -16, y: 0 },
+          { x: -30, y: -2.5 },
+          { x: -13, y: -6.5 },
+        ];
+      } else if (shipId === 'TITAN') {
+        outerPts = [
+          { x: 22, y: 7.5 },
+          { x: 10, y: 18.5 },
+          { x: -14, y: 18.5 },
+          { x: -18, y: 9 },
+          { x: -18, y: -9 },
+          { x: -14, y: -18.5 },
+          { x: 10, y: -18.5 },
+          { x: 22, y: -7.5 },
+        ];
+        innerStrokes = [
+          {
+            pts: [
+              { x: 14, y: 5 },
+              { x: 4, y: 11.5 },
+              { x: -10, y: 11.5 },
+              { x: -10, y: -11.5 },
+              { x: 4, y: -11.5 },
+              { x: 14, y: -5 },
+            ],
+            closed: true,
+            w: 2.3,
+          },
+          { pts: [{ x: 14, y: 0 }, { x: -10, y: 0 }], w: 2.0 },
+        ];
+        thrusterPts = [
+          { x: -16, y: 8 },
+          { x: -30, y: 4 },
+          { x: -24, y: 0 },
+          { x: -30, y: -4 },
+          { x: -16, y: -8 },
+        ];
+      } else if (shipId === 'PRISM') {
+        outerPts = [
+          { x: 26, y: 0 },
+          { x: 2, y: 17 },
+          { x: -16, y: 10 },
+          { x: -12, y: 0 },
+          { x: -16, y: -10 },
+          { x: 2, y: -17 },
+        ];
+        innerStrokes = [
+          { pts: createPolygonPts(6, 7.5, 0), closed: true, w: 2.1 },
+          { pts: [{ x: 24, y: 0 }, { x: 7.5, y: 0 }], w: 2.0 },
+        ];
+        thrusterPts = [{ x: -12, y: 5 }, { x: -29, y: 0 }, { x: -12, y: -5 }];
+      } else {
+        outerPts = [
+          { x: 25, y: 0 },
+          { x: -15, y: 16.5 },
+          { x: -9, y: 0 },
+          { x: -15, y: -16.5 },
+        ];
+        innerStrokes = [
+          {
+            pts: [
+              { x: 14, y: 0 },
+              { x: 2, y: 4.8 },
+              { x: -5, y: 0 },
+              { x: 2, y: -4.8 },
+            ],
+            closed: true,
+            w: 2.2,
+          },
+          { pts: [{ x: 2, y: 10 }, { x: -10, y: 6.5 }], w: 2.0 },
+          { pts: [{ x: 2, y: -10 }, { x: -10, y: -6.5 }], w: 2.0 },
+        ];
+        thrusterPts = [{ x: -12, y: 4.5 }, { x: -28, y: 0 }, { x: -12, y: -4.5 }];
+      }
+
+      const vis = this.createWatercolorEntityVisual(
+        `ship-${shipId}`,
+        outerPts,
+        innerStrokes,
+        0x7ad7ff,
+        0xe0f7ff,
+        0x1d70a8,
+        -12.8,
+        4.0
+      );
+      // Drop shadow is sibling of playerHullGroup (does not copy hull rotation automatically via parent, synced in update)
+      this.playerShadowMesh = vis.shadowMesh;
+      this.playerGroup.add(vis.shadowMesh);
+      this.playerWashMesh = vis.washMesh;
+      this.playerHullGroup.add(vis.glow, vis.washMesh, vis.inkGroup);
+
+      this.thrusterMesh = new THREE.Mesh(
+        buildRibbonGeometry(thrusterPts, 3.2, false, 1.2),
+        createNeonRibbonMaterial(baseHex, 1.15, 0.92)
+      );
+      this.thrusterMesh.renderOrder = 9;
+      this.playerHullGroup.add(this.thrusterMesh);
+      return;
+    }
     const hullMat = new THREE.MeshStandardMaterial({
       color: 0x0f2038,
       emissive: baseHex,
@@ -452,6 +705,26 @@ export class EntityRenderer {
       el === 'BARRIER' ? 8 : 12;
 
     const ringPts = createPolygonPts(sides, 7.2, el === 'THERMAL' ? Math.PI / 2 : 0);
+
+    if (this.artStyle === 'WATERCOLOR_INK') {
+      const stamp = getPolygonWashTexture(`pip-${sides}-${el === 'THERMAL' ? 't' : 'n'}`, ringPts, 0.35);
+      const wash = new THREE.Mesh(
+        new THREE.PlaneGeometry(stamp.size, stamp.size),
+        createWatercolorWashMaterial(stamp.texture, el === 'VOID' ? 0x160a14 : meta.colorHex, undefined, undefined, 0.92)
+      );
+      wash.position.set(1.5, -1.3, 0);
+      wash.renderOrder = 12;
+      const ink = new THREE.Mesh(
+        buildInkOutlineGeometry(ringPts, 2.4, true, 1.2, 1.4, 0.3),
+        createSumiInkMaterial(0.97, 0.4)
+      );
+      ink.renderOrder = 16;
+      const glow = createGlowSprite(meta.colorHex, 20, 0.22);
+      glow.renderOrder = 9;
+      group.add(glow, wash, ink);
+      return group;
+    }
+
     group.add(
       new THREE.Mesh(
         buildRibbonGeometry(ringPts, 2.4, true, 0),
@@ -510,7 +783,27 @@ export class EntityRenderer {
     for (const ch of this.shipChevrons) {
       setRibbonColor(ch, activeColor);
     }
-    (this.noseTipMesh.material as THREE.MeshBasicMaterial).color.setHex(activeColor).multiplyScalar(1.05);
+    if (this.noseTipMesh) {
+      (this.noseTipMesh.material as THREE.MeshBasicMaterial).color.setHex(activeColor).multiplyScalar(1.05);
+    }
+    if (this.artStyle === 'WATERCOLOR_INK' && this.playerWashMesh) {
+      const hasCustomColor = isHurtFlash || p.channel !== null || p.charge !== null || p.queue.length > 0;
+      const washHex = hasCustomColor ? activeColor : 0x7ad7ff;
+      setWatercolorWashColor(this.playerWashMesh.material, washHex, isHurtFlash ? 0.85 : 0, 0xe0f7ff, 0x1d70a8);
+      this.playerWashMesh.position.set(
+        2.8 + Math.sin(timeSec * 2.2) * 0.55,
+        -2.4 + Math.cos(timeSec * 1.8) * 0.45,
+        1.5
+      );
+      if (this.playerShadowMesh) {
+        this.playerShadowMesh.visible = !isHurt || p.invulnTimer > 0.48 || Math.sin(timeSec * 48) > -0.35;
+        // PlayerGroup rotates by p.aimAngle; cancel parent rotation on shadow offset? Wait: playerGroup.rotation.z = p.aimAngle rotates shadowMesh too!
+        // Keep shadow offset fixed in screen/world down-right (+10, -13) by rotating (10, -13) by -p.aimAngle
+        const cos = Math.cos(-p.aimAngle);
+        const sin = Math.sin(-p.aimAngle);
+        this.playerShadowMesh.position.set(10 * cos - -13 * sin, 10 * sin + -13 * cos, -12.8);
+      }
+    }
     this.shipGlow.material.color.setHex(activeColor);
     if (isHurtFlash) {
       this.shipGlow.scale.set(58, 58, 1);
@@ -650,6 +943,27 @@ export class EntityRenderer {
 
   private makeTelegraphGroup(colorHex: number, width: number): THREE.Group {
     const g = new THREE.Group();
+    if (this.artStyle === 'WATERCOLOR_INK') {
+      const wash = new THREE.Mesh(
+        buildRibbonGeometry([{ x: 0, y: 0 }, { x: 1, y: 0 }], width * 1.9, false, 0.8),
+        createNeonRibbonMaterial(colorHex, 1.15, 0.68)
+      );
+      wash.renderOrder = 8;
+      const ink = new THREE.Mesh(
+        buildInkOutlineGeometry([{ x: 0, y: 0 }, { x: 1, y: 0 }], Math.max(1.8, width * 0.55), false, 1.4, 0, 0.002),
+        createSumiInkMaterial(0.88, 0.25)
+      );
+      ink.renderOrder = 14;
+      const dot = new THREE.Mesh(
+        new THREE.CircleGeometry(width * 2.2, 12),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.92 })
+      );
+      dot.position.z = 1.6;
+      dot.renderOrder = 16;
+      g.add(wash, dot, ink);
+      g.visible = false;
+      return g;
+    }
     const line = new THREE.Mesh(
       buildRibbonGeometry([{ x: 0, y: 0 }, { x: 1, y: 0 }], width, false, 0.8),
       createNeonRibbonMaterial(colorHex, 1.2, 0.72)
@@ -685,6 +999,13 @@ export class EntityRenderer {
       const punch = 1 + e.hitFlash * 2.1;
       bodyGroup.scale.set(punch, punch, punch);
 
+      const shadowMesh = group.userData.shadowMesh as THREE.Mesh | undefined;
+      if (shadowMesh) {
+        shadowMesh.rotation.z = hullRot;
+        const sPunch = 0.92 * punch;
+        shadowMesh.scale.set(sPunch, sPunch, 1);
+      }
+
       const statusColor = e.hitFlash > 0
         ? 0xffffff
         : e.statuses.FROZEN
@@ -699,6 +1020,23 @@ export class EntityRenderer {
 
       const baseColor = (group.userData.baseColor as number) ?? 0xff2e97;
       const targetColor = statusColor ?? baseColor;
+
+      const washMesh = group.userData.washMesh as THREE.Mesh | undefined;
+      if (washMesh) {
+        const pal = getEnemyWatercolorPalette(e.archetype);
+        setWatercolorWashColor(
+          washMesh.material,
+          statusColor ?? pal.base,
+          e.hitFlash > 0 ? 0.88 : 0,
+          statusColor ? undefined : pal.highlight,
+          statusColor ? undefined : pal.pool
+        );
+        washMesh.position.set(
+          2.8 + Math.sin(timeSec * 2.4 + e.id) * 0.55,
+          -2.4 + Math.cos(timeSec * 2.0 + e.id) * 0.45,
+          1.5
+        );
+      }
 
       // Solid opaque hull emissive feedback on hit / status
       const hullMat = group.userData.hullMat as THREE.MeshStandardMaterial | undefined;
@@ -763,6 +1101,11 @@ export class EntityRenderer {
             lineMesh.scale.set(len, 1, 1);
             dotMesh.position.set(len, 0, 1.6);
             setShaderUniform(lineMesh.material, 'uOpacity', pulseOp);
+            const inkRay = tg.children[2] as THREE.Mesh | undefined;
+            if (inkRay) {
+              inkRay.scale.set(len, 1, 1);
+              setShaderUniform(inkRay.material, 'uOpacity', pulseOp * 0.95);
+            }
           } else {
             tg.visible = false;
           }
@@ -827,6 +1170,10 @@ export class EntityRenderer {
     const root = new THREE.Group();
     const zHeight = e.archetype === 'WARDEN' ? 22 : 14;
     const r = e.radius;
+
+    if (this.artStyle === 'WATERCOLOR_INK') {
+      return this.createWatercolorEnemyMesh(e, root, zHeight, r);
+    }
 
     // Ground altitude shadow ring
     root.add(
@@ -1149,23 +1496,244 @@ export class EntityRenderer {
 
     root.userData.hullMat = hullMat;
     root.userData.trimObj = trimObj;
+    root.userData.baseColor = baseColor;
+    this.attachHpAndStatuses(root, e, r, zHeight);
+    return root;
+  }
+
+  private createWatercolorEnemyMesh(
+    e: EnemyEntity,
+    root: THREE.Group,
+    zHeight: number,
+    r: number
+  ): THREE.Group {
+    const bodyGroup = new THREE.Group();
+    root.add(bodyGroup);
+    root.userData.bodyGroup = bodyGroup;
+
+    const pal = getEnemyWatercolorPalette(e.archetype);
+    let outerPts: Array<{ x: number; y: number }>;
+    let innerStrokes: Array<{ pts: Array<{ x: number; y: number }>; w?: number; closed?: boolean }> = [];
+
+    if (e.archetype === 'SWARMER') {
+      outerPts = [
+        { x: r * 1.25, y: 0 },
+        { x: -r * 0.15, y: r * 0.48 },
+        { x: -r * 0.85, y: r * 1.05 },
+        { x: -r * 0.55, y: 0 },
+        { x: -r * 0.85, y: -r * 1.05 },
+        { x: -r * 0.15, y: -r * 0.48 },
+      ];
+      innerStrokes = [
+        { pts: [{ x: r * 0.55, y: 0 }, { x: -r * 0.35, y: 0 }], w: 2.0 },
+      ];
+    } else if (e.archetype === 'BASTION') {
+      outerPts = [
+        { x: r * 0.88, y: r * 0.78 },
+        { x: -r * 0.3, y: r * 0.88 },
+        { x: -r * 0.95, y: r * 0.52 },
+        { x: -r * 0.95, y: -r * 0.52 },
+        { x: -r * 0.3, y: -r * 0.88 },
+        { x: r * 0.88, y: -r * 0.78 },
+      ];
+      innerStrokes = [
+        {
+          pts: [
+            { x: r * 0.45, y: r * 0.42 },
+            { x: -r * 0.5, y: r * 0.42 },
+            { x: -r * 0.5, y: -r * 0.42 },
+            { x: r * 0.45, y: -r * 0.42 },
+          ],
+          closed: true,
+          w: 2.2,
+        },
+        { pts: [{ x: r * 0.4, y: r * 0.55 }, { x: r * 1.15, y: r * 0.55 }], w: 2.4 },
+        { pts: [{ x: r * 0.4, y: -r * 0.55 }, { x: r * 1.15, y: -r * 0.55 }], w: 2.4 },
+      ];
+    } else if (e.archetype === 'STALKER') {
+      outerPts = [
+        { x: r * 1.35, y: 0 },
+        { x: -r * 0.2, y: r * 0.36 },
+        { x: -r * 1.05, y: r * 1.0 },
+        { x: -r * 0.5, y: 0 },
+        { x: -r * 1.05, y: -r * 1.0 },
+        { x: -r * 0.2, y: -r * 0.36 },
+      ];
+      innerStrokes = [
+        { pts: [{ x: r * 0.85, y: 0 }, { x: -r * 0.4, y: 0 }], w: 2.0 },
+      ];
+    } else if (e.archetype === 'PYRO_SPRAYER') {
+      outerPts = [
+        { x: r * 1.15, y: r * 0.55 },
+        { x: r * 0.65, y: r * 0.95 },
+        { x: -r * 0.85, y: r * 0.78 },
+        { x: -r * 0.55, y: 0 },
+        { x: -r * 0.85, y: -r * 0.78 },
+        { x: r * 0.65, y: -r * 0.95 },
+        { x: r * 1.15, y: -r * 0.55 },
+      ];
+      innerStrokes = [
+        { pts: createPolygonPts(10, r * 0.36), closed: true, w: 2.2 },
+        { pts: [{ x: r * 0.4, y: r * 0.45 }, { x: r * 1.1, y: r * 0.45 }], w: 2.4 },
+        { pts: [{ x: r * 0.4, y: -r * 0.45 }, { x: r * 1.1, y: -r * 0.45 }], w: 2.4 },
+      ];
+    } else if (e.archetype === 'GEO_BOMBER') {
+      outerPts = [
+        { x: r * 1.2, y: r * 0.65 },
+        { x: r * 0.3, y: r * 0.95 },
+        { x: -r * 0.95, y: r * 0.88 },
+        { x: -r * 0.95, y: -r * 0.88 },
+        { x: r * 0.3, y: -r * 0.95 },
+        { x: r * 1.2, y: -r * 0.65 },
+      ];
+      innerStrokes = [
+        { pts: createPolygonPts(5, r * 0.38).map((p) => ({ x: p.x + r * 0.3, y: p.y })), closed: true, w: 2.2 },
+      ];
+    } else if (e.archetype === 'WEAVER') {
+      outerPts = [
+        { x: r * 1.35, y: r * 0.45 },
+        { x: r * 0.2, y: r * 0.88 },
+        { x: -r * 1.05, y: r * 0.68 },
+        { x: -r * 0.7, y: 0 },
+        { x: -r * 1.05, y: -r * 0.68 },
+        { x: r * 0.2, y: -r * 0.88 },
+        { x: r * 1.35, y: -r * 0.45 },
+      ];
+      innerStrokes = [
+        { pts: [{ x: r * 0.4, y: 0 }, { x: -r * 0.5, y: 0 }], w: 2.2 },
+        { pts: createPolygonPts(4, r * 0.35), closed: true, w: 2.0 },
+      ];
+    } else if (e.archetype === 'SPLITTER') {
+      outerPts = [
+        { x: r * 1.1, y: r * 0.78 },
+        { x: -r * 0.9, y: r * 0.85 },
+        { x: -r * 0.45, y: 0 },
+        { x: -r * 0.9, y: -r * 0.85 },
+        { x: r * 1.1, y: -r * 0.78 },
+        { x: r * 0.55, y: 0 },
+      ];
+      innerStrokes = [
+        { pts: createPolygonPts(4, r * 0.38), closed: true, w: 2.2 },
+      ];
+    } else {
+      outerPts = [
+        { x: r * 1.35, y: r * 0.36 },
+        { x: r * 0.45, y: r * 0.78 },
+        { x: -r * 0.25, y: r * 1.22 },
+        { x: -r * 1.15, y: r * 1.05 },
+        { x: -r * 0.85, y: 0 },
+        { x: -r * 1.15, y: -r * 1.05 },
+        { x: -r * 0.25, y: -r * 1.22 },
+        { x: r * 0.45, y: -r * 0.78 },
+        { x: r * 1.35, y: -r * 0.36 },
+      ];
+      innerStrokes = [
+        { pts: createPolygonPts(6, r * 0.45), closed: true, w: 2.8 },
+        { pts: [{ x: r * 0.95, y: r * 0.45 }, { x: -r * 0.75, y: r * 0.75 }], w: 2.5 },
+        { pts: [{ x: r * 0.95, y: -r * 0.45 }, { x: -r * 0.75, y: -r * 0.75 }], w: 2.5 },
+      ];
+    }
+
+    const vis = this.createWatercolorEntityVisual(
+      `enemy-${e.archetype}-${Math.round(r)}`,
+      outerPts,
+      innerStrokes,
+      pal.base,
+      pal.highlight,
+      pal.pool,
+      -zHeight + 1.0,
+      e.archetype === 'WARDEN' ? 5.0 : 3.6
+    );
+
+    root.add(vis.shadowMesh);
+    root.userData.shadowMesh = vis.shadowMesh;
+    bodyGroup.add(vis.glow, vis.washMesh, vis.inkGroup);
+    root.userData.washMesh = vis.washMesh;
+    root.userData.baseColor = pal.base;
+
+    if (e.archetype === 'BASTION') {
+      const arcPts: Array<{ x: number; y: number }> = [];
+      for (let i = 0; i <= 16; i++) {
+        const a = -e.shieldArc + (i / 16) * e.shieldArc * 2;
+        arcPts.push({ x: Math.cos(a) * (r + 10), y: Math.sin(a) * (r + 10) });
+      }
+      const frontShield = new THREE.Group();
+      const sWash = new THREE.Mesh(
+        buildRibbonGeometry(arcPts, 6.4, false, 3.8),
+        createNeonRibbonMaterial(0x00f5ff, 1.15, 0.85)
+      );
+      sWash.renderOrder = 11;
+      const sInk = new THREE.Mesh(
+        buildInkOutlineGeometry(arcPts, 3.0, false, 4.8, 1.8, 0.4),
+        createSumiInkMaterial(0.96, 0.5)
+      );
+      sInk.renderOrder = 15;
+      frontShield.add(sWash, sInk);
+      bodyGroup.add(frontShield);
+      bodyGroup.userData.frontShield = frontShield;
+    } else if (e.archetype === 'WEAVER') {
+      const tele = this.makeTelegraphGroup(0xff2a85, 3.0);
+      bodyGroup.add(tele);
+      bodyGroup.userData.telegraphs = [tele];
+    } else if (e.archetype === 'WARDEN') {
+      const bossPlates: THREE.Object3D[] = [];
+      for (let p = 0; p < 4; p++) {
+        const platePts: Array<{ x: number; y: number }> = [];
+        for (let i = 0; i <= 10; i++) {
+          const a = -0.45 + (i / 10) * 0.9;
+          platePts.push({ x: Math.cos(a) * (r + 16), y: Math.sin(a) * (r + 16) });
+        }
+        const plate = new THREE.Group();
+        const pWash = new THREE.Mesh(
+          buildRibbonGeometry(platePts, 6.8, false, 5.5),
+          createNeonRibbonMaterial(0x70e4ff, 1.2, 0.92)
+        );
+        pWash.renderOrder = 11;
+        const pInk = new THREE.Mesh(
+          buildInkOutlineGeometry(platePts, 3.2, false, 6.5, 1.8, 0.4),
+          createSumiInkMaterial(0.97, 0.5)
+        );
+        pInk.renderOrder = 15;
+        plate.add(pWash, pInk);
+        plate.visible = p < e.bossShieldAngles.length;
+        bodyGroup.add(plate);
+        bossPlates.push(plate);
+      }
+      bodyGroup.userData.bossPlates = bossPlates;
+
+      const telegraphs: THREE.Group[] = [];
+      for (let ti = 0; ti < 3; ti++) {
+        const tele = this.makeTelegraphGroup(0xff2a85, 3.4);
+        bodyGroup.add(tele);
+        telegraphs.push(tele);
+      }
+      bodyGroup.userData.telegraphs = telegraphs;
+    }
+
+    this.attachHpAndStatuses(root, e, r, zHeight);
+    return root;
+  }
+
+  private attachHpAndStatuses(root: THREE.Group, e: EnemyEntity, r: number, zHeight: number): void {
+    const isWc = this.artStyle === 'WATERCOLOR_INK';
 
     // Floating HP + Shield Bar
     const hpBar = new THREE.Group();
     const barW = r * 2.2;
     const barH = e.archetype === 'WARDEN' ? 6 : 4;
     hpBar.position.set(0, r + 15, 16);
-    hpBar.add(
-      new THREE.Mesh(
-        new THREE.PlaneGeometry(barW + 2, barH + 2),
-        new THREE.MeshBasicMaterial({ color: 0x050814, transparent: true, opacity: 0.85, side: THREE.DoubleSide })
-      )
+    const frame = new THREE.Mesh(
+      new THREE.PlaneGeometry(barW + (isWc ? 4 : 2), barH + (isWc ? 4 : 2)),
+      new THREE.MeshBasicMaterial({ color: isWc ? 0x08090d : 0x050814, transparent: true, opacity: 0.92, side: THREE.DoubleSide })
     );
+    frame.renderOrder = 30;
+    hpBar.add(frame);
     const hpFill = new THREE.Mesh(
       new THREE.PlaneGeometry(barW, barH),
       new THREE.MeshBasicMaterial({ color: 0x39ff14, side: THREE.DoubleSide })
     );
     hpFill.position.z = 0.5;
+    hpFill.renderOrder = 31;
     hpBar.add(hpFill);
 
     if (e.archetype === 'BASTION') {
@@ -1174,6 +1742,7 @@ export class EntityRenderer {
         new THREE.MeshBasicMaterial({ color: 0x00f5ff, side: THREE.DoubleSide })
       );
       shieldFill.position.set(0, 6, 0.5);
+      shieldFill.renderOrder = 31;
       hpBar.add(shieldFill);
       root.userData.shieldFill = shieldFill;
     }
@@ -1187,10 +1756,18 @@ export class EntityRenderer {
     const iceGeo = new THREE.OctahedronGeometry(r * 1.38, 0);
     const frozenShell = new THREE.Group();
     frozenShell.add(
-      new THREE.LineSegments(new THREE.WireframeGeometry(iceGeo), new THREE.LineBasicMaterial({ color: 0x80ffff })),
+      new THREE.LineSegments(
+        new THREE.WireframeGeometry(iceGeo),
+        new THREE.LineBasicMaterial({ color: isWc ? 0x08090d : 0x80ffff })
+      ),
       new THREE.Mesh(
         iceGeo,
-        new THREE.MeshBasicMaterial({ color: 0x00f5ff, transparent: true, opacity: 0.26, blending: THREE.AdditiveBlending })
+        new THREE.MeshBasicMaterial({
+          color: 0x00f5ff,
+          transparent: true,
+          opacity: isWc ? 0.34 : 0.26,
+          blending: isWc ? THREE.NormalBlending : THREE.AdditiveBlending,
+        })
       )
     );
     frozenShell.visible = false;
@@ -1198,7 +1775,7 @@ export class EntityRenderer {
     root.userData.frozenShell = frozenShell;
 
     const ignitedAura = new THREE.Mesh(
-      buildRibbonGeometry(createPolygonPts(14, r * 1.25), 3.0, true, 3),
+      isWc ? buildInkOutlineGeometry(createPolygonPts(14, r * 1.25), 3.4, true, 3) : buildRibbonGeometry(createPolygonPts(14, r * 1.25), 3.0, true, 3),
       createNeonRibbonMaterial(0xff4518, 1.25, 0.9)
     );
     ignitedAura.visible = false;
@@ -1228,9 +1805,6 @@ export class EntityRenderer {
     corruptRing.visible = false;
     root.add(corruptRing);
     root.userData.corruptRing = corruptRing;
-
-    root.userData.baseColor = baseColor;
-    return root;
   }
 
   private disposeGroup(root: THREE.Object3D): void {

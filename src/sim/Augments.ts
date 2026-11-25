@@ -6,7 +6,7 @@ export const AUGMENT_CATALOG: readonly AugmentDef[] = [
     tag: 'VOLT',
     name: 'Superconductor',
     color: '#FFF733',
-    description: 'Volt chains jump to +3 additional targets and arc through your deployed Mines.',
+    description: 'Volt chains gain +20% range, jump to +3 additional targets, and arc through your deployed Mines.',
     maxStacks: 2,
   },
   {
@@ -46,7 +46,7 @@ export const AUGMENT_CATALOG: readonly AugmentDef[] = [
     tag: 'VOID',
     name: 'Singularity Pull',
     color: '#FF2438',
-    description: 'Void beams and detonations strongly pull nearby enemies inward.',
+    description: 'Void beams are +25% wider and Void beams & detonations strongly pull nearby enemies inward.',
     maxStacks: 2,
   },
   {
@@ -54,7 +54,7 @@ export const AUGMENT_CATALOG: readonly AugmentDef[] = [
     tag: 'THERMAL',
     name: 'Thermal Conflagration',
     color: '#FF6A00',
-    description: 'Ignited foes burn +45% harder and erupt on death in a 125px blast that ignites nearby enemies.',
+    description: 'Thermal sprays reach +20% farther/wider; Ignited foes burn +45% harder and erupt on death in a 145px blast.',
     maxStacks: 2,
   },
   {
@@ -62,7 +62,7 @@ export const AUGMENT_CATALOG: readonly AugmentDef[] = [
     tag: 'CRYSTAL',
     name: 'Cryo Shard Barrage',
     color: '#80FFFF',
-    description: 'Crystal Shard volleys launch +2 extra piercing shards and fly 25% faster.',
+    description: 'Crystal Shards gain +2 extra piercing shards, +15% size & +25% speed; Cryo sprays reach +20% farther/wider.',
     maxStacks: 2,
   },
   {
@@ -70,7 +70,7 @@ export const AUGMENT_CATALOG: readonly AugmentDef[] = [
     tag: 'KINETIC',
     name: 'Kinetic Aftershock',
     color: '#A86B3E',
-    description: 'Charged Rocks gain +30% blast radius, +25% damage, and shatter Bastion shields on splash.',
+    description: 'Kinetic Rocks are +25% larger, gain +35% blast radius & +25% damage, and shatter Bastion shields on splash.',
     maxStacks: 2,
   },
   {
@@ -86,7 +86,7 @@ export const AUGMENT_CATALOG: readonly AugmentDef[] = [
     tag: 'FLUX',
     name: 'Flux Tidal Surge',
     color: '#1A6BFF',
-    description: 'Flux splashes gain +45% radius & +40% pushback; Primed enemies take +15% damage.',
+    description: 'Flux sprays, novas & splashes gain +35% range/radius, +30% cone width & +40% pushback; Primed foes take +20% damage.',
     maxStacks: 2,
   },
   {
@@ -94,7 +94,7 @@ export const AUGMENT_CATALOG: readonly AugmentDef[] = [
     tag: 'BARRIER',
     name: 'Sanctuary Pulse',
     color: '#E6F0FF',
-    description: 'Shields & Sanctuary Domes gain +45% HP and emit a 155px knockback shockwave on deploy & break.',
+    description: 'Shields & Sanctuary Domes gain +45% HP, +20% size, and emit a 155px knockback shockwave on deploy & break.',
     maxStacks: 2,
   },
   {
@@ -102,7 +102,7 @@ export const AUGMENT_CATALOG: readonly AugmentDef[] = [
     tag: 'MINES',
     name: 'Minefield Saturation',
     color: '#FFB833',
-    description: 'Max active Mines +4, Mine blast radius +25%, and Mines arm 40% faster.',
+    description: 'Max active Mines +4, Mine size & blast radius +35%, and Mines arm 40% faster.',
     maxStacks: 2,
   },
   {
@@ -110,7 +110,7 @@ export const AUGMENT_CATALOG: readonly AugmentDef[] = [
     tag: 'STORM',
     name: 'Tempest Capacitor',
     color: '#66D9FF',
-    description: 'Storms last +35% longer, cover +25% wider radius, and pulse 25% faster.',
+    description: 'Storms last +35% longer, cover +35% wider radius & strikes, and pulse 25% faster.',
     maxStacks: 2,
   },
   {
@@ -126,7 +126,7 @@ export const AUGMENT_CATALOG: readonly AugmentDef[] = [
     tag: 'PLASMA',
     name: 'Plasma Overdrive',
     color: '#FF5E99',
-    description: 'Plasma spells deal +30% damage and sear Ignited enemies, cutting their armor by 50%.',
+    description: 'Plasma spells deal +30% damage, grow +25% larger/wider, and sear Ignited enemies to cut armor by 50%.',
     maxStacks: 2,
   },
   {

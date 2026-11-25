@@ -246,7 +246,7 @@ describe('CombatEngine — Per-Element Self-Casting', () => {
 });
 
 describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Director', () => {
-  it('deals 2x VOLT damage to PRIMED targets and freezes PRIMED targets hit by CRYO', () => {
+  it('deals 1.4x VOLT damage to PRIMED targets and freezes PRIMED targets hit by CRYO', () => {
     const sim = new GameSim();
     sim.combat.enemies = [];
     const e1 = sim.combat.spawnEnemy('BASTION', 120, 0, 1);
@@ -264,7 +264,7 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     expect(e2.statuses.PRIMED).toBeDefined();
     sim.combat.applyElementalHit(e2, 10, ['VOLT'], 1, 0, ev);
     const primedDmg = e2.maxHp - e2.hp;
-    expect(primedDmg).toBeCloseTo(normalDmg * 2);
+    expect(primedDmg).toBeCloseTo(normalDmg * 1.4);
 
     sim.combat.applyElementalHit(e2, 0, ['CRYO'], 1, 0, ev);
     expect(e2.statuses.FROZEN).toBeDefined();
@@ -544,12 +544,13 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     for (let i = 0; i < 50; i++) sim.step(makeInput());
     expect(sim.getSnapshot().storms.length).toBe(1);
 
+    const px = sim.getSnapshot().player.x;
     waitCooldown();
     queueAndStep(sim, ['BARRIER', 'VOID', 'THERMAL']);
-    sim.step(makeInput({ castAction: 'FORWARD' }));
+    sim.step(makeInput({ castAction: 'FORWARD', aimX: px + 200, aimY: 0 }));
     waitCooldown();
     queueAndStep(sim, ['BARRIER', 'VOID', 'THERMAL']);
-    sim.step(makeInput({ castAction: 'FORWARD' }));
+    sim.step(makeInput({ castAction: 'FORWARD', aimX: px, aimY: 200 }));
     expect(sim.getSnapshot().mines.length).toBe(8);
   });
 
@@ -642,7 +643,9 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
       return e.vx;
     };
 
-    expect(testKnockback(['FLUX'])).toBeGreaterThan(100);
+    const fluxVx = testKnockback(['FLUX']);
+    expect(fluxVx).toBeGreaterThan(50);
+    expect(fluxVx).toBeLessThan(150);
     expect(testKnockback(['THERMAL'])).toBeLessThanOrEqual(0);
     expect(testKnockback(['FLUX', 'THERMAL'])).toBeLessThanOrEqual(0);
     expect(testKnockback(['CRYO'])).toBeLessThanOrEqual(0);
@@ -706,7 +709,8 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     const snap = sim.getSnapshot();
     expect(target.hp).toBe(target.maxHp);
     expect(bystander.hp).toBe(bystander.maxHp);
-    expect(target.vx).toBeGreaterThan(100);
+    expect(target.vx).toBeGreaterThan(50);
+    expect(target.vx).toBeLessThan(150);
     expect(target.statuses.PRIMED).toBeDefined();
     expect(bystander.statuses.PRIMED).toBeDefined();
     expect(snap.pools.length).toBe(0);
@@ -792,7 +796,8 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     const events: ReturnType<typeof sim.drainEvents> = [];
     sim.combat.applyElementalHit(e1, 20, ['VOLT', 'CRYO'], 1, 0, events);
 
-    expect(e1.hp).toBeLessThan(e1.maxHp - 25); // 2x Overload damage
+    expect(e1.hp).toBeLessThan(e1.maxHp - 18); // 1.4x Overload damage
+    expect(e1.hp).toBeGreaterThan(e1.maxHp - 24);
     expect(e1.statuses.FROZEN).toBeDefined();
     expect(e1.statuses.PRIMED).toBeUndefined();
     expect(e2.statuses.FROZEN).toBeDefined();
@@ -1046,5 +1051,207 @@ describe('CombatEngine — Elemental Wall Consistency', () => {
     const wallsStone = simStone.getSnapshot().walls;
     expect(wallsStone.length).toBeGreaterThan(0);
     expect(wallsStone[0]!.colorHex).toBe(ELEMENT_META.KINETIC.colorHex);
+  });
+});
+
+describe('CombatEngine — Balance, Blocking, Overlap & Combo Rules', () => {
+  it('water beam pushes enemies away steadily', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    sim.waveDirector.pillars = [];
+    sim.waveDirector.blocks = [];
+    const p = sim.getSnapshot().player;
+    p.x = 0;
+    p.y = 0;
+    const target = sim.combat.spawnEnemy('BASTION', 220, 0, 1);
+    target.hasFrontShield = false;
+    const startX = target.x;
+
+    queueAndStep(sim, ['VOID', 'FLUX']);
+    sim.step(makeInput({ castAction: 'FORWARD', castHeld: true, aimX: 400, aimY: 0 }));
+    for (let i = 0; i < 18; i++) {
+      sim.step(makeInput({ castHeld: true, aimX: 400, aimY: 0 }));
+    }
+
+    expect(target.vx).toBeGreaterThan(40);
+    expect(target.x).toBeGreaterThan(startX + 4);
+  });
+
+  it('weakens mines overall and makes NANO mines home onto nearby enemies with lower damage', () => {
+    const simVoid = new GameSim();
+    simVoid.combat.enemies = [];
+    simVoid.waveDirector.rifts = [];
+    queueAndStep(simVoid, ['BARRIER', 'VOID']);
+    simVoid.step(makeInput({ castAction: 'FORWARD', aimX: 300, aimY: 0 }));
+    const voidMine = simVoid.getSnapshot().mines[0]!;
+    expect(voidMine.damage).toBe(42);
+    expect(voidMine.blastRadius).toBeLessThan(145);
+
+    const simNano = new GameSim();
+    simNano.combat.enemies = [];
+    simNano.waveDirector.rifts = [];
+    simNano.waveDirector.pillars = [];
+    simNano.waveDirector.blocks = [];
+    simNano.getSnapshot().player.x = 0;
+    simNano.getSnapshot().player.y = 0;
+    queueAndStep(simNano, ['BARRIER', 'NANO']);
+    simNano.step(makeInput({ castAction: 'FORWARD', aimX: 300, aimY: 0 }));
+    const nanoMine = simNano.getSnapshot().mines[1]!;
+    expect(nanoMine.damage).toBeLessThan(voidMine.damage);
+    expect(nanoMine.damage).toBe(20);
+
+    const enemy = simNano.combat.spawnEnemy('BASTION', nanoMine.x + 150, nanoMine.y, 1);
+    const startMineX = nanoMine.x;
+    for (let i = 0; i < 40; i++) {
+      simNano.step(makeInput({ aimX: 300, aimY: 0 }));
+      enemy.vx = 0;
+      enemy.vy = 0;
+    }
+    expect(nanoMine.x).toBeGreaterThan(startMineX + 12);
+  });
+
+  it('Barrier shields block energy projectiles only, while Walls block both physical & energy and break quickly', () => {
+    // 1. Barrier lets ENEMY_ROCK through while blocking FROST_NEEDLE
+    const simShield = new GameSim();
+    simShield.combat.enemies = [];
+    simShield.waveDirector.rifts = [];
+    queueAndStep(simShield, ['BARRIER']);
+    simShield.step(makeInput({ castAction: 'FORWARD', aimX: simShield.getSnapshot().player.x + 200, aimY: 0 }));
+    const shield = simShield.getSnapshot().shields[0]!;
+
+    simShield.combat.projectiles.push({
+      id: 9101,
+      owner: 'ENEMY',
+      kind: 'ENEMY_ROCK',
+      x: shield.x + shield.radius,
+      y: shield.y,
+      vx: -250,
+      vy: 0,
+      radius: 17,
+      damage: 20,
+      pierce: 1,
+      life: 2,
+      maxLife: 2,
+      colorHex: ELEMENT_META.KINETIC.colorHex,
+      colors: [ELEMENT_META.KINETIC.colorHex],
+      elements: ['KINETIC'],
+      composition: { counts: { KINETIC: 1 }, ratios: { KINETIC: 1 }, totalPower: 1, colors: [ELEMENT_META.KINETIC.colorHex], weightedColors: [ELEMENT_META.KINETIC.colorHex], primaryColorHex: ELEMENT_META.KINETIC.colorHex, secondaryColorHex: ELEMENT_META.KINETIC.colorHex },
+      hitIds: [],
+      spin: 0,
+    });
+    simShield.step(makeInput({ aimX: shield.x + 200, aimY: shield.y }));
+    const rockAfterShield = simShield.getSnapshot().projectiles.find((pr) => pr.id === 9101);
+    expect(rockAfterShield).toBeDefined();
+    expect(rockAfterShield!.owner).toBe('ENEMY');
+
+    // 2. Wall blocks ENEMY_ROCK and breaks quickly (2-3 hits)
+    const simWall = new GameSim();
+    simWall.combat.enemies = [];
+    simWall.waveDirector.rifts = [];
+    queueAndStep(simWall, ['BARRIER', 'KINETIC']);
+    simWall.step(makeInput({ castAction: 'FORWARD', aimX: simWall.getSnapshot().player.x + 200, aimY: 0 }));
+    const initialWallCount = simWall.getSnapshot().walls.length;
+    const pylon = simWall.getSnapshot().walls[2]!;
+    expect(pylon.maxHp).toBeLessThanOrEqual(110);
+
+    for (let hit = 0; hit < 3; hit++) {
+      simWall.combat.projectiles.push({
+        id: 9200 + hit,
+        owner: 'ENEMY',
+        kind: 'ENEMY_ROCK',
+        x: pylon.x,
+        y: pylon.y,
+        vx: -250,
+        vy: 0,
+        radius: 17,
+        damage: 20,
+        pierce: 1,
+        life: 2,
+        maxLife: 2,
+        colorHex: ELEMENT_META.KINETIC.colorHex,
+        colors: [ELEMENT_META.KINETIC.colorHex],
+        elements: ['KINETIC'],
+        composition: { counts: { KINETIC: 1 }, ratios: { KINETIC: 1 }, totalPower: 1, colors: [ELEMENT_META.KINETIC.colorHex], weightedColors: [ELEMENT_META.KINETIC.colorHex], primaryColorHex: ELEMENT_META.KINETIC.colorHex, secondaryColorHex: ELEMENT_META.KINETIC.colorHex },
+        hitIds: [],
+        spin: 0,
+      });
+      simWall.step(makeInput());
+      expect(simWall.getSnapshot().projectiles.some((pr) => pr.id === 9200 + hit)).toBe(false);
+    }
+    expect(simWall.getSnapshot().walls.length).toBeLessThan(initialWallCount);
+  });
+
+  it('prevents overlapping mines and walls in all 4 combinations by removing old deployables', () => {
+    const setup = () => {
+      const sim = new GameSim();
+      sim.combat.enemies = [];
+      sim.waveDirector.rifts = [];
+      sim.waveDirector.pillars = [];
+      sim.waveDirector.blocks = [];
+      sim.getSnapshot().player.x = 0;
+      sim.getSnapshot().player.y = 0;
+      return sim;
+    };
+    const cd = (sim: GameSim) => {
+      for (let i = 0; i < 12; i++) sim.step(makeInput());
+    };
+
+    // Mines on Mines
+    const simMM = setup();
+    queueAndStep(simMM, ['BARRIER', 'VOID']);
+    simMM.step(makeInput({ castAction: 'FORWARD', aimX: 300, aimY: 0 }));
+    const oldMineIds = new Set(simMM.getSnapshot().mines.map((m) => m.id));
+    cd(simMM);
+    queueAndStep(simMM, ['BARRIER', 'VOID']);
+    simMM.step(makeInput({ castAction: 'FORWARD', aimX: 300, aimY: 0 }));
+    expect(simMM.getSnapshot().mines.some((m) => oldMineIds.has(m.id))).toBe(false);
+
+    // Walls on Walls
+    const simWW = setup();
+    queueAndStep(simWW, ['BARRIER', 'KINETIC']);
+    simWW.step(makeInput({ castAction: 'FORWARD', aimX: 300, aimY: 0 }));
+    const oldWallGroup = simWW.getSnapshot().walls[0]!.groupId;
+    cd(simWW);
+    queueAndStep(simWW, ['BARRIER', 'KINETIC']);
+    simWW.step(makeInput({ castAction: 'FORWARD', aimX: 300, aimY: 0 }));
+    expect(simWW.getSnapshot().walls.some((w) => w.groupId === oldWallGroup)).toBe(false);
+
+    // Mines on Walls
+    const simMW = setup();
+    queueAndStep(simMW, ['BARRIER', 'KINETIC']);
+    simMW.step(makeInput({ castAction: 'FORWARD', aimX: 300, aimY: 0 }));
+    expect(simMW.getSnapshot().walls.length).toBeGreaterThan(0);
+    cd(simMW);
+    queueAndStep(simMW, ['BARRIER', 'VOID']);
+    simMW.step(makeInput({ castAction: 'FORWARD', aimX: 300, aimY: 0 }));
+    expect(simMW.getSnapshot().walls.length).toBe(0);
+
+    // Walls on Mines
+    const simWM = setup();
+    queueAndStep(simWM, ['BARRIER', 'VOID']);
+    simWM.step(makeInput({ castAction: 'FORWARD', aimX: 300, aimY: 0 }));
+    expect(simWM.getSnapshot().mines.length).toBeGreaterThan(0);
+    cd(simWM);
+    queueAndStep(simWM, ['BARRIER', 'KINETIC']);
+    simWM.step(makeInput({ castAction: 'FORWARD', aimX: 300, aimY: 0 }));
+    expect(simWM.getSnapshot().mines.length).toBe(0);
+  });
+
+  it('freezes CHILLED enemies completely when hit by FLUX', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    const e = sim.combat.spawnEnemy('BASTION', 200, 0, 1);
+    e.hasFrontShield = false;
+    const ev: ReturnType<GameSim['drainEvents']> = [];
+
+    sim.combat.applyElementalHit(e, 10, ['CRYO'], 1, 0, ev);
+    expect(e.statuses.CHILLED).toBeDefined();
+    expect(e.statuses.FROZEN).toBeUndefined();
+
+    sim.combat.applyElementalHit(e, 0, ['FLUX'], 1, 0, ev);
+    expect(e.statuses.FROZEN).toBeDefined();
+    expect(e.statuses.CHILLED).toBeUndefined();
+    expect(ev.some((x) => x.type === 'damage_number' && x.text === 'FROZEN!')).toBe(true);
   });
 });

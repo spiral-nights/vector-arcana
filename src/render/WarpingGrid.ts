@@ -1,6 +1,8 @@
 import * as THREE from 'three';
+import { ArtStyle } from '../settings';
 import { DEFAULT_RECT_BOUNDARY, pointInConvexPoly } from '../sim/ArenaGeometry';
 import { ARENA_HALF_H, ARENA_HALF_W, Vec2 } from '../sim/types';
+import { createWatercolorGridMaterial } from './WatercolorAssets';
 
 export class WarpingGrid {
   private readonly cols = 56;
@@ -21,6 +23,13 @@ export class WarpingGrid {
   private readonly lineColors: Float32Array;
   private readonly geometry: THREE.BufferGeometry;
   public readonly mesh: THREE.LineSegments;
+  private readonly totalSegments: number;
+  private readonly scene: THREE.Scene;
+  private artStyle: ArtStyle = 'VECTOR_NEON';
+  private brushMesh: THREE.Mesh | null = null;
+  private brushGeo: THREE.BufferGeometry | null = null;
+  private brushPos: Float32Array | null = null;
+  private brushCol: Float32Array | null = null;
   private themeIdx = -1;
   private warpEnabled = true;
   private boundary: readonly Vec2[] = DEFAULT_RECT_BOUNDARY;
@@ -29,6 +38,7 @@ export class WarpingGrid {
   private warpRgb: [number, number, number] = [0.55, 0.80, 0.62];
 
   constructor(scene: THREE.Scene) {
+    this.scene = scene;
     this.count = this.cols * this.rows;
     this.restX = new Float32Array(this.count);
     this.restY = new Float32Array(this.count);
@@ -58,10 +68,10 @@ export class WarpingGrid {
 
     const horizSegments = this.rows * (this.cols - 1);
     const vertSegments = (this.rows - 1) * this.cols;
-    const totalSegments = horizSegments + vertSegments;
+    this.totalSegments = horizSegments + vertSegments;
 
-    this.linePositions = new Float32Array(totalSegments * 2 * 3);
-    this.lineColors = new Float32Array(totalSegments * 2 * 3);
+    this.linePositions = new Float32Array(this.totalSegments * 2 * 3);
+    this.lineColors = new Float32Array(this.totalSegments * 2 * 3);
 
     this.geometry = new THREE.BufferGeometry();
     this.geometry.setAttribute('position', new THREE.BufferAttribute(this.linePositions, 3));
@@ -78,6 +88,58 @@ export class WarpingGrid {
     this.mesh = new THREE.LineSegments(this.geometry, material);
     this.mesh.frustumCulled = false;
     scene.add(this.mesh);
+    this.syncBuffers();
+  }
+
+  private ensureBrushMesh(): void {
+    if (this.brushMesh) return;
+    const nSeg = this.totalSegments;
+    const pos = new Float32Array(nSeg * 4 * 3);
+    const col = new Float32Array(nSeg * 4 * 3);
+    const uvs = new Float32Array(nSeg * 4 * 2);
+    const indices = new Uint32Array(nSeg * 6);
+    for (let s = 0; s < nSeg; s++) {
+      const uvBase = s * 8;
+      uvs[uvBase] = 0;
+      uvs[uvBase + 1] = 0;
+      uvs[uvBase + 2] = 0;
+      uvs[uvBase + 3] = 1;
+      uvs[uvBase + 4] = 1;
+      uvs[uvBase + 5] = 0;
+      uvs[uvBase + 6] = 1;
+      uvs[uvBase + 7] = 1;
+
+      const v0 = s * 4;
+      const iBase = s * 6;
+      indices[iBase] = v0;
+      indices[iBase + 1] = v0 + 1;
+      indices[iBase + 2] = v0 + 2;
+      indices[iBase + 3] = v0 + 2;
+      indices[iBase + 4] = v0 + 1;
+      indices[iBase + 5] = v0 + 3;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geo.setIndex(new THREE.BufferAttribute(indices, 1));
+    const mesh = new THREE.Mesh(geo, createWatercolorGridMaterial());
+    mesh.renderOrder = 0;
+    mesh.frustumCulled = false;
+    this.scene.add(mesh);
+    this.brushMesh = mesh;
+    this.brushGeo = geo;
+    this.brushPos = pos;
+    this.brushCol = col;
+  }
+
+  public setArtStyle(style: ArtStyle): void {
+    if (this.artStyle === style) return;
+    this.artStyle = style;
+    const isWatercolor = style === 'WATERCOLOR_INK';
+    this.mesh.visible = !isWatercolor;
+    if (isWatercolor) this.ensureBrushMesh();
+    if (this.brushMesh) this.brushMesh.visible = isWatercolor;
     this.syncBuffers();
   }
 
@@ -236,13 +298,112 @@ export class WarpingGrid {
   }
 
   private syncBuffers(): void {
-    let ptr = 0;
-    const [br, bg, bb] = this.baseRgb;
-    const [wr, wg, wb] = this.warpRgb;
     const insideFlags = new Uint8Array(this.count);
     for (let i = 0; i < this.count; i++) {
       insideFlags[i] = pointInConvexPoly(this.restX[i]!, this.restY[i]!, this.boundary, -16) ? 1 : 0;
     }
+
+    if (this.artStyle === 'WATERCOLOR_INK' && this.brushPos && this.brushCol && this.brushGeo) {
+      let ptr = 0;
+      let cPtr = 0;
+      const bPos = this.brushPos;
+      const bCol = this.brushCol;
+
+      const writeHiddenQuad = (): void => {
+        for (let k = 0; k < 4; k++) {
+          bPos[ptr++] = 0;
+          bPos[ptr++] = 0;
+          bPos[ptr++] = -9999;
+          bCol[cPtr++] = 0;
+          bCol[cPtr++] = 0;
+          bCol[cPtr++] = 0;
+        }
+      };
+
+      const writeBrushSeg = (idxA: number, idxB: number, isHoriz: boolean, seed: number): void => {
+        const ax = this.posX[idxA]!;
+        const ay = this.posY[idxA]!;
+        const bx = this.posX[idxB]!;
+        const by = this.posY[idxB]!;
+        const dx = bx - ax;
+        const dy = by - ay;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len;
+        const ny = dx / len;
+
+        const dA = Math.min(1, Math.hypot(ax - this.restX[idxA]!, ay - this.restY[idxA]!) / 24);
+        const dB = Math.min(1, Math.hypot(bx - this.restX[idxB]!, by - this.restY[idxB]!) / 24);
+        const wA = 1.25 + dA * 1.15;
+        const wB = 1.25 + dB * 1.15;
+        const wobA = Math.sin(seed * 1.7) * 1.15;
+        const wobB = Math.sin(seed * 1.7 + 1.4) * 1.15;
+
+        const zA = -0.5 - dA * 8;
+        const zB = -0.5 - dB * 8;
+
+        bPos[ptr++] = ax + nx * (wA + wobA);
+        bPos[ptr++] = ay + ny * (wA + wobA);
+        bPos[ptr++] = zA;
+        bPos[ptr++] = ax + nx * (-wA + wobA);
+        bPos[ptr++] = ay + ny * (-wA + wobA);
+        bPos[ptr++] = zA;
+        bPos[ptr++] = bx + nx * (wB + wobB);
+        bPos[ptr++] = by + ny * (wB + wobB);
+        bPos[ptr++] = zB;
+        bPos[ptr++] = bx + nx * (-wB + wobB);
+        bPos[ptr++] = by + ny * (-wB + wobB);
+        bPos[ptr++] = zB;
+
+        const varTint = 0.86 + 0.24 * Math.sin(seed * 2.3);
+        // Horizontal: electric cyan (#1FA2FF -> #38E8FF), Vertical: neon magenta-violet (#A838FF -> #E040FB)
+        const baseR = isHoriz ? 0.14 * varTint : 0.62 * varTint;
+        const baseG = isHoriz ? 0.62 * varTint : 0.20 * varTint;
+        const baseB = isHoriz ? 0.96 * varTint : 0.92 * varTint;
+
+        const boostA = 0.56 + dA * 0.72;
+        const boostB = 0.56 + dB * 0.72;
+        const ar = Math.min(1.25, baseR * boostA + this.splashR[idxA]!);
+        const ag = Math.min(1.25, baseG * boostA + this.splashG[idxA]!);
+        const ab = Math.min(1.25, baseB * boostA + this.splashB[idxA]!);
+        const brC = Math.min(1.25, baseR * boostB + this.splashR[idxB]!);
+        const bgC = Math.min(1.25, baseG * boostB + this.splashG[idxB]!);
+        const bbC = Math.min(1.25, baseB * boostB + this.splashB[idxB]!);
+
+        for (let k = 0; k < 2; k++) {
+          bCol[cPtr++] = ar;
+          bCol[cPtr++] = ag;
+          bCol[cPtr++] = ab;
+        }
+        for (let k = 0; k < 2; k++) {
+          bCol[cPtr++] = brC;
+          bCol[cPtr++] = bgC;
+          bCol[cPtr++] = bbC;
+        }
+      };
+
+      for (let r = 0; r < this.rows; r++) {
+        for (let c = 0; c < this.cols - 1; c++) {
+          const idx = r * this.cols + c;
+          if (!insideFlags[idx] && !insideFlags[idx + 1]) writeHiddenQuad();
+          else writeBrushSeg(idx, idx + 1, true, r * 31 + c);
+        }
+      }
+      for (let r = 0; r < this.rows - 1; r++) {
+        for (let c = 0; c < this.cols; c++) {
+          const idx = r * this.cols + c;
+          if (!insideFlags[idx] && !insideFlags[idx + this.cols]) writeHiddenQuad();
+          else writeBrushSeg(idx, idx + this.cols, false, r * 17 + c * 43);
+        }
+      }
+
+      (this.brushGeo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+      (this.brushGeo.attributes.color as THREE.BufferAttribute).needsUpdate = true;
+      return;
+    }
+
+    let ptr = 0;
+    const [br, bg, bb] = this.baseRgb;
+    const [wr, wg, wb] = this.warpRgb;
 
     const writeHiddenSeg = (): void => {
       for (let k = 0; k < 2; k++) {

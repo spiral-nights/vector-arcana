@@ -385,4 +385,46 @@ describe('Construct Augments — Catalog, Draft & All 6 Mechanics', () => {
     simCryo.step(makeInput({ castAction: 'FORWARD', castHeld: false, aimX: 300, aimY: 0 }));
     expect(simCryo.getSnapshot().projectiles.filter((p) => p.kind === 'ICICLE').length).toBe(12);
   });
+
+  it('12. Visual upgrade scaling increases Flux spray range/spread, Shield radius, and Rock radius', () => {
+    const baseFlux = new GameSim();
+    queueAndStep(baseFlux, ['FLUX']);
+    baseFlux.step(makeInput({ castAction: 'FORWARD', castHeld: true, aimX: 300, aimY: 0 }));
+    const baseCh = baseFlux.getSnapshot().player.channel!;
+
+    const upgFlux = new GameSim();
+    upgFlux.augments.FLUX_TIDAL_SURGE = 1;
+    queueAndStep(upgFlux, ['FLUX']);
+    upgFlux.step(makeInput({ castAction: 'FORWARD', castHeld: true, aimX: 300, aimY: 0 }));
+    const upgCh = upgFlux.getSnapshot().player.channel!;
+    const upgEv = upgFlux.drainEvents().find((e) => e.type === 'vfx_spray');
+
+    expect(upgCh.range!).toBeGreaterThan(baseCh.range! * 1.3);
+    expect(upgCh.spread!).toBeGreaterThan(baseCh.spread! * 1.25);
+    expect(upgEv?.type).toBe('vfx_spray');
+    if (upgEv?.type === 'vfx_spray') {
+      expect(upgEv.range).toBe(upgCh.range);
+      expect(upgEv.spread).toBe(upgCh.spread);
+    }
+
+    // Shield size upgrade via SANCTUARY_PULSE
+    const baseShieldSim = new GameSim();
+    queueAndStep(baseShieldSim, ['BARRIER']);
+    baseShieldSim.step(makeInput({ castAction: 'FORWARD' }));
+    const upgShieldSim = new GameSim();
+    upgShieldSim.augments.SANCTUARY_PULSE = 1;
+    queueAndStep(upgShieldSim, ['BARRIER']);
+    upgShieldSim.step(makeInput({ castAction: 'FORWARD' }));
+    expect(upgShieldSim.getSnapshot().shields[0]!.radius).toBeGreaterThan(baseShieldSim.getSnapshot().shields[0]!.radius);
+
+    // Rock size upgrade via KINETIC_AFTERSHOCK
+    const baseRockSim = new GameSim();
+    queueAndStep(baseRockSim, ['KINETIC']);
+    baseRockSim.step(makeInput({ castAction: 'FORWARD', castHeld: false }));
+    const upgRockSim = new GameSim();
+    upgRockSim.augments.KINETIC_AFTERSHOCK = 1;
+    queueAndStep(upgRockSim, ['KINETIC']);
+    upgRockSim.step(makeInput({ castAction: 'FORWARD', castHeld: false }));
+    expect(upgRockSim.getSnapshot().projectiles[0]!.radius).toBeGreaterThan(baseRockSim.getSnapshot().projectiles[0]!.radius);
+  });
 });
