@@ -623,4 +623,64 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     sim.step(makeInput());
     expect(sim.getSnapshot().projectiles.some((p) => p.id === 7777)).toBe(false);
   });
+
+  it('FLUX spray pushes enemies while THERMAL, PLASMA, and CRYO sprays apply zero knockback', () => {
+    const testKnockback = (els: BaseElement[]): number => {
+      const sim = new GameSim();
+      sim.combat.enemies = [];
+      sim.waveDirector.rifts = [];
+      const e = sim.combat.spawnEnemy('BASTION', sim.getSnapshot().player.x + 120, 0, 1);
+      e.hasFrontShield = false;
+      queueAndStep(sim, els);
+      sim.step(makeInput({ castAction: 'FORWARD', castHeld: true, aimX: e.x, aimY: 0 }));
+      return e.vx;
+    };
+
+    expect(testKnockback(['FLUX'])).toBeGreaterThan(100);
+    expect(testKnockback(['THERMAL'])).toBeLessThanOrEqual(0);
+    expect(testKnockback(['FLUX', 'THERMAL'])).toBeLessThanOrEqual(0);
+    expect(testKnockback(['CRYO'])).toBeLessThanOrEqual(0);
+  });
+
+  it('water never spawns puddles on empty air, and PLASMA never spawns puddles even on hit', () => {
+    const simAir = new GameSim();
+    simAir.combat.enemies = [];
+    simAir.waveDirector.rifts = [];
+    queueAndStep(simAir, ['FLUX']);
+    simAir.step(makeInput({ castAction: 'NOVA' }));
+    expect(simAir.getSnapshot().pools.length).toBe(0);
+
+    const simPlasma = new GameSim();
+    simPlasma.combat.enemies = [];
+    simPlasma.waveDirector.rifts = [];
+    const e = simPlasma.combat.spawnEnemy('BASTION', simPlasma.getSnapshot().player.x + 80, 0, 1);
+    e.hasFrontShield = false;
+    queueAndStep(simPlasma, ['FLUX', 'THERMAL']);
+    simPlasma.step(makeInput({ castAction: 'NOVA' }));
+    expect(simPlasma.getSnapshot().pools.length).toBe(0);
+  });
+
+  it('ArenaBlocks stop enemies, block projectiles, and truncate beams', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    sim.waveDirector.pillars = [];
+    sim.waveDirector.blocks = [{ id: 1, x: -700, y: 0, halfW: 50, halfH: 80, height: 68 }];
+    const p = sim.getSnapshot().player;
+    p.x = -960;
+    p.y = 0;
+
+    // 1. Beam truncates cleanly at ArenaBlock face (-750)
+    queueAndStep(sim, ['VOID']);
+    sim.step(makeInput({ castAction: 'FORWARD', castHeld: true, aimX: -400, aimY: 0 }));
+    sim.step(makeInput({ castHeld: true, aimX: -400, aimY: 0 }));
+    const beam = sim.getSnapshot().beams[0]!;
+    expect(beam.clashing).toBe(true);
+    expect(beam.clashDist).toBeLessThan(220);
+
+    // 2. Enemy pushed outside ArenaBlock AABB
+    const e = sim.combat.spawnEnemy('SWARMER', -700, 0, 1);
+    sim.step(makeInput());
+    expect(Math.abs(e.x - -700)).toBeGreaterThanOrEqual(50);
+  });
 });

@@ -52,9 +52,16 @@ export class SceneManager {
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
 
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.52, 0.38, 0.62);
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.56, 0.36, 0.64);
     this.composer.addPass(this.bloomPass);
     this.composer.addPass(new OutputPass());
+
+    // 3D Lighting for solid opaque hulls, pillars, and arena blocks
+    const hemi = new THREE.HemisphereLight(0xaaccff, 0x161b2e, 1.15);
+    this.scene.add(hemi);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.35);
+    dirLight.position.set(380, -450, 720);
+    this.scene.add(dirLight);
 
     this.createArenaBorder();
     this.setSectorTheme(1);

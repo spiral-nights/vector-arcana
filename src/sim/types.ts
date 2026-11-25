@@ -323,6 +323,15 @@ export interface ArenaPillar {
   sides: number;
 }
 
+export interface ArenaBlock {
+  id: number;
+  x: number;
+  y: number;
+  halfW: number;
+  halfH: number;
+  height: number;
+}
+
 export interface SpawnRiftEntity {
   id: number;
   x: number;
@@ -433,6 +442,7 @@ export interface SimSnapshot {
   pools: readonly PoolEntity[];
   slashes: readonly SlashArcEntity[];
   pillars: readonly ArenaPillar[];
+  blocks: readonly ArenaBlock[];
   rifts: readonly SpawnRiftEntity[];
   hazards: readonly HazardZoneEntity[];
   gate: SectorGate;

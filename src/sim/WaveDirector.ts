@@ -1,6 +1,7 @@
 import {
   ARENA_HALF_H,
   ARENA_HALF_W,
+  ArenaBlock,
   ArenaPillar,
   EnemyArchetype,
   PlayerState,
@@ -14,56 +15,20 @@ export function generateSectorPillars(sector: number): ArenaPillar[] {
   const coords: Array<[number, number, number, number]> = [];
 
   if (layout === 0) {
-    // Sector Theme 0: Cyber Vault — asymmetric cover bunkers + flanking pylons
-    coords.push(
-      [-320, 250, 44, 6],
-      [320, 250, 44, 6],
-      [-320, -250, 44, 6],
-      [320, -250, 44, 6],
-      [0, 390, 36, 6],
-      [0, -390, 36, 6]
-    );
+    // Cyber Vault
+    coords.push([-120, 210, 36, 6], [120, -210, 36, 6], [420, 0, 38, 6]);
   } else if (layout === 1) {
-    // Sector Theme 1: Reactor Choke — tight center core + dual forward bastions
-    coords.push(
-      [-230, 175, 48, 4],
-      [-230, -175, 48, 4],
-      [250, 310, 44, 4],
-      [250, -310, 44, 4],
-      [0, 0, 50, 8],
-      [510, 0, 38, 4]
-    );
+    // Reactor Foundry
+    coords.push([-220, 290, 40, 4], [220, -290, 40, 4], [0, 0, 44, 8]);
   } else if (layout === 2) {
-    // Sector Theme 2: Cryo Gauntlet — staggered prism pillars & side lanes
-    coords.push(
-      [-450, 0, 46, 6],
-      [-150, 290, 44, 6],
-      [-150, -290, 44, 6],
-      [180, 160, 42, 6],
-      [180, -160, 42, 6],
-      [480, 320, 44, 6],
-      [480, -320, 44, 6]
-    );
+    // Cryo Gauntlet
+    coords.push([-520, 140, 38, 6], [520, -140, 38, 6], [0, 0, 36, 6]);
   } else if (layout === 3) {
-    // Sector Theme 3: Bio-Core Ring — outer ring of monoliths around central killbox
-    coords.push(
-      [-380, 240, 48, 8],
-      [-120, -240, 50, 6],
-      [220, 240, 48, 6],
-      [440, -240, 44, 8],
-      [-520, -180, 36, 6],
-      [0, 410, 38, 8]
-    );
+    // Bio-Core Compound
+    coords.push([-180, 0, 38, 8], [180, 0, 38, 8], [0, 330, 36, 6], [0, -330, 36, 6]);
   } else {
-    // Sector Theme 4: Void Sanctum Boss Arena
-    coords.push(
-      [-480, 360, 52, 8],
-      [480, 360, 52, 8],
-      [-480, -360, 52, 8],
-      [480, -360, 52, 8],
-      [0, 440, 38, 6],
-      [0, -440, 38, 6]
-    );
+    // Void Sanctum Boss Arena
+    coords.push([-260, 0, 42, 8], [260, 0, 42, 8], [0, 320, 38, 8], [0, -320, 38, 8]);
   }
 
   return coords.map(([x, y, radius, sides], i) => ({
@@ -72,6 +37,67 @@ export function generateSectorPillars(sector: number): ArenaPillar[] {
     y,
     radius,
     sides,
+  }));
+}
+
+export function generateSectorBlocks(sector: number): ArenaBlock[] {
+  const layout = (sector - 1) % 5;
+  const defs: Array<[number, number, number, number, number]> = [];
+
+  if (layout === 0) {
+    // Cyber Vault: open center corridor (y=-110..110), upper & lower bunker rooms
+    defs.push(
+      [-280, 320, 170, 36, 68],
+      [260, 320, 170, 36, 68],
+      [-280, -320, 170, 36, 68],
+      [260, -320, 170, 36, 68],
+      [-520, 195, 36, 110, 62],
+      [-520, -195, 36, 110, 62],
+      [520, 210, 36, 110, 62],
+      [520, -210, 36, 110, 62]
+    );
+  } else if (layout === 1) {
+    // Reactor Foundry: split core + side bulkheads with bypass tunnels
+    defs.push(
+      [0, 190, 160, 42, 74],
+      [0, -190, 160, 42, 74],
+      [-430, 0, 44, 165, 70],
+      [430, 0, 44, 165, 70]
+    );
+  } else if (layout === 2) {
+    // Cryo Gauntlet: staggered S-curve chicane trench walls
+    defs.push(
+      [-360, 220, 40, 180, 70],
+      [-90, -220, 40, 180, 70],
+      [190, 220, 40, 180, 70],
+      [470, -220, 40, 180, 70]
+    );
+  } else if (layout === 3) {
+    // Bio-Core Compound: 4 corner bunker compounds + central hub monolith
+    defs.push(
+      [-360, 280, 150, 36, 68],
+      [-360, -280, 150, 36, 68],
+      [340, 280, 150, 36, 68],
+      [340, -280, 150, 36, 68],
+      [0, 0, 88, 88, 78]
+    );
+  } else {
+    // Void Sanctum Boss Colosseum
+    defs.push(
+      [-440, 280, 120, 38, 74],
+      [440, 280, 120, 38, 74],
+      [-440, -280, 120, 38, 74],
+      [440, -280, 120, 38, 74]
+    );
+  }
+
+  return defs.map(([x, y, halfW, halfH, height], i) => ({
+    id: i + 1,
+    x,
+    y,
+    halfW,
+    halfH,
+    height,
   }));
 }
 
@@ -88,6 +114,7 @@ export class WaveDirector {
   public multiplier = 1;
   public multiplierTimer = 0;
   public pillars: ArenaPillar[] = [];
+  public blocks: ArenaBlock[] = [];
   public rifts: SpawnRiftEntity[] = [];
   public gate: SectorGate = {
     open: false,
@@ -103,6 +130,7 @@ export class WaveDirector {
     this.multiplier = 1;
     this.multiplierTimer = 0;
     this.pillars = [];
+    this.blocks = [];
     this.rifts = [];
     this.gate.open = false;
     this.nextRiftId = 1;
@@ -111,6 +139,7 @@ export class WaveDirector {
   public startWave(sectorNum: number, events: SimEvent[]): void {
     this.wave = sectorNum;
     this.pillars = generateSectorPillars(sectorNum);
+    this.blocks = generateSectorBlocks(sectorNum);
     this.rifts = [];
     this.gate.open = false;
 
@@ -136,60 +165,63 @@ export class WaveDirector {
   private buildSectorSquads(sector: number, isBoss: boolean): RiftWaveSpec[] {
     if (isBoss) {
       return [
-        { x: 420, y: 0, delay: 2.0, archetypes: ['WARDEN', 'BASTION'] },
-        { x: 360, y: 310, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'STALKER'] },
-        { x: 360, y: -310, delay: 9.0, archetypes: ['SWARMER', 'SWARMER', 'WEAVER', 'STALKER'] },
+        { x: 420, y: 0, delay: 2.0, archetypes: ['WARDEN', 'BASTION', 'BASTION'] },
+        { x: 320, y: 390, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'STALKER', 'WEAVER'] },
+        { x: 320, y: -390, delay: 8.5, archetypes: ['SWARMER', 'SWARMER', 'WEAVER', 'SPLITTER', 'STALKER'] },
       ];
     }
     if (sector === 1) {
       return [
-        { x: 410, y: 210, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'SWARMER', 'BASTION'] },
-        { x: 410, y: -210, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'STALKER'] },
-        { x: 260, y: 340, delay: 8.0, archetypes: ['SWARMER', 'SWARMER', 'STALKER'] },
-        { x: 260, y: -340, delay: 8.0, archetypes: ['SWARMER', 'BASTION'] },
+        { x: 410, y: 170, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'SWARMER', 'BASTION'] },
+        { x: 410, y: -170, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'STALKER', 'STALKER'] },
+        { x: 260, y: 410, delay: 7.5, archetypes: ['SWARMER', 'SWARMER', 'WEAVER'] },
+        { x: 260, y: -410, delay: 7.5, archetypes: ['SWARMER', 'BASTION', 'STALKER'] },
       ];
     }
     if (sector === 2) {
       return [
-        { x: 430, y: 240, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'BASTION', 'STALKER'] },
-        { x: 430, y: -240, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'WEAVER'] },
-        { x: 220, y: 350, delay: 8.5, archetypes: ['SWARMER', 'SWARMER', 'STALKER', 'BASTION'] },
-        { x: 220, y: -350, delay: 8.5, archetypes: ['SWARMER', 'SPLITTER', 'STALKER'] },
+        { x: 420, y: 260, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'BASTION', 'STALKER', 'WEAVER'] },
+        { x: 420, y: -260, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'SPLITTER', 'STALKER'] },
+        { x: -240, y: 380, delay: 7.5, archetypes: ['SWARMER', 'SWARMER', 'BASTION', 'STALKER', 'WEAVER'] },
+        { x: -240, y: -380, delay: 7.5, archetypes: ['SWARMER', 'SPLITTER', 'STALKER', 'BASTION'] },
       ];
     }
     if (sector === 3) {
       return [
-        { x: 430, y: 260, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'WEAVER', 'SPLITTER'] },
-        { x: 430, y: -260, delay: 2.0, archetypes: ['SWARMER', 'BASTION', 'STALKER'] },
-        { x: 240, y: 360, delay: 8.5, archetypes: ['SWARMER', 'WEAVER', 'SPLITTER', 'STALKER'] },
-        { x: -160, y: -360, delay: 8.5, archetypes: ['SWARMER', 'SWARMER', 'BASTION', 'STALKER'] },
+        { x: 440, y: 260, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'WEAVER', 'SPLITTER', 'BASTION'] },
+        { x: 440, y: -260, delay: 2.0, archetypes: ['SWARMER', 'BASTION', 'STALKER', 'WEAVER'] },
+        { x: 240, y: 390, delay: 7.0, archetypes: ['SWARMER', 'WEAVER', 'SPLITTER', 'STALKER', 'STALKER'] },
+        { x: -200, y: -390, delay: 7.0, archetypes: ['SWARMER', 'SWARMER', 'BASTION', 'SPLITTER'] },
+        { x: 540, y: 0, delay: 13.0, archetypes: ['BASTION', 'WEAVER', 'WEAVER', 'STALKER'] },
       ];
     }
     if (sector === 4) {
       return [
-        { x: 440, y: 270, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'BASTION', 'WEAVER', 'STALKER'] },
-        { x: 440, y: -270, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'SPLITTER', 'STALKER'] },
-        { x: 210, y: 360, delay: 8.5, archetypes: ['SWARMER', 'BASTION', 'WEAVER', 'SPLITTER'] },
-        { x: -180, y: -360, delay: 8.5, archetypes: ['SWARMER', 'SWARMER', 'WEAVER', 'STALKER', 'BASTION'] },
+        { x: 440, y: 280, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'BASTION', 'WEAVER', 'STALKER'] },
+        { x: 440, y: -280, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'SPLITTER', 'STALKER', 'BASTION'] },
+        { x: 220, y: 400, delay: 7.0, archetypes: ['SWARMER', 'BASTION', 'WEAVER', 'SPLITTER', 'STALKER'] },
+        { x: -200, y: -400, delay: 7.0, archetypes: ['SWARMER', 'SWARMER', 'WEAVER', 'STALKER', 'BASTION'] },
+        { x: 560, y: 0, delay: 13.0, archetypes: ['WEAVER', 'WEAVER', 'SPLITTER', 'BASTION', 'STALKER', 'STALKER'] },
       ];
     }
 
     // Sector 6+ scaling
-    const extra = Math.min(5, Math.floor((sector - 4) / 2));
+    const extra = Math.min(6, Math.floor((sector - 4) / 2) + 1);
     const s1: EnemyArchetype[] = ['SWARMER', 'SWARMER', 'BASTION', 'WEAVER', 'STALKER'];
     const s2: EnemyArchetype[] = ['SWARMER', 'SWARMER', 'SPLITTER', 'WEAVER', 'STALKER'];
-    const s3: EnemyArchetype[] = ['SWARMER', 'BASTION', 'SPLITTER', 'STALKER'];
-    const s4: EnemyArchetype[] = ['SWARMER', 'WEAVER', 'BASTION', 'STALKER'];
+    const s3: EnemyArchetype[] = ['SWARMER', 'BASTION', 'SPLITTER', 'STALKER', 'WEAVER'];
+    const s4: EnemyArchetype[] = ['SWARMER', 'WEAVER', 'BASTION', 'STALKER', 'SPLITTER'];
     for (let i = 0; i < extra; i++) {
       s1.push(i % 2 === 0 ? 'SWARMER' : 'STALKER');
       s2.push(i % 2 === 0 ? 'SPLITTER' : 'BASTION');
-      s3.push(i % 2 === 0 ? 'WEAVER' : 'SWARMER');
+      s3.push(i % 2 === 0 ? 'WEAVER' : 'STALKER');
+      s4.push(i % 2 === 0 ? 'BASTION' : 'WEAVER');
     }
     return [
       { x: 440, y: 270, delay: 2.0, archetypes: s1 },
       { x: 440, y: -270, delay: 2.0, archetypes: s2 },
-      { x: 220, y: 360, delay: 8.5, archetypes: s3 },
-      { x: -180, y: -360, delay: 8.5, archetypes: s4 },
+      { x: 220, y: 390, delay: 7.0, archetypes: s3 },
+      { x: -180, y: -390, delay: 11.5, archetypes: s4 },
     ];
   }
 
@@ -208,7 +240,6 @@ export class WaveDirector {
       }
     }
 
-    // Fast-forward delayed wave-2 rifts when the first wave is wiped out early
     if (activeEnemyCount === 0 && this.rifts.length > 0) {
       for (const r of this.rifts) {
         if (r.timer > 1.2) {
@@ -225,7 +256,7 @@ export class WaveDirector {
         const count = r.archetypes.length;
         for (let k = 0; k < count; k++) {
           const a = (k / Math.max(1, count)) * Math.PI * 2;
-          const dist = count === 1 ? 0 : 48;
+          const dist = count === 1 ? 0 : 44;
           const sx = Math.max(-ARENA_HALF_W + 40, Math.min(ARENA_HALF_W - 40, r.x + Math.cos(a) * dist));
           const sy = Math.max(-ARENA_HALF_H + 40, Math.min(ARENA_HALF_H - 40, r.y + Math.sin(a) * dist));
           spawnEnemy(r.archetypes[k]!, sx, sy);

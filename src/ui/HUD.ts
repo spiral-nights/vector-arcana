@@ -319,8 +319,20 @@ export class HUD {
       ctx.stroke();
     }
 
-    // Cover pillars
-    ctx.fillStyle = 'rgba(26, 107, 255, 0.55)';
+    // Architectural Arena Blocks & Cover Pillars
+    ctx.fillStyle = 'rgba(0, 216, 255, 0.35)';
+    ctx.strokeStyle = 'rgba(0, 229, 255, 0.72)';
+    ctx.lineWidth = 1;
+    for (const blk of snapshot.blocks) {
+      const bx = toX(blk.x - blk.halfW);
+      const by = toY(blk.y + blk.halfH);
+      const bw = Math.max(3, blk.halfW * 2 * scale);
+      const bh = Math.max(3, blk.halfH * 2 * scale);
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.strokeRect(bx, by, bw, bh);
+    }
+
+    ctx.fillStyle = 'rgba(26, 107, 255, 0.62)';
     for (const pil of snapshot.pillars) {
       ctx.beginPath();
       ctx.arc(toX(pil.x), toY(pil.y), Math.max(2.5, pil.radius * scale), 0, Math.PI * 2);

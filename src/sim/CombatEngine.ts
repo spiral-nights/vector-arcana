@@ -3,6 +3,7 @@ import { computeComposition, ResolvedSelfCast, ResolvedSpell } from './SpellReso
 import {
   ARENA_HALF_H,
   ARENA_HALF_W,
+  ArenaBlock,
   ArenaPillar,
   BeamEntity,
   ChannelState,
@@ -98,6 +99,71 @@ function raySegmentIntersect(
     return t;
   }
   return null;
+}
+
+function circleVsAABB(
+  cx: number,
+  cy: number,
+  r: number,
+  b: ArenaBlock
+): { hit: boolean; pushX: number; pushY: number } {
+  const closestX = Math.max(b.x - b.halfW, Math.min(b.x + b.halfW, cx));
+  const closestY = Math.max(b.y - b.halfH, Math.min(b.y + b.halfH, cy));
+  const dx = cx - closestX;
+  const dy = cy - closestY;
+  const distSq = dx * dx + dy * dy;
+  if (distSq >= r * r) return { hit: false, pushX: 0, pushY: 0 };
+  const dist = Math.sqrt(distSq);
+  if (dist > 1e-4) {
+    const overlap = r - dist;
+    return { hit: true, pushX: (dx / dist) * overlap, pushY: (dy / dist) * overlap };
+  }
+  const penX = b.halfW - Math.abs(cx - b.x);
+  const penY = b.halfH - Math.abs(cy - b.y);
+  if (penX < penY) {
+    return { hit: true, pushX: cx >= b.x ? penX + r : -(penX + r), pushY: 0 };
+  }
+  return { hit: true, pushX: 0, pushY: cy >= b.y ? penY + r : -(penY + r) };
+}
+
+function rayAABBIntersect(
+  ox: number,
+  oy: number,
+  dx: number,
+  dy: number,
+  maxDist: number,
+  b: ArenaBlock
+): number | null {
+  const minX = b.x - b.halfW;
+  const maxX = b.x + b.halfW;
+  const minY = b.y - b.halfH;
+  const maxY = b.y + b.halfH;
+  let tmin = 0;
+  let tmax = maxDist;
+
+  if (Math.abs(dx) < 1e-6) {
+    if (ox < minX || ox > maxX) return null;
+  } else {
+    let t1 = (minX - ox) / dx;
+    let t2 = (maxX - ox) / dx;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+
+  if (Math.abs(dy) < 1e-6) {
+    if (oy < minY || oy > maxY) return null;
+  } else {
+    let t1 = (minY - oy) / dy;
+    let t2 = (maxY - oy) / dy;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+
+  return tmin > 8 && tmin <= maxDist ? tmin : null;
 }
 
 export class CombatEngine {
@@ -208,22 +274,21 @@ export class CombatEngine {
       case 'KINETIC_ARMOR': {
         player.armorHp = Math.min(player.maxArmorHp, player.armorHp + selfCast.armorAmount);
         const radius = 120 + comp.totalPower * 25;
-        this.applyAoEDamage(player.x, player.y, radius, 26 * (counts.KINETIC ?? 1), selfCast.elements, 260, events);
+        const hits = this.applyAoEDamage(player.x, player.y, radius, 26 * (counts.KINETIC ?? 1), selfCast.elements, 260, events);
         events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius, colorHex: selfCast.colorHex });
         events.push({ type: 'vfx_shards', x: player.x, y: player.y, colors: comp.colors, count: 14, speedScale: 0.9 });
         events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 200, radius: radius + 20 });
         events.push({ type: 'screen_shake', intensity: 4 });
-        if (selfCast.elements.includes('FLUX') || selfCast.elements.includes('PLASMA')) {
-          const kind = selfCast.elements.includes('PLASMA') ? 'PLASMA' : 'FLUX';
+        if (selfCast.elements.includes('FLUX') && hits.length > 0 && this.pools.length < 24) {
           this.pools.push({
             id: this.nextId++,
-            kind,
-            x: player.x,
-            y: player.y,
+            kind: 'FLUX',
+            x: hits[0]!.x,
+            y: hits[0]!.y,
             radius: 78,
             life: 5,
             maxLife: 5,
-            colorHex: ELEMENT_META[kind].colorHex,
+            colorHex: ELEMENT_META.FLUX.colorHex,
             tickTimer: 0.25,
           });
         }
@@ -264,7 +329,8 @@ export class CombatEngine {
           player.ignitedTimer = 0;
         }
         const radius = 135 + comp.totalPower * 45;
-        this.applyAoEDamage(player.x, player.y, radius, 28 * comp.totalPower, selfCast.elements, 220, events);
+        const knockback = selfCast.elements.includes('FLUX') ? 220 : 0;
+        const hits = this.applyAoEDamage(player.x, player.y, radius, 28 * comp.totalPower, selfCast.elements, knockback, events);
         events.push({
           type: 'vfx_spray',
           x: player.x,
@@ -278,22 +344,17 @@ export class CombatEngine {
         events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius, colorHex: selfCast.colorHex });
         events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 150 + comp.totalPower * 35, radius: radius + 20 });
 
-        const puddleKind = selfCast.elements.includes('PLASMA')
-          ? 'PLASMA'
-          : selfCast.elements.includes('FLUX')
-          ? 'FLUX'
-          : null;
-        if (puddleKind) {
-          const stack = counts[puddleKind] ?? 1;
+        if (selfCast.elements.includes('FLUX') && hits.length > 0 && this.pools.length < 24) {
+          const stack = counts.FLUX ?? 1;
           this.pools.push({
             id: this.nextId++,
-            kind: puddleKind,
-            x: player.x,
-            y: player.y,
+            kind: 'FLUX',
+            x: hits[0]!.x,
+            y: hits[0]!.y,
             radius: 75 + stack * 25,
             life: 5,
             maxLife: 5,
-            colorHex: ELEMENT_META[puddleKind].colorHex,
+            colorHex: ELEMENT_META.FLUX.colorHex,
             tickTimer: 0.25,
           });
         }
@@ -346,8 +407,8 @@ export class CombatEngine {
     } else if (ch.delivery === 'CRYSTAL_SHARDS') {
       const crystalCount = counts.CRYSTAL ?? 1;
       const count = 7 + crystalCount * 3;
-      const speed = 280 + r * 740;
-      const range = 160 + r * 820;
+      const speed = 680 + r * 1120;
+      const range = 240 + r * 920;
       const life = range / speed;
       const spread = 0.65 - r * 0.36;
       const damage = Math.round(32 * (0.55 + 0.65 * r));
@@ -450,8 +511,8 @@ export class CombatEngine {
     if (ch.delivery === 'SPRAY') {
       const range = 320 + comp.totalPower * 45;
       const spread = 0.88;
-      const knockback = ch.elements.includes('FLUX') || ch.elements.includes('PLASMA') ? 220 : 150;
-      this.applyConeDamage(player.x, player.y, angle, spread, range, 11 + comp.totalPower * 4, ch.elements, events, knockback);
+      const knockback = ch.elements.includes('FLUX') ? 230 : 0;
+      const hits = this.applyConeDamage(player.x, player.y, angle, spread, range, 11 + comp.totalPower * 4, ch.elements, events, knockback);
       events.push({
         type: 'vfx_spray',
         x: player.x + Math.cos(angle) * 20,
@@ -470,25 +531,19 @@ export class CombatEngine {
         radius: 110,
       });
 
-      const puddleKind = ch.elements.includes('PLASMA')
-        ? 'PLASMA'
-        : ch.elements.includes('FLUX')
-        ? 'FLUX'
-        : null;
-      if (puddleKind && Math.random() < 0.32 && this.pools.length < 24) {
-        const stack = counts[puddleKind] ?? 1;
-        const dist = 120 + Math.random() * (range - 140);
-        const a = angle + (Math.random() - 0.5) * spread * 0.8;
-        const pos = clampArena(player.x + Math.cos(a) * dist, player.y + Math.sin(a) * dist, 45);
+      if (ch.elements.includes('FLUX') && hits.length > 0 && Math.random() < 0.35 && this.pools.length < 24) {
+        const stack = counts.FLUX ?? 1;
+        const target = hits[Math.floor(Math.random() * hits.length)]!;
+        const pos = clampArena(target.x, target.y, 45);
         this.pools.push({
           id: this.nextId++,
-          kind: puddleKind,
+          kind: 'FLUX',
           x: pos.x,
           y: pos.y,
           radius: 56 + stack * 20,
           life: 5,
           maxLife: 5,
-          colorHex: ELEMENT_META[puddleKind].colorHex,
+          colorHex: ELEMENT_META.FLUX.colorHex,
           tickTimer: 0.25,
         });
       }
@@ -755,7 +810,7 @@ export class CombatEngine {
 
       case 'CRYSTAL_SHARDS': {
         const count = 6 + comp.totalPower * 5;
-        const speed = 740;
+        const speed = 1250;
         const shardColor = comp.colors.find((c) => c !== ELEMENT_META.CRYSTAL.colorHex) ?? color;
         for (let i = 0; i < count; i++) {
           const a = angle + (i / count) * Math.PI * 2;
@@ -770,8 +825,8 @@ export class CombatEngine {
             radius: 12,
             damage: 32,
             pierce: 4,
-            life: 1.4,
-            maxLife: 1.4,
+            life: 1.0,
+            maxLife: 1.0,
             colorHex: shardColor,
             colors: comp.colors,
             elements: spell.elements,
@@ -832,7 +887,8 @@ export class CombatEngine {
 
       case 'SPRAY': {
         const range = 165 + (comp.totalPower - 1) * 90;
-        this.applyAoEDamage(player.x, player.y, range, 32 * comp.totalPower, spell.elements, 260, events);
+        const knockback = spell.elements.includes('FLUX') ? 260 : 0;
+        const hits = this.applyAoEDamage(player.x, player.y, range, 32 * comp.totalPower, spell.elements, knockback, events);
         events.push({
           type: 'vfx_spray',
           x: player.x,
@@ -849,27 +905,21 @@ export class CombatEngine {
           events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: ringR, colorHex: ringColor, duration: 0.32 + rIdx * 0.08 });
         }
 
-        const puddleKind = spell.elements.includes('PLASMA')
-          ? 'PLASMA'
-          : spell.elements.includes('FLUX')
-          ? 'FLUX'
-          : null;
-        if (puddleKind) {
-          const stack = counts[puddleKind] ?? 1;
-          const puddleCount = 2 + comp.totalPower * 2;
-          const dist = range * 0.55;
-          for (let i = 0; i < puddleCount; i++) {
-            const a = (i / puddleCount) * Math.PI * 2;
-            const pos = clampArena(player.x + Math.cos(a) * dist, player.y + Math.sin(a) * dist, 45);
+        if (spell.elements.includes('FLUX') && hits.length > 0) {
+          const stack = counts.FLUX ?? 1;
+          const puddleCount = Math.min(hits.length, 2 + comp.totalPower);
+          for (let i = 0; i < puddleCount && this.pools.length < 24; i++) {
+            const target = hits[i % hits.length]!;
+            const pos = clampArena(target.x, target.y, 45);
             this.pools.push({
               id: this.nextId++,
-              kind: puddleKind,
+              kind: 'FLUX',
               x: pos.x,
               y: pos.y,
               radius: 56 + stack * 20,
               life: 5,
               maxLife: 5,
-              colorHex: ELEMENT_META[puddleKind].colorHex,
+              colorHex: ELEMENT_META.FLUX.colorHex,
               tickTimer: 0.25,
             });
           }
@@ -983,38 +1033,33 @@ export class CombatEngine {
     });
   }
 
-  private detonateRock(p: ProjectileEntity, events: SimEvent[]): void {
+  private detonateRock(p: ProjectileEntity, events: SimEvent[], hitTarget = true): void {
     const counts = p.composition.counts;
     const kineticCount = counts.KINETIC ?? 1;
     const blastRadius = 95 + kineticCount * 38;
 
-    this.applyAoEDamage(p.x, p.y, blastRadius, p.damage, p.elements, 320, events);
+    const hits = this.applyAoEDamage(p.x, p.y, blastRadius, p.damage, p.elements, 320, events);
     events.push({ type: 'grid_impulse', x: p.x, y: p.y, strength: 220 + kineticCount * 90, radius: blastRadius + 50 });
     events.push({ type: 'vfx_burst', x: p.x, y: p.y, colorHex: p.colorHex, count: 22 + kineticCount * 6, radius: blastRadius * 0.7 });
     events.push({ type: 'vfx_shards', x: p.x, y: p.y, colors: p.colors, count: 16 + kineticCount * 6, speedScale: 1.25 });
     events.push({ type: 'vfx_ring', x: p.x, y: p.y, radius: blastRadius, colorHex: p.colorHex });
     events.push({ type: 'screen_shake', intensity: 5 + kineticCount * 2 });
 
-    const puddleEl = p.elements.includes('PLASMA')
-      ? 'PLASMA'
-      : p.elements.includes('FLUX')
-      ? 'FLUX'
-      : null;
-    if (puddleEl) {
-      const stack = counts[puddleEl] ?? 1;
-      for (let i = 0; i < stack; i++) {
+    if (p.elements.includes('FLUX') && (hitTarget || hits.length > 0) && this.pools.length < 24) {
+      const stack = counts.FLUX ?? 1;
+      for (let i = 0; i < stack && this.pools.length < 24; i++) {
         const a = (i / stack) * Math.PI * 2 + Math.random() * 0.5;
         const offset = stack > 1 ? 36 : 0;
         const pos = clampArena(p.x + Math.cos(a) * offset, p.y + Math.sin(a) * offset, 45);
         this.pools.push({
           id: this.nextId++,
-          kind: puddleEl,
+          kind: 'FLUX',
           x: pos.x,
           y: pos.y,
           radius: 52 + stack * 22,
           life: 5.5,
           maxLife: 5.5,
-          colorHex: ELEMENT_META[puddleEl].colorHex,
+          colorHex: ELEMENT_META.FLUX.colorHex,
           tickTimer: 0.25,
         });
       }
@@ -1113,13 +1158,13 @@ export class CombatEngine {
           kind: 'SHATTER_SHARD',
           x: e.x + Math.cos(a) * 14,
           y: e.y + Math.sin(a) * 14,
-          vx: Math.cos(a) * 480,
-          vy: Math.sin(a) * 480,
+          vx: Math.cos(a) * 820,
+          vy: Math.sin(a) * 820,
           radius: 8,
           damage: 28,
           pierce: 2,
-          life: 0.85,
-          maxLife: 0.85,
+          life: 0.65,
+          maxLife: 0.65,
           colorHex: 0x80ffff,
           colors: [0x80ffff, 0x00f5ff],
           elements: ['CRYSTAL'],
@@ -1207,12 +1252,14 @@ export class CombatEngine {
     elements: readonly QueueElement[],
     knockback: number,
     events: SimEvent[]
-  ): void {
+  ): Array<{ x: number; y: number }> {
+    const hits: Array<{ x: number; y: number }> = [];
     for (const e of this.enemies) {
       const dx = e.x - x;
       const dy = e.y - y;
       const dist = Math.hypot(dx, dy);
       if (dist <= radius + e.radius) {
+        hits.push({ x: e.x, y: e.y });
         this.applyElementalHit(e, damage, elements, dx, dy, events, true);
         if (dist > 0.1 && knockback !== 0) {
           e.vx += (dx / dist) * knockback;
@@ -1220,6 +1267,7 @@ export class CombatEngine {
         }
       }
     }
+    return hits;
   }
 
   private applyConeDamage(
@@ -1232,7 +1280,8 @@ export class CombatEngine {
     elements: readonly QueueElement[],
     events: SimEvent[],
     knockback = 120
-  ): void {
+  ): Array<{ x: number; y: number }> {
+    const hits: Array<{ x: number; y: number }> = [];
     const halfSpread = spread * 0.5;
     for (const e of this.enemies) {
       const dx = e.x - ox;
@@ -1241,13 +1290,15 @@ export class CombatEngine {
       if (dist > range + e.radius) continue;
       const diff = Math.abs(normalizeAngle(Math.atan2(dy, dx) - angle));
       if (diff <= halfSpread) {
+        hits.push({ x: e.x, y: e.y });
         this.applyElementalHit(e, damage, elements, dx, dy, events);
-        if (dist > 0.1) {
+        if (dist > 0.1 && knockback !== 0) {
           e.vx += (dx / dist) * knockback;
           e.vy += (dy / dist) * knockback;
         }
       }
     }
+    return hits;
   }
 
   public damagePlayer(
@@ -1306,7 +1357,8 @@ export class CombatEngine {
     pillars: readonly ArenaPillar[],
     onKill: (archetype: EnemyArchetype) => void,
     onPlayerDamaged: () => void,
-    events: SimEvent[]
+    events: SimEvent[],
+    blocks: readonly ArenaBlock[] = []
   ): void {
     // Update active charge
     for (const [eid, cd] of this.comboTextCooldown.entries()) {
@@ -1496,11 +1548,25 @@ export class CombatEngine {
 
       const hitWall = Math.abs(p.x) > ARENA_HALF_W - p.radius || Math.abs(p.y) > ARENA_HALF_H - p.radius;
       const hitPillar = pillars.some((pil) => Math.hypot(p.x - pil.x, p.y - pil.y) <= pil.radius + p.radius);
-      if (p.life <= 0 || hitWall || hitPillar) {
+      const hitBlock = blocks.some((blk) => circleVsAABB(p.x, p.y, p.radius, blk).hit);
+      if (p.life <= 0 || hitWall || hitPillar || hitBlock) {
         if (p.kind === 'ROCK') {
-          this.detonateRock(p, events);
-        } else if (hitPillar) {
+          this.detonateRock(p, events, hitWall || hitPillar || hitBlock);
+        } else if (hitPillar || hitBlock) {
           events.push({ type: 'vfx_burst', x: p.x, y: p.y, colorHex: p.colorHex, count: 6, radius: 22 });
+          if (p.owner === 'PLAYER' && p.elements.includes('FLUX') && this.pools.length < 24) {
+            this.pools.push({
+              id: this.nextId++,
+              kind: 'FLUX',
+              x: p.x,
+              y: p.y,
+              radius: 46,
+              life: 4.5,
+              maxLife: 4.5,
+              colorHex: ELEMENT_META.FLUX.colorHex,
+              tickTimer: 0.25,
+            });
+          }
         }
         this.projectiles.splice(i, 1);
       }
@@ -1523,12 +1589,18 @@ export class CombatEngine {
       const cos = Math.cos(b.angle);
       const sin = Math.sin(b.angle);
 
-      // Truncate beam at nearest ArenaPillar
+      // Truncate beam at nearest ArenaPillar or ArenaBlock
       let pillarLimit = b.length;
       for (const pil of pillars) {
         const { perpDist, along } = pointToRayDist(pil.x, pil.y, b.x, b.y, cos, sin, pillarLimit);
         if (perpDist <= pil.radius + 4 && along > 8) {
           pillarLimit = Math.min(pillarLimit, Math.max(8, along - pil.radius * 0.6));
+        }
+      }
+      for (const blk of blocks) {
+        const hitT = rayAABBIntersect(b.x, b.y, cos, sin, pillarLimit, blk);
+        if (hitT !== null && hitT < pillarLimit) {
+          pillarLimit = hitT;
         }
       }
       if (pillarLimit < b.length) {
@@ -1580,24 +1652,19 @@ export class CombatEngine {
           const { perpDist, along } = pointToRayDist(e.x, e.y, b.x, b.y, cos, sin, effectiveLen);
           if (perpDist <= e.radius + b.width * 0.5) {
             this.applyElementalHit(e, b.damagePerSec * dt, b.elements, cos, sin, events);
-            // Spawn beam puddle ONLY at object hit point!
-            const puddleEl = b.elements.includes('PLASMA')
-              ? 'PLASMA'
-              : b.elements.includes('FLUX')
-              ? 'FLUX'
-              : null;
-            if (puddleEl && Math.random() < 0.08 && this.pools.length < 24) {
+            // Spawn water puddle ONLY at object hit point!
+            if (b.elements.includes('FLUX') && Math.random() < 0.08 && this.pools.length < 24) {
               const hx = b.x + cos * along;
               const hy = b.y + sin * along;
               this.pools.push({
                 id: this.nextId++,
-                kind: puddleEl,
+                kind: 'FLUX',
                 x: hx,
                 y: hy,
                 radius: 48,
                 life: 5,
                 maxLife: 5,
-                colorHex: ELEMENT_META[puddleEl].colorHex,
+                colorHex: ELEMENT_META.FLUX.colorHex,
                 tickTimer: 0.25,
               });
             }
@@ -1756,18 +1823,18 @@ export class CombatEngine {
         if (w.elements.includes('CRYO') || w.elements.includes('CRYSTAL')) {
           this.applyAoEDamage(w.x, w.y, 92, 8, ['CRYO'], 20, events);
         }
-        if (w.elements.includes('FLUX') || w.elements.includes('PLASMA')) {
-          const kind = w.elements.includes('PLASMA') ? 'PLASMA' : 'FLUX';
-          if (this.pools.length < 24) {
+        if (w.elements.includes('FLUX')) {
+          const hitWater = this.applyAoEDamage(w.x, w.y, 70, 0, [], 0, events);
+          if (hitWater.length > 0 && this.pools.length < 24) {
             this.pools.push({
               id: this.nextId++,
-              kind,
-              x: w.x,
-              y: w.y,
+              kind: 'FLUX',
+              x: hitWater[0]!.x,
+              y: hitWater[0]!.y,
               radius: 52,
               life: 4.5,
               maxLife: 4.5,
-              colorHex: ELEMENT_META[kind].colorHex,
+              colorHex: ELEMENT_META.FLUX.colorHex,
               tickTimer: 0.25,
             });
           }
@@ -1795,13 +1862,13 @@ export class CombatEngine {
               kind: 'SHATTER_SHARD',
               x: w.x + Math.cos(a) * 12,
               y: w.y + Math.sin(a) * 12,
-              vx: Math.cos(a) * 460,
-              vy: Math.sin(a) * 460,
+              vx: Math.cos(a) * 820,
+              vy: Math.sin(a) * 820,
               radius: 8,
               damage: 26,
               pierce: 2,
-              life: 0.85,
-              maxLife: 0.85,
+              life: 0.65,
+              maxLife: 0.65,
               colorHex: 0x80ffff,
               colors: [0x80ffff, 0x00f5ff],
               elements: ['CRYSTAL'],
@@ -1861,7 +1928,7 @@ export class CombatEngine {
         const sy = s.y + Math.sin(a) * d;
         const strikeRadius = 56 + nonBarrierPower * 22;
 
-        this.applyAoEDamage(sx, sy, strikeRadius, 28 * nonBarrierPower, s.elements, 90, events);
+        const hits = this.applyAoEDamage(sx, sy, strikeRadius, 28 * nonBarrierPower, s.elements, 90, events);
 
         const payloadColors = s.colors.filter((c) => c !== ELEMENT_META.BARRIER.colorHex);
         const palette = payloadColors.length > 0 ? payloadColors : [s.colorHex];
@@ -1890,22 +1957,17 @@ export class CombatEngine {
         }
         events.push({ type: 'grid_impulse', x: sx, y: sy, strength: 155 + nonBarrierPower * 45, radius: 120 });
 
-        const puddleKind = s.elements.includes('PLASMA')
-          ? 'PLASMA'
-          : s.elements.includes('FLUX')
-          ? 'FLUX'
-          : null;
-        if (puddleKind && this.pools.length < 24) {
-          const stack = counts[puddleKind] ?? 1;
+        if (s.elements.includes('FLUX') && hits.length > 0 && this.pools.length < 24) {
+          const stack = counts.FLUX ?? 1;
           this.pools.push({
             id: this.nextId++,
-            kind: puddleKind,
-            x: sx,
-            y: sy,
+            kind: 'FLUX',
+            x: hits[0]!.x,
+            y: hits[0]!.y,
             radius: 52 + stack * 20,
             life: 5,
             maxLife: 5,
-            colorHex: ELEMENT_META[puddleKind].colorHex,
+            colorHex: ELEMENT_META.FLUX.colorHex,
             tickTimer: 0.25,
           });
         }
@@ -2039,7 +2101,7 @@ export class CombatEngine {
         events
       );
 
-      // Push enemy outside ArenaPillars
+      // Push enemy outside ArenaPillars & ArenaBlocks
       for (const pil of pillars) {
         const pdx = e.x - pil.x;
         const pdy = e.y - pil.y;
@@ -2048,6 +2110,13 @@ export class CombatEngine {
         if (d > 0.01 && d < minD) {
           e.x = pil.x + (pdx / d) * minD;
           e.y = pil.y + (pdy / d) * minD;
+        }
+      }
+      for (const blk of blocks) {
+        const hit = circleVsAABB(e.x, e.y, e.radius, blk);
+        if (hit.hit) {
+          e.x += hit.pushX;
+          e.y += hit.pushY;
         }
       }
     }

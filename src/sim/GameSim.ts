@@ -228,6 +228,28 @@ export class GameSim {
       }
     }
 
+    for (const blk of this.waveDirector.blocks) {
+      const cx = Math.max(blk.x - blk.halfW, Math.min(blk.x + blk.halfW, p.x));
+      const cy = Math.max(blk.y - blk.halfH, Math.min(blk.y + blk.halfH, p.y));
+      const dx = p.x - cx;
+      const dy = p.y - cy;
+      const d = Math.hypot(dx, dy);
+      if (d < 16) {
+        if (d > 0.01) {
+          p.x = cx + (dx / d) * 16;
+          p.y = cy + (dy / d) * 16;
+        } else {
+          const penX = blk.halfW - Math.abs(p.x - blk.x);
+          const penY = blk.halfH - Math.abs(p.y - blk.y);
+          if (penX < penY) {
+            p.x = p.x >= blk.x ? blk.x + blk.halfW + 16 : blk.x - blk.halfW - 16;
+          } else {
+            p.y = p.y >= blk.y ? blk.y + blk.halfH + 16 : blk.y - blk.halfH - 16;
+          }
+        }
+      }
+    }
+
     this.waveDirector.step(
       FIXED_DT,
       this.combat.enemies.length,
@@ -245,7 +267,8 @@ export class GameSim {
       this.waveDirector.pillars,
       (arch) => this.waveDirector.onEnemyKilled(arch),
       () => this.waveDirector.onPlayerDamaged(),
-      this.events
+      this.events,
+      this.waveDirector.blocks
     );
 
     // Connected Sector Gate Transition
@@ -296,6 +319,7 @@ export class GameSim {
       pools: this.combat.pools,
       slashes: this.combat.slashes,
       pillars: this.waveDirector.pillars,
+      blocks: this.waveDirector.blocks,
       rifts: this.waveDirector.rifts,
       hazards: this.combat.hazards,
       gate: this.waveDirector.gate,

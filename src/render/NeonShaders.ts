@@ -275,11 +275,17 @@ export function createBraidedBeamMaterial(
         float flowTurb = (noise1(x * 1.4 - uTime * 8.5) - 0.5) * 0.14;
         float yy = y + crackle + flowTurb * 0.45;
 
-        // Layer 1: Continuous unbroken glowing volume across the whole beam (no dark gaps)
-        float volWide = exp(-yy * yy * 2.2) * (0.48 - 0.1 * uIsVoid);
-        float volInner = exp(-yy * yy * 9.5) * 0.62;
+        // Layer 1: Continuous unbroken glowing volume across the whole beam
+        float volWide = exp(-yy * yy * 2.1) * (0.42 - 0.08 * uIsVoid);
+        float volInner = exp(-yy * yy * 8.5) * 0.52;
         vec3 baseTint = mix(uColorA, uColorB, 0.5 + 0.5 * sin(x * 0.65 - uTime * 4.0));
-        vec3 col = baseTint * volWide + mix(uColorA, vec3(1.0), 0.18) * volInner;
+        vec3 col = baseTint * volWide + mix(uColorA, uColorB, 0.35) * volInner;
+
+        // Bright coursing energy core running rapidly down the beam center
+        float beamCore = exp(-yy * yy * 26.0);
+        float surge = 0.72 + 0.32 * sin(x * 4.2 - uTime * 30.0) + 0.16 * sin(x * 10.5 - uTime * 48.0);
+        vec3 coreTint = mix(mix(uColorA, vec3(1.0), 0.72), mix(uColorB, vec3(1.0, 0.78, 1.0), 0.65), uIsVoid);
+        col += coreTint * beamCore * surge * 1.15;
 
         // Layer 2: 5 intertwined braided organic silk ribbons (or jagged void tendrils)
         float freq = mix(1.85, 2.9, uIsVoid);
@@ -299,22 +305,22 @@ export function createBraidedBeamMaterial(
         float r3 = exp(-pow((yy - s3) * (ribW * 1.15), 2.0));
         float r4 = exp(-pow((yy - s4) * (ribW * 0.9), 2.0));
 
-        col += uColorA * (r0 * 0.72 + r4 * 0.55);
-        col += uColorB * (r1 * 0.78 + r3 * 0.55);
-        col += uColorC * (r2 * 0.72);
+        col += uColorA * (r0 * 0.68 + r4 * 0.52);
+        col += uColorB * (r1 * 0.72 + r3 * 0.52);
+        col += uColorC * (r2 * 0.68);
 
         // Layer 3: Crisp luminous thin center filaments inside main ribbons
         float fil0 = exp(-pow((yy - s0) * 34.0, 2.0));
         float fil1 = exp(-pow((yy - s1) * 34.0, 2.0));
         float fil2 = exp(-pow((yy - s2) * 36.0, 2.0));
         vec3 filamentCol = mix(vec3(1.0, 0.96, 0.85), vec3(1.0, 0.45, 0.95), uIsVoid);
-        col += filamentCol * (fil0 + fil1 + fil2 * 0.8) * 0.48;
+        col += filamentCol * (fil0 + fil1 + fil2 * 0.8) * 0.45;
 
         // Layer 4: Intersection node hotspot flares where ribbons cross
         float cross01 = exp(-pow((yy - s0) * 16.0, 2.0) - pow((yy - s1) * 16.0, 2.0));
         float cross12 = exp(-pow((yy - s1) * 16.0, 2.0) - pow((yy - s2) * 16.0, 2.0));
         float hotspot = clamp(cross01 + cross12, 0.0, 1.0);
-        col += mix(uColorB, vec3(1.0), 0.45) * hotspot * 0.55;
+        col += mix(uColorB, vec3(1.0), 0.45) * hotspot * 0.48;
 
         // Menacing Void pulse accent
         if (uIsVoid > 0.5) {
@@ -323,14 +329,14 @@ export function createBraidedBeamMaterial(
           col += vec3(0.55, 0.05, 0.95) * abyssEdge * 0.42 * voidPulse;
         }
 
-        // Soft-knee saturation-preserving rolloff (keeps hue vibrant, never chalk-white)
+        // Gentle core-friendly rolloff so bright center blooms while edges stay deeply saturated
         float peak = max(col.r, max(col.g, col.b));
-        if (peak > 1.35) {
-          col *= (1.35 + (peak - 1.35) * 0.14) / peak;
+        if (peak > 1.55) {
+          col *= (1.55 + (peak - 1.55) * 0.14) / peak;
         }
 
         col *= env;
-        float alpha = clamp((volWide * 1.15 + volInner + (r0 + r1 + r2 + r3 + r4) * 0.45) * env, 0.0, 0.98);
+        float alpha = clamp((volWide * 1.1 + volInner + beamCore * 0.85 + (r0 + r1 + r2 + r3 + r4) * 0.42) * env, 0.0, 0.98);
         gl_FragColor = vec4(col, alpha);
       }
     `,
@@ -427,13 +433,14 @@ export function createStormCloudMaterial(colorA: number, colorB: number): THREE.
 }
 
 /**
- * Full Vertical Forcefield Wall Panel Shader (clearly looks like an impenetrable barrier).
+ * Full Vertical Forcefield Wall Panel Shader (with rising organic fire mode for THERMAL walls).
  */
-export function createForcefieldWallMaterial(colorA: number, colorB: number): THREE.ShaderMaterial {
+export function createForcefieldWallMaterial(colorA: number, colorB: number, isFire = false): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uColorA: { value: new THREE.Color(colorA) },
       uColorB: { value: new THREE.Color(colorB) },
+      uIsFire: { value: isFire ? 1.0 : 0.0 },
       uTime: { value: 0 },
       uOpacity: { value: 1 },
     },
@@ -447,16 +454,45 @@ export function createForcefieldWallMaterial(colorA: number, colorB: number): TH
     fragmentShader: /* glsl */ `
       uniform vec3 uColorA;
       uniform vec3 uColorB;
+      uniform float uIsFire;
       uniform float uTime;
       uniform float uOpacity;
       varying vec2 vUv;
 
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(
+          mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+          mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+          u.y
+        );
+      }
+
       void main() {
+        if (uIsFire > 0.5) {
+          float n1 = noise(vec2(vUv.x * 7.5, vUv.y * 4.5 - uTime * 3.8));
+          float n2 = noise(vec2(vUv.x * 15.0 + 3.1, vUv.y * 8.0 - uTime * 6.2));
+          float tongues = smoothstep(0.18, 0.95, (1.0 - vUv.y * 0.72) * (0.45 + 0.55 * n1) + n2 * 0.25);
+          float baseEmber = exp(-pow(vUv.y * 6.5, 2.0));
+          vec3 col = mix(uColorA, uColorB, n2) * (tongues * 0.95 + baseEmber * 0.85);
+          float peak = max(col.r, max(col.g, col.b));
+          if (peak > 1.2) col *= 1.2 / peak;
+          col *= uOpacity;
+          float alpha = clamp((tongues * 0.65 + baseEmber * 0.5) * uOpacity, 0.0, 0.88);
+          gl_FragColor = vec4(col, alpha);
+          return;
+        }
+
         float bottomRail = exp(-pow(vUv.y * 12.0, 2.0));
         float topRail = exp(-pow((1.0 - vUv.y) * 12.0, 2.0));
         float midBeam = exp(-pow((vUv.y - 0.5) * 5.0, 2.0)) * 0.45;
 
-        // Vertical energy lattice + scrolling diagonal barrier chevrons
         float bars = pow(0.5 + 0.5 * sin(vUv.x * 24.0), 6.0) * 0.55;
         float chev = pow(0.5 + 0.5 * sin(vUv.x * 16.0 - abs(vUv.y - 0.5) * 14.0 - uTime * 5.0), 5.0);
         float scan = exp(-pow(fract(vUv.y - uTime * 0.75) * 10.0, 2.0)) * 0.5;
@@ -483,7 +519,7 @@ export function createForcefieldWallMaterial(colorA: number, colorB: number): TH
 }
 
 /**
- * Organic wobbling Liquid / Plasma Pool shader with caustic ripples and glowing meniscus rim.
+ * Calm static-shoreline organic water puddle with gentle shimmering glints.
  */
 export function createLiquidPoolMaterial(colorA: number, colorB: number, seed = 0): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
@@ -509,25 +545,41 @@ export function createLiquidPoolMaterial(colorA: number, colorB: number, seed = 
       uniform float uSeed;
       varying vec2 vUv;
 
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(
+          mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+          mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+          u.y
+        );
+      }
+
       void main() {
         vec2 p = (vUv - 0.5) * 2.0;
         float r = length(p);
         float ang = atan(p.y, p.x);
 
-        float edgeRadius = 0.8 + 0.1 * sin(ang * 3.0 + uSeed + uTime * 1.4) + 0.06 * cos(ang * 5.0 - uSeed * 1.7 - uTime * 1.1);
+        // Static organic shoreline
+        float edgeRadius = 0.82 + 0.1 * sin(ang * 3.0 + uSeed) + 0.05 * cos(ang * 5.0 - uSeed * 1.7);
         if (r > edgeRadius) discard;
 
         float normR = r / edgeRadius;
         float rim = exp(-pow((normR - 0.94) * 16.0, 2.0));
-        float caustics = pow(0.5 + 0.5 * sin(r * 16.0 - uTime * 4.2 + sin(ang * 4.0 + uSeed) * 1.5), 3.0);
-        float body = smoothstep(1.0, 0.25, normR) * 0.42;
+        float glint = pow(noise(p * 4.5 + vec2(uTime * 0.45, -uTime * 0.35)), 2.2);
+        float body = smoothstep(1.0, 0.15, normR) * 0.42;
 
-        vec3 col = uColorA * (body + rim * 0.95) + uColorB * caustics * 0.45;
+        vec3 col = uColorA * (body + rim * 0.85) + uColorB * glint * 0.42;
         float peak = max(col.r, max(col.g, col.b));
-        if (peak > 1.15) col *= 1.15 / peak;
+        if (peak > 1.1) col *= 1.1 / peak;
         col *= uOpacity;
 
-        float alpha = clamp((body + rim * 0.75 + caustics * 0.25) * uOpacity, 0.0, 0.85);
+        float alpha = clamp((body + rim * 0.65 + glint * 0.2) * uOpacity, 0.0, 0.78);
         gl_FragColor = vec4(col, alpha);
       }
     `,
@@ -855,14 +907,14 @@ export function createStormVortexMaterial(
         float eye = smoothstep(0.05, 0.25, r) * smoothstep(1.0, 0.2, r);
 
         vec3 col = vec3(0.0);
-        col += uColorA * (spiral1 * 0.75 * eye + innerRing * 0.55);
-        col += uColorB * (spiral2 * 0.85 * eye);
-        col += uColorBarrier * (rim * 0.95 + 0.08 * (1.0 - r));
+        col += uColorA * (spiral1 * 0.78 * eye + innerRing * 0.45);
+        col += uColorB * (spiral2 * 0.88 * eye);
+        float edgeFade = smoothstep(1.0, 0.65, r);
         float peak = max(col.r, max(col.g, col.b));
         if (peak > 1.1) col *= 1.1 / peak;
-        col *= uOpacity;
+        col *= edgeFade * uOpacity;
 
-        float alpha = clamp((rim * 0.75 + (spiral1 + spiral2) * 0.4 * eye + innerRing * 0.45 + 0.1) * uOpacity, 0.0, 0.85);
+        float alpha = clamp(((spiral1 + spiral2) * 0.42 * eye + innerRing * 0.4 + 0.12) * edgeFade * uOpacity, 0.0, 0.8);
         gl_FragColor = vec4(col, alpha);
       }
     `,

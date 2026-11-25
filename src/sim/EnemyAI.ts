@@ -27,7 +27,7 @@ export function createEnemy(
   y: number,
   wave: number
 ): EnemyEntity {
-  const hpScale = 1 + Math.max(0, wave - 1) * 0.14;
+  const hpScale = 1 + Math.max(0, wave - 1) * 0.24;
   const base: EnemyEntity = {
     id,
     archetype,
@@ -161,7 +161,7 @@ export function stepEnemyAI(
   switch (e.archetype) {
     case 'SWARMER': {
       e.angle = targetAngle;
-      const spd = 88 * speedMult;
+      const spd = 104 * speedMult;
       e.vx += (dirX * spd + sepX - e.vx) * Math.min(1, 8 * dt);
       e.vy += (dirY * spd + sepY - e.vy) * Math.min(1, 8 * dt);
       break;
@@ -169,17 +169,17 @@ export function stepEnemyAI(
 
     case 'BASTION': {
       const diff = normalizeAngle(targetAngle - e.angle);
-      const maxTurn = 1.25 * speedMult * dt;
+      const maxTurn = 1.45 * speedMult * dt;
       e.angle = normalizeAngle(e.angle + Math.max(-maxTurn, Math.min(maxTurn, diff)));
       e.shieldAngle = e.angle;
-      const spd = 46 * speedMult;
+      const spd = 54 * speedMult;
       e.vx += (dirX * spd + sepX * 0.5 - e.vx) * Math.min(1, 6 * dt);
       e.vy += (dirY * spd + sepY * 0.5 - e.vy) * Math.min(1, 6 * dt);
 
       e.aiTimer -= dt * speedMult;
-      if (dist < 105 && e.aiTimer <= 0) {
-        e.aiTimer = 2.6;
-        hooks.spawnHazard(e.x, e.y, 100, 0.85, 18, 0xe6f0ff);
+      if (dist < 115 && e.aiTimer <= 0) {
+        e.aiTimer = 2.2;
+        hooks.spawnHazard(e.x, e.y, 108, 0.8, 22, 0xe6f0ff);
       }
       break;
     }
@@ -192,13 +192,13 @@ export function stepEnemyAI(
         const radial = dist > desired + 30 ? 1 : dist < desired - 30 ? -0.75 : 0;
         const strafeX = -dirY * 0.7;
         const strafeY = dirX * 0.7;
-        const spd = 76 * speedMult;
+        const spd = 88 * speedMult;
         e.vx += ((dirX * radial + strafeX) * spd + sepX - e.vx) * Math.min(1, 7 * dt);
         e.vy += ((dirY * radial + strafeY) * spd + sepY - e.vy) * Math.min(1, 7 * dt);
         if (e.aiTimer <= 0) {
           e.aiState = 'TELEPORT_WINDUP';
-          e.aiTimer = 0.7;
-          events.push({ type: 'vfx_ring', x: e.x, y: e.y, radius: 34, colorHex: 0x00f5ff, duration: 0.55 });
+          e.aiTimer = 0.6;
+          events.push({ type: 'vfx_ring', x: e.x, y: e.y, radius: 34, colorHex: 0x00f5ff, duration: 0.5 });
         }
       } else if (e.aiState === 'TELEPORT_WINDUP') {
         e.vx *= 0.82;
@@ -207,7 +207,7 @@ export function stepEnemyAI(
           const fireAngle = Math.atan2(player.y - e.y, player.x - e.x);
           for (const offset of [-0.24, 0, 0.24]) {
             const fa = fireAngle + offset;
-            hooks.spawnProjectile(e.x, e.y, Math.cos(fa) * 290, Math.sin(fa) * 290, 12);
+            hooks.spawnProjectile(e.x, e.y, Math.cos(fa) * 320, Math.sin(fa) * 320, 14);
           }
           const blinkAngle = targetAngle + (Math.random() > 0.5 ? 1.05 : -1.05);
           const pos = clampArena(e.x + Math.cos(blinkAngle) * 150, e.y + Math.sin(blinkAngle) * 150, e.radius + 16);
@@ -216,7 +216,7 @@ export function stepEnemyAI(
           e.y = pos.y;
           events.push({ type: 'vfx_burst', x: e.x, y: e.y, colorHex: 0x00f5ff, count: 10, radius: 30 });
           e.aiState = 'SEEK';
-          e.aiTimer = 2.4;
+          e.aiTimer = 1.95;
         }
       }
       break;
@@ -228,12 +228,12 @@ export function stepEnemyAI(
         e.angle = targetAngle;
         const desired = 310;
         const move = dist > desired + 35 ? 1 : dist < desired - 35 ? -0.6 : 0;
-        const spd = 56 * speedMult;
+        const spd = 64 * speedMult;
         e.vx += (dirX * move * spd + sepX - e.vx) * Math.min(1, 6 * dt);
         e.vy += (dirY * move * spd + sepY - e.vy) * Math.min(1, 6 * dt);
         if (e.aiTimer <= 0) {
           e.aiState = 'CHARGE';
-          e.aiTimer = 1.4;
+          e.aiTimer = 1.15;
           e.beamAngle = targetAngle;
         }
       } else if (e.aiState === 'CHARGE') {
@@ -264,14 +264,14 @@ export function stepEnemyAI(
 
     case 'SPLITTER': {
       e.angle = targetAngle;
-      const spd = 56 * speedMult;
+      const spd = 68 * speedMult;
       e.vx += (dirX * spd + sepX - e.vx) * Math.min(1, 7 * dt);
       e.vy += (dirY * spd + sepY - e.vy) * Math.min(1, 7 * dt);
 
       e.aiTimer -= dt * speedMult;
-      if (e.aiTimer <= 0 && dist < 440) {
-        e.aiTimer = 2.9;
-        hooks.spawnHazard(player.x, player.y, 68, 1.15, 16, 0xe8741a);
+      if (e.aiTimer <= 0 && dist < 460) {
+        e.aiTimer = 2.3;
+        hooks.spawnHazard(player.x, player.y, 72, 1.0, 20, 0xe8741a);
       }
       break;
     }
