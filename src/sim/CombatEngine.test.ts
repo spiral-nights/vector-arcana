@@ -525,4 +525,102 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     }
     expect(sim.getSnapshot().pools.length).toBe(0);
   });
+
+  it('caps active storms at 1 and active mines at 8', () => {
+    const sim = new GameSim();
+    const waitCooldown = () => {
+      for (let i = 0; i < 12; i++) sim.step(makeInput());
+    };
+    queueAndStep(sim, ['BARRIER', 'THERMAL', 'VOLT']);
+    sim.step(makeInput({ castAction: 'FORWARD', aimX: 150, aimY: 0 }));
+    waitCooldown();
+    queueAndStep(sim, ['BARRIER', 'CRYO', 'VOLT']);
+    sim.step(makeInput({ castAction: 'FORWARD', aimX: -150, aimY: 0 }));
+    expect(sim.getSnapshot().storms.length).toBe(1);
+
+    waitCooldown();
+    queueAndStep(sim, ['BARRIER', 'VOID', 'THERMAL']);
+    sim.step(makeInput({ castAction: 'FORWARD' }));
+    waitCooldown();
+    queueAndStep(sim, ['BARRIER', 'VOID', 'THERMAL']);
+    sim.step(makeInput({ castAction: 'FORWARD' }));
+    expect(sim.getSnapshot().mines.length).toBe(8);
+  });
+
+  it('directional shield has higher durability than omni-dome and reflects enemy projectiles', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    queueAndStep(sim, ['BARRIER']);
+    sim.step(makeInput({ castAction: 'NOVA' }));
+    const novaHp = sim.getSnapshot().shields[0]!.maxHp;
+
+    for (let i = 0; i < 12; i++) sim.step(makeInput());
+    queueAndStep(sim, ['BARRIER']);
+    sim.step(makeInput({ castAction: 'FORWARD', aimX: 300, aimY: 0 }));
+    const fwdShield = sim.getSnapshot().shields[0]!;
+    expect(fwdShield.maxHp).toBeGreaterThan(novaHp);
+
+    sim.combat.projectiles.push({
+      id: 8888,
+      owner: 'ENEMY',
+      kind: 'FROST_NEEDLE',
+      x: fwdShield.x + fwdShield.radius,
+      y: fwdShield.y,
+      vx: -250,
+      vy: 0,
+      radius: 7,
+      damage: 12,
+      pierce: 1,
+      life: 2,
+      maxLife: 2,
+      colorHex: 0x00f5ff,
+      colors: [0x00f5ff],
+      elements: ['CRYO'],
+      composition: { counts: { CRYO: 1 }, ratios: { CRYO: 1 }, totalPower: 1, colors: [0x00f5ff], weightedColors: [0x00f5ff], primaryColorHex: 0x00f5ff, secondaryColorHex: 0x00f5ff },
+      hitIds: [],
+      spin: 0,
+    });
+    sim.step(makeInput({ aimX: 300, aimY: 0 }));
+    const reflected = sim.getSnapshot().projectiles.find((p) => p.id === 8888);
+    expect(reflected).toBeDefined();
+    expect(reflected!.owner).toBe('PLAYER');
+    expect(reflected!.vx).toBeGreaterThan(0);
+    expect(sim.drainEvents().some((e) => e.type === 'damage_number' && e.text === 'REFLECT!')).toBe(true);
+  });
+
+  it('continuous wall forcefield blocks enemy projectiles across the gap between adjacent pylons', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    queueAndStep(sim, ['BARRIER', 'KINETIC']);
+    sim.step(makeInput({ castAction: 'FORWARD', aimX: 300, aimY: 0 }));
+    const w0 = sim.getSnapshot().walls[0]!;
+    const w1 = sim.getSnapshot().walls[1]!;
+    const midX = (w0.x + w1.x) * 0.5;
+    const midY = (w0.y + w1.y) * 0.5;
+
+    sim.combat.projectiles.push({
+      id: 7777,
+      owner: 'ENEMY',
+      kind: 'FROST_NEEDLE',
+      x: midX,
+      y: midY,
+      vx: -200,
+      vy: 0,
+      radius: 7,
+      damage: 12,
+      pierce: 1,
+      life: 2,
+      maxLife: 2,
+      colorHex: 0x00f5ff,
+      colors: [0x00f5ff],
+      elements: ['CRYO'],
+      composition: { counts: { CRYO: 1 }, ratios: { CRYO: 1 }, totalPower: 1, colors: [0x00f5ff], weightedColors: [0x00f5ff], primaryColorHex: 0x00f5ff, secondaryColorHex: 0x00f5ff },
+      hitIds: [],
+      spin: 0,
+    });
+    sim.step(makeInput());
+    expect(sim.getSnapshot().projectiles.some((p) => p.id === 7777)).toBe(false);
+  });
 });

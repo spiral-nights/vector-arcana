@@ -64,6 +64,7 @@ export class HUD {
   private readonly bossWrap: HTMLElement;
   private readonly bossFill: HTMLElement;
   private readonly waveBanner: HTMLElement;
+  private readonly combatTextLayer: HTMLElement;
   private readonly minimapCanvas: HTMLCanvasElement;
   private readonly minimapCtx: CanvasRenderingContext2D | null;
   private bannerTimer: number | null = null;
@@ -113,12 +114,14 @@ export class HUD {
           </div>
         </div>
         <div class="hud-controls">
-          <button class="hud-btn" id="btn-tilt">TILT: 0°</button>
+          <button class="hud-btn active" id="btn-tilt">TILT: 26°</button>
           <button class="hud-btn" id="btn-ctrl">CLASSIC</button>
           <button class="hud-btn" id="btn-mute">AUDIO: ON</button>
           <button class="hud-btn" id="btn-pause">PAUSE</button>
         </div>
       </div>
+
+      <div class="combat-text-layer" id="combat-text-layer"></div>
 
       <div class="boss-bar-wrap" id="boss-wrap">
         <div class="boss-label">SECTOR WARDEN</div>
@@ -180,6 +183,7 @@ export class HUD {
     this.bossWrap = this.root.querySelector('#boss-wrap')!;
     this.bossFill = this.root.querySelector('#boss-fill')!;
     this.waveBanner = this.root.querySelector('#wave-banner')!;
+    this.combatTextLayer = this.root.querySelector('#combat-text-layer')!;
     this.minimapCanvas = this.root.querySelector('#hud-minimap')!;
     this.minimapCtx = this.minimapCanvas.getContext('2d');
     this.queueEl = this.root.querySelector('#hud-queue')!;
@@ -229,8 +233,25 @@ export class HUD {
   }
 
   public setTilt(enabled: boolean): void {
-    this.tiltBtn.textContent = enabled ? 'TILT: 8°' : 'TILT: 0°';
+    this.tiltBtn.textContent = enabled ? 'TILT: 26°' : 'TILT: 0°';
     this.tiltBtn.classList.toggle('active', enabled);
+  }
+
+  public spawnFloatingText(screenX: number, screenY: number, text: string, colorHex: number, big = false): void {
+    while (this.combatTextLayer.childElementCount >= 24) {
+      this.combatTextLayer.firstElementChild?.remove();
+    }
+    const el = document.createElement('span');
+    el.className = big ? 'combat-num big' : 'combat-num';
+    el.textContent = text;
+    const cssColor = `#${colorHex.toString(16).padStart(6, '0')}`;
+    el.style.color = cssColor;
+    el.style.left = `${Math.round(screenX)}px`;
+    el.style.top = `${Math.round(screenY)}px`;
+    this.combatTextLayer.appendChild(el);
+    window.setTimeout(() => {
+      el.remove();
+    }, big ? 820 : 620);
   }
 
   public setMuted(muted: boolean): void {

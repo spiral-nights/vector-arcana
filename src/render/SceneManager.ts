@@ -5,9 +5,11 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ARENA_HALF_H, ARENA_HALF_W } from '../sim/types';
 
+const SECTOR_BORDER_COLORS = [0x00d8ff, 0xff5522, 0x44f5ff, 0x39ff88, 0xb429ff] as const;
+
 export class SceneManager {
   public readonly scene: THREE.Scene;
-  public readonly camera: THREE.OrthographicCamera;
+  public readonly camera: THREE.PerspectiveCamera;
   public readonly renderer: THREE.WebGLRenderer;
   private readonly composer: EffectComposer;
   private readonly bloomPass: UnrealBloomPass;
@@ -16,11 +18,16 @@ export class SceneManager {
   private readonly ndcVec = new THREE.Vector2();
   private readonly hitVec = new THREE.Vector3();
 
-  private tiltEnabled = false;
+  private borderMat!: THREE.LineBasicMaterial;
+  private outerBorderMat!: THREE.LineBasicMaterial;
+  private currentThemeWave = -1;
+
+  private tiltEnabled = true;
   private shakeIntensity = 0;
   private camX = 0;
   private camY = 0;
-  private baseCamPos = new THREE.Vector3(0, 0, 650);
+  private readonly camDist = 1160;
+  private baseCamPos = new THREE.Vector3(0, 0, 1160);
   private frustumHalfW = 580;
   private frustumHalfH = 400;
 
@@ -31,7 +38,7 @@ export class SceneManager {
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
 
-    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 2000);
+    this.camera = new THREE.PerspectiveCamera(38, Math.max(0.1, width / Math.max(1, height)), 50, 4000);
     this.updateCameraFrustum(width, height);
     this.applyCameraTransform(0, 0);
 
@@ -39,17 +46,18 @@ export class SceneManager {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(width, height);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
 
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
 
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.42, 0.32, 0.72);
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.52, 0.38, 0.62);
     this.composer.addPass(this.bloomPass);
     this.composer.addPass(new OutputPass());
 
     this.createArenaBorder();
+    this.setSectorTheme(1);
     window.addEventListener('resize', this.handleResize);
   }
 
@@ -61,12 +69,11 @@ export class SceneManager {
       new THREE.Vector3(-ARENA_HALF_W, ARENA_HALF_H, 0.5),
     ];
     const geo = new THREE.BufferGeometry().setFromPoints(pts);
-    const mat = new THREE.LineBasicMaterial({ color: 0x00d8ff, transparent: true, opacity: 0.78 });
-    const loop = new THREE.LineLoop(geo, mat);
+    this.borderMat = new THREE.LineBasicMaterial({ color: 0x00d8ff, transparent: true, opacity: 0.82 });
+    const loop = new THREE.LineLoop(geo, this.borderMat);
     this.scene.add(loop);
 
-    // Subtle outer frame
-    const pad = 10;
+    const pad = 12;
     const outerPts = [
       new THREE.Vector3(-ARENA_HALF_W - pad, -ARENA_HALF_H - pad, 0),
       new THREE.Vector3(ARENA_HALF_W + pad, -ARENA_HALF_H - pad, 0),
@@ -74,8 +81,17 @@ export class SceneManager {
       new THREE.Vector3(-ARENA_HALF_W - pad, ARENA_HALF_H + pad, 0),
     ];
     const outerGeo = new THREE.BufferGeometry().setFromPoints(outerPts);
-    const outerMat = new THREE.LineBasicMaterial({ color: 0x1a3366, transparent: true, opacity: 0.5 });
-    this.scene.add(new THREE.LineLoop(outerGeo, outerMat));
+    this.outerBorderMat = new THREE.LineBasicMaterial({ color: 0x1a3366, transparent: true, opacity: 0.55 });
+    this.scene.add(new THREE.LineLoop(outerGeo, this.outerBorderMat));
+  }
+
+  public setSectorTheme(wave: number): void {
+    const idx = Math.max(0, wave - 1) % SECTOR_BORDER_COLORS.length;
+    if (idx === this.currentThemeWave) return;
+    this.currentThemeWave = idx;
+    const col = SECTOR_BORDER_COLORS[idx]!;
+    this.borderMat.color.setHex(col);
+    this.outerBorderMat.color.setHex(col).multiplyScalar(0.38);
   }
 
   private updateCameraFrustum(width: number, height: number): void {
@@ -92,10 +108,9 @@ export class SceneManager {
       this.frustumHalfH = targetHalfW / aspect;
     }
 
-    this.camera.left = -this.frustumHalfW;
-    this.camera.right = this.frustumHalfW;
-    this.camera.top = this.frustumHalfH;
-    this.camera.bottom = -this.frustumHalfH;
+    const fovRad = 2 * Math.atan(this.frustumHalfH / this.camDist);
+    this.camera.fov = THREE.MathUtils.radToDeg(fovRad);
+    this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
   }
 
@@ -113,11 +128,14 @@ export class SceneManager {
 
   private applyCameraTransform(shakeX: number, shakeY: number): void {
     if (this.tiltEnabled) {
-      const rad = THREE.MathUtils.degToRad(8);
-      const dist = 650;
-      this.baseCamPos.set(this.camX, this.camY - Math.sin(rad) * dist, Math.cos(rad) * dist);
+      const rad = THREE.MathUtils.degToRad(26);
+      this.baseCamPos.set(
+        this.camX,
+        this.camY - Math.sin(rad) * this.camDist,
+        Math.cos(rad) * this.camDist
+      );
     } else {
-      this.baseCamPos.set(this.camX, this.camY, 650);
+      this.baseCamPos.set(this.camX, this.camY, this.camDist);
     }
     this.camera.position.set(this.baseCamPos.x + shakeX, this.baseCamPos.y + shakeY, this.baseCamPos.z);
     this.camera.up.set(0, 1, 0);
@@ -147,6 +165,19 @@ export class SceneManager {
       return { x: this.hitVec.x, y: this.hitVec.y };
     }
     return { x: 0, y: 0 };
+  }
+
+  public worldToScreen(x: number, y: number, z = 24): { x: number; y: number; visible: boolean } {
+    this.hitVec.set(x, y, z).project(this.camera);
+    if (this.hitVec.z > 1 || this.hitVec.z < -1) {
+      return { x: 0, y: 0, visible: false };
+    }
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    return {
+      x: rect.left + (this.hitVec.x * 0.5 + 0.5) * rect.width,
+      y: rect.top + (-this.hitVec.y * 0.5 + 0.5) * rect.height,
+      visible: true,
+    };
   }
 
   public render(dt: number): void {

@@ -228,6 +228,8 @@ export interface BeamEntity {
 
 export interface WallPylonEntity {
   id: number;
+  groupId: number;
+  isNova: boolean;
   x: number;
   y: number;
   radius: number;
@@ -406,6 +408,7 @@ export type SimEvent =
   | { type: 'vfx_lightning'; points: Array<{ x: number; y: number }>; colors: number[] }
   | { type: 'vfx_shatter'; x: number; y: number; colorHex: number }
   | { type: 'vfx_spray'; x: number; y: number; angle: number; spread: number; range: number; colors: number[]; isNova: boolean }
+  | { type: 'damage_number'; x: number; y: number; text: string; colorHex: number; big?: boolean }
   | { type: 'beam_clash'; x: number; y: number; colorHex: number }
   | { type: 'wave_start'; wave: number; isBoss: boolean }
   | { type: 'gate_open'; wave: number }

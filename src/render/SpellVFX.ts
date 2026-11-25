@@ -5,12 +5,14 @@ import {
   createBraidedBeamMaterial,
   createCrystalBladeMaterial,
   createCurvedBarrierMaterial,
+  createForcefieldWallMaterial,
   createHexDomeMaterial,
+  createLiquidPoolMaterial,
   createNeonRibbonMaterial,
   createSlashMaterial,
   createSprayConeMaterial,
+  createStormCloudMaterial,
   createStormVortexMaterial,
-  createWallPanelMaterial,
   setShaderUniform,
 } from './NeonShaders';
 import {
@@ -33,8 +35,10 @@ import {
 interface Particle {
   x: number;
   y: number;
+  z: number;
   vx: number;
   vy: number;
+  vz: number;
   life: number;
   maxLife: number;
   color: THREE.Color;
@@ -70,7 +74,7 @@ interface GeometricShard {
 
 interface StormStrikeAnim {
   group: THREE.Group;
-  meteor: THREE.Object3D;
+  orb: THREE.Object3D;
   beam: THREE.Mesh;
   life: number;
   maxLife: number;
@@ -80,8 +84,8 @@ interface StormStrikeAnim {
   secondaryColorHex: number;
 }
 
-function createSparkTexture(): THREE.CanvasTexture {
-  const size = 32;
+function createSoftOrbTexture(): THREE.CanvasTexture {
+  const size = 64;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
@@ -89,11 +93,40 @@ function createSparkTexture(): THREE.CanvasTexture {
   const half = size * 0.5;
   const grad = ctx.createRadialGradient(half, half, 0, half, half, half);
   grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.28, 'rgba(255,255,255,0.85)');
-  grad.addColorStop(0.65, 'rgba(255,255,255,0.22)');
+  grad.addColorStop(0.25, 'rgba(255,255,255,0.85)');
+  grad.addColorStop(0.6, 'rgba(255,255,255,0.28)');
   grad.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function createStarSparkTexture(): THREE.CanvasTexture {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const half = size * 0.5;
+
+  const grad = ctx.createRadialGradient(half, half, 0, half, half, half * 0.65);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.3, 'rgba(255,255,255,0.55)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(half, 4);
+  ctx.quadraticCurveTo(half, half, size - 4, half);
+  ctx.quadraticCurveTo(half, half, half, size - 4);
+  ctx.quadraticCurveTo(half, half, 4, half);
+  ctx.quadraticCurveTo(half, half, half, 4);
+  ctx.fill();
+
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
   return tex;
@@ -117,7 +150,14 @@ function createArcPoints(startAngle: number, endAngle: number, radius: number, s
   return pts;
 }
 
-function createCurvedStripGeometry(innerR: number, outerR: number, startA: number, endA: number, segs = 28, z = 2.0): THREE.BufferGeometry {
+function createCurvedStripGeometry(
+  innerR: number,
+  outerR: number,
+  startA: number,
+  endA: number,
+  segs = 28,
+  z = 2.0
+): THREE.BufferGeometry {
   const geo = new THREE.BufferGeometry();
   const positions = new Float32Array((segs + 1) * 2 * 3);
   const uvs = new Float32Array((segs + 1) * 2 * 2);
@@ -132,11 +172,11 @@ function createCurvedStripGeometry(innerR: number, outerR: number, startA: numbe
     const pBase = i * 6;
     positions[pBase] = cos * innerR;
     positions[pBase + 1] = sin * innerR;
-    positions[pBase + 2] = z - 2;
+    positions[pBase + 2] = z;
 
     positions[pBase + 3] = cos * outerR;
     positions[pBase + 4] = sin * outerR;
-    positions[pBase + 5] = z + 2;
+    positions[pBase + 5] = z;
 
     const uvBase = i * 4;
     uvs[uvBase] = u;
@@ -156,12 +196,64 @@ function createCurvedStripGeometry(innerR: number, outerR: number, startA: numbe
   return geo;
 }
 
+function createStandingCurvedWallGeometry(
+  radius: number,
+  startA: number,
+  endA: number,
+  height: number,
+  segs = 28,
+  baseZ = 2
+): THREE.BufferGeometry {
+  const geo = new THREE.BufferGeometry();
+  const positions = new Float32Array((segs + 1) * 2 * 3);
+  const uvs = new Float32Array((segs + 1) * 2 * 2);
+  const indices: number[] = [];
+
+  for (let i = 0; i <= segs; i++) {
+    const u = i / segs;
+    const a = startA + u * (endA - startA);
+    const cx = Math.cos(a) * radius;
+    const cy = Math.sin(a) * radius;
+
+    const pBase = i * 6;
+    positions[pBase] = cx;
+    positions[pBase + 1] = cy;
+    positions[pBase + 2] = baseZ;
+
+    positions[pBase + 3] = cx;
+    positions[pBase + 4] = cy;
+    positions[pBase + 5] = baseZ + height;
+
+    const uvBase = i * 4;
+    uvs[uvBase] = u;
+    uvs[uvBase + 1] = 0;
+    uvs[uvBase + 2] = u;
+    uvs[uvBase + 3] = 1;
+
+    if (i < segs) {
+      const v0 = i * 2;
+      indices.push(v0, v0 + 1, v0 + 2, v0 + 2, v0 + 1, v0 + 3);
+    }
+  }
+
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  return geo;
+}
+
+const SECTOR_PILLAR_COLORS = [0x1a6bff, 0xff5522, 0x00e5ff, 0x39ff88, 0xb429ff] as const;
+
 export class SpellVFX {
   private readonly scene: THREE.Scene;
+  private readonly orbTexture: THREE.CanvasTexture;
+  private readonly starTexture: THREE.CanvasTexture;
+  private currentThemeIdx = 0;
+
   private readonly projMeshes = new Map<number, THREE.Group>();
   private readonly beamMeshes = new Map<number, THREE.Group>();
   private readonly wallMeshes = new Map<number, THREE.Group>();
-  private readonly wallPanels = new Map<string, THREE.Mesh>();
+  private readonly wallPanels = new Map<string, THREE.Group>();
   private readonly mineMeshes = new Map<number, THREE.Group>();
   private readonly stormMeshes = new Map<number, THREE.Group>();
   private readonly shieldMeshes = new Map<number, THREE.Group>();
@@ -179,7 +271,7 @@ export class SpellVFX {
   private readonly transientObjs: TransientObject[] = [];
   private readonly waveArcs: TransientWaveArc[] = [];
   private readonly shards: GeometricShard[] = [];
-  private readonly maxShards = 340;
+  private readonly maxShards = 260;
   private readonly stormStrikes: StormStrikeAnim[] = [];
 
   private readonly particles: Particle[] = [];
@@ -190,6 +282,9 @@ export class SpellVFX {
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
+    this.orbTexture = createSoftOrbTexture();
+    this.starTexture = createStarSparkTexture();
+
     this.particlePositions = new Float32Array(this.maxParticles * 3);
     this.particleColors = new Float32Array(this.maxParticles * 3);
     this.particleGeometry = new THREE.BufferGeometry();
@@ -198,10 +293,10 @@ export class SpellVFX {
 
     const mat = new THREE.PointsMaterial({
       size: 7.5,
-      map: createSparkTexture(),
+      map: this.orbTexture,
       vertexColors: true,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.88,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -222,8 +317,10 @@ export class SpellVFX {
       this.particles.push({
         x: x - Math.cos(angle) * 16 + (Math.random() - 0.5) * 6,
         y: y - Math.sin(angle) * 16 + (Math.random() - 0.5) * 6,
+        z: 12 + (Math.random() - 0.5) * 3,
         vx: Math.cos(backA) * spd,
         vy: Math.sin(backA) * spd,
+        vz: (Math.random() - 0.5) * 20,
         life: maxLife,
         maxLife,
         color: col,
@@ -242,21 +339,23 @@ export class SpellVFX {
     width: number,
     weightedColors: number[]
   ): void {
-    const palette = weightedColors.length > 0 ? weightedColors : [0xb429ff];
-    for (let k = 0; k < 3; k++) {
+    const palette = weightedColors.length > 0 ? weightedColors : [0xf59e0b];
+    for (let k = 0; k < 4; k++) {
       if (this.particles.length >= this.maxParticles) this.particles.shift();
       const dist = Math.random() * len;
-      const lat = (Math.random() - 0.5) * width * 1.15;
+      const lat = (Math.random() - 0.5) * width * 0.95;
       const cHex = palette[Math.floor(Math.random() * palette.length)]!;
-      const color = new THREE.Color(cHex).multiplyScalar(0.95);
-      const spd = 480 + Math.random() * 340;
-      const flutter = (Math.random() - 0.5) * 85;
-      const maxLife = 0.2 + Math.random() * 0.2;
+      const color = new THREE.Color(cHex).lerp(new THREE.Color(0xffffff), Math.random() * 0.3).multiplyScalar(0.95);
+      const spd = 460 + Math.random() * 320;
+      const flutter = (Math.random() - 0.5) * 75;
+      const maxLife = 0.18 + Math.random() * 0.18;
       this.particles.push({
         x: bx + cos * dist + nx * lat,
         y: by + sin * dist + ny * lat,
+        z: 14 + (Math.random() - 0.5) * 8,
         vx: cos * spd + nx * flutter,
         vy: sin * spd + ny * flutter,
+        vz: (Math.random() - 0.5) * 35,
         life: maxLife,
         maxLife,
         color,
@@ -270,13 +369,15 @@ export class SpellVFX {
       if (this.particles.length >= this.maxParticles) this.particles.shift();
       const a = Math.random() * Math.PI * 2;
       const spd = (80 + Math.random() * 250) * speedScale;
-      const maxLife = 0.25 + Math.random() * 0.32;
+      const maxLife = 0.24 + Math.random() * 0.3;
       const col = base.clone().multiplyScalar(0.85 + Math.random() * 0.2);
       this.particles.push({
         x,
         y,
+        z: 10 + Math.random() * 12,
         vx: Math.cos(a) * spd,
         vy: Math.sin(a) * spd,
+        vz: 20 + Math.random() * 75,
         life: maxLife,
         maxLife,
         color: col,
@@ -293,36 +394,22 @@ export class SpellVFX {
         this.disposeObject(oldest.obj);
       }
       const cHex = palette[i % palette.length]!;
-      const shapeRoll = i % 3;
-      const s = 3.5 + Math.random() * 5.2;
+      const s = 3.5 + Math.random() * 4.5;
+      const pts =
+        i % 2 === 0
+          ? [
+              { x: s * 1.4, y: 0 },
+              { x: -s * 0.85, y: s * 0.72 },
+              { x: -s * 0.85, y: -s * 0.72 },
+            ]
+          : [
+              { x: s * 1.3, y: 0 },
+              { x: 0, y: s * 0.65 },
+              { x: -s * 1.1, y: 0 },
+              { x: 0, y: -s * 0.65 },
+            ];
 
-      let pts: Array<{ x: number; y: number }>;
-      if (shapeRoll === 0) {
-        // Sharp forward spearhead triangle (reference JPEG shard style)
-        pts = [
-          { x: s * 1.45, y: 0 },
-          { x: -s * 0.85, y: s * 0.78 },
-          { x: -s * 0.85, y: -s * 0.78 },
-        ];
-      } else if (shapeRoll === 1) {
-        // Elongated diamond
-        pts = [
-          { x: s * 1.4, y: 0 },
-          { x: 0, y: s * 0.65 },
-          { x: -s * 1.1, y: 0 },
-          { x: 0, y: -s * 0.65 },
-        ];
-      } else {
-        // Tumbling square frame
-        pts = [
-          { x: -s * 0.8, y: -s * 0.8 },
-          { x: s * 0.8, y: -s * 0.8 },
-          { x: s * 0.8, y: s * 0.8 },
-          { x: -s * 0.8, y: s * 0.8 },
-        ];
-      }
-
-      const geo = buildRibbonGeometry(pts, 1.85, true, 3.3);
+      const geo = buildRibbonGeometry(pts, 1.8, true, 12);
       const mat = createNeonRibbonMaterial(cHex, 1.15, 0.95);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(x, y, 0);
@@ -330,8 +417,8 @@ export class SpellVFX {
       mesh.rotation.z = a;
       this.scene.add(mesh);
 
-      const spd = (120 + Math.random() * 260) * speedScale;
-      const maxLife = 0.28 + Math.random() * 0.3;
+      const spd = (120 + Math.random() * 250) * speedScale;
+      const maxLife = 0.26 + Math.random() * 0.28;
       this.shards.push({
         obj: mesh,
         x,
@@ -348,7 +435,7 @@ export class SpellVFX {
   public spawnRing(x: number, y: number, radius: number, colorHex: number, duration = 0.28): void {
     const pts = createPolygonPoints(32, radius);
     const mesh = new THREE.Mesh(
-      buildRibbonGeometry(pts, 4.2, true, 2.6),
+      buildRibbonGeometry(pts, 4.2, true, 3.0),
       createNeonRibbonMaterial(colorHex, 1.25, 1.0)
     );
     mesh.position.set(x, y, 0);
@@ -362,38 +449,43 @@ export class SpellVFX {
     y: number,
     colorHex: number,
     secondaryColorHex: number,
-    radius: number
+    _radius: number
   ): void {
     const group = new THREE.Group();
     group.position.set(x, y, 0);
 
-    // Vertical HDR strike column in XZ plane
-    const beamGeo = new THREE.PlaneGeometry(10, 190);
+    // Tall vertical glowing plasma column descending from overhead storm cloud (z=125 -> 0)
+    const beamGeo = new THREE.PlaneGeometry(18, 128);
     beamGeo.rotateX(Math.PI / 2);
-    beamGeo.translate(0, 0, 95);
+    beamGeo.translate(0, 0, 64);
     const beam = new THREE.Mesh(
       beamGeo,
-      createNeonRibbonMaterial(secondaryColorHex, 1.25, 0.85)
+      createNeonRibbonMaterial(secondaryColorHex, 1.3, 0.92)
     );
     group.add(beam);
 
-    const oct = new THREE.OctahedronGeometry(Math.max(12, radius * 0.28), 0);
-    const edges = new THREE.EdgesGeometry(oct);
-    oct.dispose();
-    const meteor = new THREE.LineSegments(
-      edges,
-      new THREE.LineBasicMaterial({ color: colorHex })
+    // Glowing meteor orb plunging down
+    const orb = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: this.orbTexture,
+        color: colorHex,
+        transparent: true,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      })
     );
-    meteor.position.set(0, 0, 185);
-    group.add(meteor);
+    orb.scale.set(34, 34, 1);
+    orb.position.set(0, 0, 125);
+    group.add(orb);
 
     this.scene.add(group);
     this.stormStrikes.push({
       group,
-      meteor,
+      orb,
       beam,
-      life: 0.22,
-      maxLife: 0.22,
+      life: 0.19,
+      maxLife: 0.19,
       x,
       y,
       colorHex,
@@ -422,15 +514,16 @@ export class SpellVFX {
       this.particles.push({
         x,
         y,
+        z: 10 + Math.random() * 8,
         vx: Math.cos(a) * spd,
         vy: Math.sin(a) * spd,
+        vz: (Math.random() - 0.5) * 30,
         life: maxLife,
         maxLife,
         color,
       });
     }
 
-    // Thick neon curved crescent wave arcs (images/flux.svg style)
     const arcCount = isNova ? 5 : 2;
     for (let i = 0; i < arcCount; i++) {
       const a = isNova ? angle + (i / arcCount) * Math.PI * 2 : angle + (i - 0.5) * 0.08;
@@ -439,7 +532,7 @@ export class SpellVFX {
       const layerR = i === 0 ? 28 : 20;
       const pts = createArcPoints(-arcSpan * 0.5, arcSpan * 0.5, layerR, 16);
       const mesh = new THREE.Mesh(
-        buildRibbonGeometry(pts, i === 0 ? 3.8 : 2.6, false, 2.6),
+        buildRibbonGeometry(pts, i === 0 ? 3.8 : 2.6, false, 12),
         createNeonRibbonMaterial(cHex, 1.2, i === 0 ? 0.95 : 0.72)
       );
       mesh.position.set(x, y, 0);
@@ -483,17 +576,15 @@ export class SpellVFX {
     jagged.push({ x: last.x, y: last.y });
 
     const group = new THREE.Group();
-    // Primary glowing outer bolt
     group.add(
       new THREE.Mesh(
-        buildRibbonGeometry(jagged, 5.5, false, 3.8),
+        buildRibbonGeometry(jagged, 5.5, false, 15),
         createNeonRibbonMaterial(palette[0]!, 1.25, 0.95)
       )
     );
-    // Crisp inner arc
     group.add(
       new THREE.Mesh(
-        buildRibbonGeometry(jagged, 1.8, false, 4.1),
+        buildRibbonGeometry(jagged, 1.8, false, 16),
         createNeonRibbonMaterial(0xffffff, 1.35, 1.0)
       )
     );
@@ -505,7 +596,7 @@ export class SpellVFX {
       }));
       group.add(
         new THREE.Mesh(
-          buildRibbonGeometry(offsetPts, 3.5, false, 3.5),
+          buildRibbonGeometry(offsetPts, 3.5, false, 14),
           createNeonRibbonMaterial(palette[1]!, 1.15, 0.85)
         )
       );
@@ -516,6 +607,7 @@ export class SpellVFX {
   }
 
   public update(snapshot: SimSnapshot, dt: number, timeSec: number): void {
+    this.currentThemeIdx = Math.max(0, snapshot.wave - 1) % SECTOR_PILLAR_COLORS.length;
     this.syncSprayCone(snapshot, timeSec);
     this.syncProjectiles(snapshot.projectiles, timeSec);
     this.syncBeams(snapshot.beams, timeSec);
@@ -535,14 +627,12 @@ export class SpellVFX {
       const st = this.stormStrikes[i]!;
       st.life -= dt;
       const t = Math.max(0, st.life / st.maxLife);
-      st.meteor.position.z = t * 185;
-      st.meteor.rotation.z += dt * 14;
-      st.meteor.rotation.x += dt * 9;
+      st.orb.position.z = t * 125;
       setShaderUniform(st.beam.material, 'uOpacity', 0.45 + (1 - t) * 0.55);
       if (st.life <= 0) {
         this.spawnBurst(st.x, st.y, st.colorHex, 20, 1.25);
-        this.spawnShards(st.x, st.y, [st.colorHex, st.secondaryColorHex], 8, 1.0);
-        this.spawnRing(st.x, st.y, 44, st.colorHex, 0.26);
+        this.spawnShards(st.x, st.y, [st.colorHex, st.secondaryColorHex], 6, 0.9);
+        this.spawnRing(st.x, st.y, 48, st.colorHex, 0.28);
         this.scene.remove(st.group);
         this.disposeObject(st.group);
         this.stormStrikes.splice(i, 1);
@@ -592,7 +682,7 @@ export class SpellVFX {
       }
     }
 
-    // Update transient HDR ribbons / rings / lightning
+    // Update transient ribbons / rings / lightning
     for (let i = this.transientObjs.length - 1; i >= 0; i--) {
       const tl = this.transientObjs[i]!;
       tl.life -= dt;
@@ -626,8 +716,10 @@ export class SpellVFX {
       }
       p.x += p.vx * dt;
       p.y += p.vy * dt;
+      p.z = Math.max(1, p.z + p.vz * dt);
       p.vx *= 0.94;
       p.vy *= 0.94;
+      p.vz *= 0.92;
     }
 
     for (let i = 0; i < this.maxParticles; i++) {
@@ -636,7 +728,7 @@ export class SpellVFX {
         const fade = p.life / p.maxLife;
         this.particlePositions[i * 3] = p.x;
         this.particlePositions[i * 3 + 1] = p.y;
-        this.particlePositions[i * 3 + 2] = 3.1;
+        this.particlePositions[i * 3 + 2] = p.z;
         this.particleColors[i * 3] = p.color.r * fade;
         this.particleColors[i * 3 + 1] = p.color.g * fade;
         this.particleColors[i * 3 + 2] = p.color.b * fade;
@@ -660,7 +752,7 @@ export class SpellVFX {
     }
 
     const comp = ch.composition;
-    const range = 250;
+    const range = 260;
     const key = `${comp.primaryColorHex}-${comp.secondaryColorHex}`;
     if (!this.sprayConeMesh || this.sprayConeKey !== key) {
       if (this.sprayConeMesh) {
@@ -668,7 +760,7 @@ export class SpellVFX {
         this.disposeObject(this.sprayConeMesh);
       }
       const geo = new THREE.PlaneGeometry(range, range * 2);
-      geo.translate(range * 0.5, 0, 2.3);
+      geo.translate(range * 0.5, 0, 12);
       const mat = createSprayConeMaterial(comp.primaryColorHex, comp.secondaryColorHex);
       setShaderUniform(mat, 'uHalfAngle', 0.46);
       this.sprayConeMesh = new THREE.Mesh(geo, mat);
@@ -680,8 +772,8 @@ export class SpellVFX {
     this.sprayConeMesh.visible = true;
     this.sprayConeMesh.position.set(p.x + Math.cos(p.aimAngle) * 20, p.y + Math.sin(p.aimAngle) * 20, 0);
     this.sprayConeMesh.rotation.z = p.aimAngle;
-    setShaderUniform(this.sprayConeMesh.material as THREE.Material, 'uTime', timeSec);
-    setShaderUniform(this.sprayConeMesh.material as THREE.Material, 'uOpacity', Math.min(1, ch.remaining * 2.5));
+    setShaderUniform(this.sprayConeMesh.material, 'uTime', timeSec);
+    setShaderUniform(this.sprayConeMesh.material, 'uOpacity', Math.min(1, ch.remaining * 2.5));
   }
 
   private syncProjectiles(items: readonly ProjectileEntity[], timeSec: number): void {
@@ -691,51 +783,49 @@ export class SpellVFX {
       let g = this.projMeshes.get(p.id);
       if (!g) {
         g = new THREE.Group();
-        const secondary = p.colors.find((c) => c !== p.colorHex) ?? 0xffffff;
         if (p.kind === 'ROCK') {
-          const s = p.radius * 1.5;
-          const box = new THREE.BoxGeometry(s, s, s, 2, 2, 2);
-          const wire = new THREE.WireframeGeometry(box);
-          const colBright = new THREE.Color(p.colorHex).multiplyScalar(1.15);
-          g.add(new THREE.LineSegments(wire, new THREE.LineBasicMaterial({ color: colBright })));
+          const s = p.radius * 1.1;
+          const rockGeo = new THREE.DodecahedronGeometry(s, 0);
+          const wire = new THREE.WireframeGeometry(rockGeo);
+          const secondary = p.colors.find((c) => c !== p.colorHex) ?? 0xff9e44;
+
+          // Dark mineral solid core + fiery/elemental ridge glow
           g.add(
             new THREE.Mesh(
-              box,
+              rockGeo,
               new THREE.MeshBasicMaterial({
-                color: p.colorHex,
+                color: new THREE.Color(p.colorHex).multiplyScalar(0.28),
                 transparent: true,
-                opacity: 0.24,
-                blending: THREE.AdditiveBlending,
+                opacity: 0.85,
               })
             )
           );
-          g.add(createGlowSprite(p.colorHex, s * 2.5, 0.24));
-          if (secondary !== p.colorHex) {
-            const oct = new THREE.OctahedronGeometry(p.radius * 0.72, 0);
-            const octWire = new THREE.WireframeGeometry(oct);
-            oct.dispose();
-            g.add(
-              new THREE.LineSegments(
-                octWire,
-                new THREE.LineBasicMaterial({ color: new THREE.Color(secondary).multiplyScalar(1.1) })
-              )
-            );
-          }
+          g.add(
+            new THREE.LineSegments(
+              wire,
+              new THREE.LineBasicMaterial({ color: new THREE.Color(p.colorHex).multiplyScalar(1.2) })
+            )
+          );
+          g.add(createGlowSprite(secondary, s * 2.6, 0.26));
         } else {
-          // Crystal Shard Blade + tapered contrail (images/crystal-shards.svg)
+          // Crystal Shard Blade blending CRYSTAL cyan + any mixed element color cleanly
+          const mixedColor =
+            p.colors.find((c) => c !== ELEMENT_META.CRYSTAL.colorHex && c !== 0x80ffff) ??
+            p.colorHex;
           const r = p.radius;
-          const tip = r * 2.6;
-          const back = -r * 1.1;
-          const w = r * 0.62;
+          const tip = r * 2.7;
+          const back = -r * 1.15;
+          const w = r * 0.64;
+
           const bladeGeo = new THREE.BufferGeometry();
           bladeGeo.setAttribute(
             'position',
             new THREE.Float32BufferAttribute(
               [
-                tip, 0, 2.8,
-                -r * 0.15, w, 2.8,
-                back, 0, 2.8,
-                -r * 0.15, -w, 2.8,
+                tip, 0, 13,
+                -r * 0.15, w, 13,
+                back, 0, 13,
+                -r * 0.15, -w, 13,
               ],
               3
             )
@@ -745,10 +835,8 @@ export class SpellVFX {
             new THREE.Float32BufferAttribute([1, 0.5, 0.45, 1, 0, 0.5, 0.45, 0], 2)
           );
           bladeGeo.setIndex([0, 1, 2, 0, 2, 3]);
-          const bladeMat = createCrystalBladeMaterial(p.colorHex, secondary);
-          g.add(new THREE.Mesh(bladeGeo, bladeMat));
+          g.add(new THREE.Mesh(bladeGeo, createCrystalBladeMaterial(0x80ffff, mixedColor)));
 
-          // Crisp edge ribbon + tapered contrail wake
           const edgePts = [
             { x: tip, y: 0 },
             { x: -r * 0.15, y: w },
@@ -757,32 +845,29 @@ export class SpellVFX {
           ];
           g.add(
             new THREE.Mesh(
-              buildRibbonGeometry(edgePts, 2.0, true, 3.0),
-              createNeonRibbonMaterial(0xffffff, 1.25, 0.85)
+              buildRibbonGeometry(edgePts, 2.1, true, 13.4),
+              createNeonRibbonMaterial(mixedColor, 1.25, 0.9)
             )
           );
           const contrail = [
-            { x: back * 0.8, y: 0 },
-            { x: -r * 4.5, y: 0 },
+            { x: back * 0.7, y: 0 },
+            { x: -r * 4.8, y: 0 },
           ];
           g.add(
             new THREE.Mesh(
-              buildRibbonGeometry(contrail, r * 0.42, false, 2.4),
-              createNeonRibbonMaterial(p.colorHex, 1.05, 0.62)
+              buildRibbonGeometry(contrail, r * 0.44, false, 12.6),
+              createNeonRibbonMaterial(mixedColor, 1.1, 0.65)
             )
           );
-          g.add(createGlowSprite(p.colorHex, r * 2.6, 0.22));
+          g.add(createGlowSprite(mixedColor, r * 2.6, 0.24));
         }
         this.projMeshes.set(p.id, g);
         this.scene.add(g);
       }
-      g.position.set(p.x, p.y, 2);
+      g.position.set(p.x, p.y, p.kind === 'ROCK' ? 14 : 0);
       if (p.kind === 'ROCK') {
         g.rotation.x = p.spin;
         g.rotation.y = p.spin * 0.7;
-        if (g.children[3]) {
-          g.children[3].rotation.z = -p.spin * 1.5;
-        }
       } else {
         g.rotation.z = Math.atan2(p.vy, p.vx);
         const blade = g.children[0];
@@ -805,64 +890,105 @@ export class SpellVFX {
       const nx = -sin;
       const ny = cos;
 
-      const cA = b.colors[0] ?? b.colorHex;
-      const cB = b.colors[1] ?? (b.composition.secondaryColorHex || cA);
-      const cC = b.colors[2] ?? cB;
+      const isVoid = b.elements.includes('VOID');
+      let cA = b.colors[0] ?? b.colorHex;
+      let cB = b.colors[1] ?? b.composition.secondaryColorHex;
+      let cC = b.colors[2] ?? cB;
+
+      // Pure Nano -> golden amber / emerald silk weave matching bream.svg; pure Void -> dark violet/crimson
+      if (!isVoid && b.colors.length === 1 && b.elements.includes('NANO')) {
+        cA = 0xf59e0b;
+        cB = 0xfef08a;
+        cC = 0x39ff14;
+      } else if (isVoid && b.colors.length === 1) {
+        cA = 0x7a12ff;
+        cB = 0xff2e97;
+        cC = 0x4c0678;
+      }
 
       if (!group) {
         group = new THREE.Group();
-        const stripW = Math.max(36, b.width * 2.2);
-        // 0: Volumetric braided plasma strip
+        const stripW = Math.max(54, b.width * 2.9);
+
+        // 0: Volumetric silk-braided energy beam
         const beamPlane = new THREE.PlaneGeometry(1, stripW);
         beamPlane.translate(0.5, 0, 0);
-        const beamMat = createBraidedBeamMaterial(cA, cB, cC);
-        const beamMesh = new THREE.Mesh(beamPlane, beamMat);
-        group.add(beamMesh);
+        const beamMat = createBraidedBeamMaterial(cA, cB, cC, isVoid);
+        group.add(new THREE.Mesh(beamPlane, beamMat));
 
-        // 1: End impact shard crystal (no muzzle white blob)
+        // 1: End impact crystal / flare
         const impactDiamond = [
           { x: 14, y: 0 },
-          { x: 0, y: 10 },
-          { x: -10, y: 0 },
-          { x: 0, y: -10 },
+          { x: 0, y: 9 },
+          { x: -9, y: 0 },
+          { x: 0, y: -9 },
         ];
-        const impactMesh = new THREE.Mesh(
-          buildRibbonGeometry(impactDiamond, 2.8, true, 3.6),
-          createNeonRibbonMaterial(cB, 1.25, 0.92)
+        group.add(
+          new THREE.Mesh(
+            buildRibbonGeometry(impactDiamond, 2.4, true, 14.5),
+            createNeonRibbonMaterial(cB, 1.25, 0.9)
+          )
         );
-        group.add(impactMesh);
 
-        // 2: Subtle end impact halo
-        group.add(createGlowSprite(cB, 30, 0.22));
+        // 2: End impact sprite halo
+        group.add(createGlowSprite(cB, 32, 0.24));
+
+        // 3..10: Twinkling 4-point star-sparks riding along the beam (images/bream.svg)
+        const sparkContainer = new THREE.Group();
+        for (let s = 0; s < 8; s++) {
+          const sp = new THREE.Sprite(
+            new THREE.SpriteMaterial({
+              map: this.starTexture,
+              color: s % 2 === 0 ? cB : 0xffffff,
+              transparent: true,
+              opacity: 0.85,
+              blending: THREE.AdditiveBlending,
+              depthWrite: false,
+            })
+          );
+          const sz = 10 + (s % 3) * 5;
+          sp.scale.set(sz, sz, 1);
+          sparkContainer.add(sp);
+        }
+        group.add(sparkContainer);
 
         this.beamMeshes.set(b.id, group);
         this.scene.add(group);
       }
 
       const beamMesh = group.children[0] as THREE.Mesh;
-      beamMesh.position.set(b.x, b.y, 2.9);
+      beamMesh.position.set(b.x, b.y, 14);
       beamMesh.rotation.z = b.angle;
       beamMesh.scale.set(len, 1, 1);
       setShaderUniform(beamMesh.material, 'uTime', timeSec);
-      setShaderUniform(beamMesh.material, 'uLength', len / 22);
+      setShaderUniform(beamMesh.material, 'uLength', len / 24);
       setShaderUniform(beamMesh.material, 'uFade', Math.min(1, (b.life / Math.max(0.05, b.maxLife)) * 2.5));
 
       const impactMesh = group.children[1] as THREE.Mesh;
       impactMesh.position.set(b.x + cos * len, b.y + sin * len, 0);
-      impactMesh.rotation.z = timeSec * 11 + b.id;
+      impactMesh.rotation.z = timeSec * 10 + b.id;
 
-      group.children[2]!.position.set(b.x + cos * len, b.y + sin * len, 3.1);
+      group.children[2]!.position.set(b.x + cos * len, b.y + sin * len, 14);
 
-      // Stream dense glowing plasma sparks & directional geometric shards along full beam length
+      const sparks = group.children[3] as THREE.Group;
+      for (let s = 0; s < sparks.children.length; s++) {
+        const sp = sparks.children[s] as THREE.Sprite;
+        const frac = (s / sparks.children.length + timeSec * 0.85) % 1;
+        const along = frac * len;
+        const lat = Math.sin(along * 0.04 - timeSec * 10 + s * 1.9) * (b.width * 0.45);
+        sp.position.set(b.x + cos * along + nx * lat, b.y + sin * along + ny * lat, 15.5);
+        sp.material.opacity = Math.sin(frac * Math.PI) * 0.85;
+      }
+
       this.spawnBeamFlowParticle(b.x, b.y, cos, sin, nx, ny, len, b.width, b.composition.weightedColors);
-      if (Math.random() < 0.72) {
+      if (isVoid && Math.random() < 0.35) {
         const d = Math.random() * len;
         this.spawnShards(
           b.x + cos * d + nx * (Math.random() - 0.5) * b.width * 0.7,
           b.y + sin * d + ny * (Math.random() - 0.5) * b.width * 0.7,
-          b.colors,
+          [cA, cB],
           1,
-          0.9,
+          0.85,
           b.angle
         );
       }
@@ -873,25 +999,32 @@ export class SpellVFX {
   private syncWalls(items: readonly WallPylonEntity[], timeSec: number): void {
     const alive = new Set<number>();
     const activePanelKeys = new Set<string>();
+    const groups = new Map<number, WallPylonEntity[]>();
 
-    for (let idx = 0; idx < items.length; idx++) {
-      const w = items[idx]!;
+    for (const w of items) {
       alive.add(w.id);
+      let arr = groups.get(w.groupId);
+      if (!arr) {
+        arr = [];
+        groups.set(w.groupId, arr);
+      }
+      arr.push(w);
+
       let g = this.wallMeshes.get(w.id);
-      const barrierColor = w.colors.includes(0xe6f0ff) ? 0xe6f0ff : w.colorHex;
       const payloadColors = w.colors.filter((c) => c !== 0xe6f0ff);
       const p1 = payloadColors[0] ?? w.colorHex;
       const p2 = payloadColors[1] ?? p1;
 
       if (!g) {
         g = new THREE.Group();
-        const cyl = new THREE.CylinderGeometry(w.radius * 0.65, w.radius * 0.88, 46, 6, 1);
+        // Sleek vertical emitter pylon spire (clearly secondary to the tall forcefield barrier)
+        const cyl = new THREE.CylinderGeometry(7, 10, 56, 6, 1);
         cyl.rotateX(Math.PI / 2);
         const wire = new THREE.WireframeGeometry(cyl);
         g.add(
           new THREE.LineSegments(
             wire,
-            new THREE.LineBasicMaterial({ color: new THREE.Color(barrierColor).multiplyScalar(1.12) })
+            new THREE.LineBasicMaterial({ color: new THREE.Color(p1).multiplyScalar(1.15) })
           )
         );
         g.add(
@@ -900,51 +1033,81 @@ export class SpellVFX {
             new THREE.MeshBasicMaterial({
               color: p1,
               transparent: true,
-              opacity: 0.22,
+              opacity: 0.25,
               blending: THREE.AdditiveBlending,
             })
           )
         );
-        // Base neon ring around fortress obelisk
-        const baseRing = new THREE.Mesh(
-          buildRibbonGeometry(createPolygonPoints(6, w.radius * 1.05), 3.0, true, -20),
-          createNeonRibbonMaterial(p2, 1.15, 0.9)
-        );
-        g.add(baseRing);
-        g.add(createGlowSprite(p1, w.radius * 2.6, 0.24));
-        g.position.set(w.x, w.y, 23);
+        const cap = createGlowSprite(p2, 26, 0.25);
+        cap.position.z = 28;
+        g.add(cap);
+        g.position.set(w.x, w.y, 28);
         this.wallMeshes.set(w.id, g);
         this.scene.add(g);
       }
+    }
 
-      if (idx > 0) {
-        const prev = items[idx - 1]!;
-        const dx = w.x - prev.x;
-        const dy = w.y - prev.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist > 1 && dist < 120) {
-          const panelKey = `${prev.id}-${w.id}`;
-          activePanelKeys.add(panelKey);
-          let panel = this.wallPanels.get(panelKey);
-          if (!panel) {
-            const panelGeo = new THREE.PlaneGeometry(dist, 34);
-            panelGeo.rotateX(Math.PI / 2);
-            panel = new THREE.Mesh(panelGeo, createWallPanelMaterial(p1, p2));
-            this.wallPanels.set(panelKey, panel);
-            this.scene.add(panel);
-          }
-          panel.position.set((prev.x + w.x) * 0.5, (prev.y + w.y) * 0.5, 22);
-          panel.rotation.z = Math.atan2(dy, dx);
-          setShaderUniform(panel.material, 'uTime', timeSec);
-          setShaderUniform(panel.material, 'uOpacity', Math.min(1, (w.life / Math.max(0.1, w.maxLife)) * 2.0));
-        }
+    // Build continuous vertical 3D Forcefield Wall Panels between adjacent pylons in each group
+    const pairs: Array<{ a: WallPylonEntity; b: WallPylonEntity }> = [];
+    for (const arr of groups.values()) {
+      for (let i = 0; i < arr.length - 1; i++) {
+        pairs.push({ a: arr[i]!, b: arr[i + 1]! });
+      }
+      if (arr.length >= 3 && arr[0]!.isNova) {
+        pairs.push({ a: arr[arr.length - 1]!, b: arr[0]! });
       }
     }
 
-    for (const [k, mesh] of this.wallPanels.entries()) {
+    for (const { a, b } of pairs) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1) continue;
+
+      const panelKey = `${a.id}-${b.id}`;
+      activePanelKeys.add(panelKey);
+      let panelGroup = this.wallPanels.get(panelKey);
+      const payloadColors = a.colors.filter((c) => c !== 0xe6f0ff);
+      const p1 = payloadColors[0] ?? a.colorHex;
+      const p2 = payloadColors[1] ?? p1;
+
+      if (!panelGroup) {
+        panelGroup = new THREE.Group();
+        const panelGeo = new THREE.PlaneGeometry(dist, 54);
+        panelGeo.rotateX(Math.PI / 2);
+        const wallMesh = new THREE.Mesh(panelGeo, createForcefieldWallMaterial(p1, p2));
+        wallMesh.position.z = 27;
+        panelGroup.add(wallMesh);
+
+        // Glowing ground base rail + top containment rail
+        panelGroup.add(
+          new THREE.Mesh(
+            buildRibbonGeometry([{ x: -dist * 0.5, y: 0 }, { x: dist * 0.5, y: 0 }], 3.5, false, 1.5),
+            createNeonRibbonMaterial(p1, 1.25, 0.9)
+          ),
+          new THREE.Mesh(
+            buildRibbonGeometry([{ x: -dist * 0.5, y: 0 }, { x: dist * 0.5, y: 0 }], 3.0, false, 54),
+            createNeonRibbonMaterial(p2, 1.2, 0.85)
+          )
+        );
+        this.wallPanels.set(panelKey, panelGroup);
+        this.scene.add(panelGroup);
+      }
+
+      panelGroup.position.set((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, 0);
+      panelGroup.rotation.z = Math.atan2(dy, dx);
+      const fade = Math.min(1, (Math.min(a.life, b.life) / Math.max(0.1, a.maxLife)) * 2.0);
+      const wallMesh = panelGroup.children[0] as THREE.Mesh;
+      setShaderUniform(wallMesh.material, 'uTime', timeSec);
+      setShaderUniform(wallMesh.material, 'uOpacity', fade);
+      setShaderUniform((panelGroup.children[1] as THREE.Mesh).material, 'uOpacity', fade);
+      setShaderUniform((panelGroup.children[2] as THREE.Mesh).material, 'uOpacity', fade);
+    }
+
+    for (const [k, obj] of this.wallPanels.entries()) {
       if (!activePanelKeys.has(k)) {
-        this.scene.remove(mesh);
-        this.disposeObject(mesh);
+        this.scene.remove(obj);
+        this.disposeObject(obj);
         this.wallPanels.delete(k);
       }
     }
@@ -958,46 +1121,36 @@ export class SpellVFX {
       let g = this.mineMeshes.get(m.id);
       if (!g) {
         g = new THREE.Group();
-        const barrierColor = m.colors.includes(0xe6f0ff) ? 0xe6f0ff : m.colorHex;
         const payloadColors = m.colors.filter((c) => c !== 0xe6f0ff);
         const p1 = payloadColors[0] ?? m.colorHex;
         const p2 = payloadColors[1] ?? p1;
 
-        const ico = new THREE.IcosahedronGeometry(m.radius * 0.78, 0);
-        const wire = new THREE.WireframeGeometry(ico);
-        ico.dispose();
-        const pod = new THREE.LineSegments(
-          wire,
-          new THREE.LineBasicMaterial({ color: new THREE.Color(barrierColor).multiplyScalar(1.12) })
+        // 0: Hovering luminous energy sphere pod
+        const sphere = new THREE.Mesh(
+          new THREE.SphereGeometry(m.radius * 0.5, 12, 10),
+          new THREE.MeshBasicMaterial({ color: p1 })
         );
-        pod.position.set(0, 0, 10);
-        g.add(pod);
+        sphere.position.set(0, 0, 14);
+        g.add(sphere);
 
-        // Spiked cross blades
-        const spike1 = [
-          { x: -m.radius * 0.95, y: 0 },
-          { x: m.radius * 0.95, y: 0 },
-        ];
-        const spike2 = [
-          { x: 0, y: -m.radius * 0.95 },
-          { x: 0, y: m.radius * 0.95 },
-        ];
-        const crossGroup = new THREE.Group();
-        crossGroup.add(
-          new THREE.Mesh(buildRibbonGeometry(spike1, 3.0, false, 10), createNeonRibbonMaterial(p2, 1.2, 0.95)),
-          new THREE.Mesh(buildRibbonGeometry(spike2, 3.0, false, 10), createNeonRibbonMaterial(p2, 1.2, 0.95))
+        // 1: Rotating containment ring
+        const ring = new THREE.Mesh(
+          buildRibbonGeometry(createPolygonPoints(16, m.radius * 0.9), 2.4, true, 0),
+          createNeonRibbonMaterial(p2, 1.2, 0.92)
         );
-        g.add(crossGroup);
+        ring.position.set(0, 0, 14);
+        g.add(ring);
 
-        const glow = createGlowSprite(p1, 26, 0.28);
-        glow.position.set(0, 0, 10);
+        // 2: Pulsing core halo
+        const glow = createGlowSprite(p1, 28, 0.26);
+        glow.position.set(0, 0, 14);
         g.add(glow);
 
-        // Trigger proximity ring as glowing ribbon
+        // 3: Ground proximity trigger ring
         g.add(
           new THREE.Mesh(
-            buildRibbonGeometry(createPolygonPoints(24, m.triggerRadius), 2.2, true, 0.9),
-            createNeonRibbonMaterial(p1, 1.05, payloadColors.length >= 2 ? 0.65 : 0.42)
+            buildRibbonGeometry(createPolygonPoints(24, m.triggerRadius), 2.0, true, 0.9),
+            createNeonRibbonMaterial(p1, 1.05, payloadColors.length >= 2 ? 0.58 : 0.36)
           )
         );
 
@@ -1005,11 +1158,10 @@ export class SpellVFX {
         this.mineMeshes.set(m.id, g);
         this.scene.add(g);
       }
-      g.children[0]!.rotation.x = timeSec * 2.2 + m.id;
-      g.children[0]!.rotation.y = timeSec * 1.7;
-      g.children[1]!.rotation.z = -timeSec * 3.8;
-      const pulse = 0.85 + Math.sin(timeSec * 9 + m.id) * 0.2;
-      g.children[2]!.scale.set(26 * pulse, 26 * pulse, 1);
+      g.children[1]!.rotation.x = 0.65;
+      g.children[1]!.rotation.z = timeSec * 3.4 + m.id;
+      const pulse = 0.85 + Math.sin(timeSec * 9 + m.id) * 0.18;
+      g.children[2]!.scale.set(28 * pulse, 28 * pulse, 1);
     }
     this.pruneMap(this.mineMeshes, alive);
   }
@@ -1026,19 +1178,27 @@ export class SpellVFX {
         const payloadColor = payloadColors[0] ?? s.colorHex;
         const secondaryPayload = payloadColors[1] ?? payloadColor;
 
-        // 0: Volumetric swirling vortex disk
+        // 0: Ground impact zone vortex rune
         const vortexMesh = new THREE.Mesh(
-          new THREE.PlaneGeometry(s.radius * 2.15, s.radius * 2.15),
+          new THREE.PlaneGeometry(s.radius * 2.05, s.radius * 2.05),
           createStormVortexMaterial(barrierColor, payloadColor, secondaryPayload)
         );
         vortexMesh.position.z = 1.2;
         g.add(vortexMesh);
 
-        // 1: Crisp octagon ring
+        // 1: Overhead billowing 3D Storm Cloud disk floating at z=120
+        const cloudMesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(s.radius * 2.25, s.radius * 2.25),
+          createStormCloudMaterial(payloadColor, secondaryPayload)
+        );
+        cloudMesh.position.z = 120;
+        g.add(cloudMesh);
+
+        // 2: Outer ground boundary ribbon
         g.add(
           new THREE.Mesh(
-            buildRibbonGeometry(createPolygonPoints(8, s.radius * 0.64), 3.2, true, 1.8),
-            createNeonRibbonMaterial(payloadColor, 1.2, 0.9)
+            buildRibbonGeometry(createPolygonPoints(32, s.radius), 2.6, true, 1.5),
+            createNeonRibbonMaterial(payloadColor, 1.1, 0.72)
           )
         );
 
@@ -1046,10 +1206,14 @@ export class SpellVFX {
         this.stormMeshes.set(s.id, g);
         this.scene.add(g);
       }
+      const fade = Math.min(1, (s.life / Math.max(0.1, s.maxLife)) * 2.0);
       const vortex = g.children[0] as THREE.Mesh;
       setShaderUniform(vortex.material, 'uTime', timeSec);
-      setShaderUniform(vortex.material, 'uOpacity', Math.min(1, (s.life / Math.max(0.1, s.maxLife)) * 2.0));
-      g.children[1]!.rotation.z = -timeSec * 2.3;
+      setShaderUniform(vortex.material, 'uOpacity', fade * 0.72);
+      const cloud = g.children[1] as THREE.Mesh;
+      setShaderUniform(cloud.material, 'uTime', timeSec);
+      setShaderUniform(cloud.material, 'uOpacity', fade);
+      setShaderUniform((g.children[2] as THREE.Mesh).material, 'uOpacity', fade * 0.72);
     }
     this.pruneMap(this.stormMeshes, alive);
   }
@@ -1064,37 +1228,37 @@ export class SpellVFX {
       if (!g) {
         g = new THREE.Group();
         if (s.isNova) {
-          // 360-degree Hex-Mesh Fresnel Dome (images/barrier-ciruclar.svg)
+          // 0: 360-degree Hex-Mesh Fresnel Dome elevated slightly in 3D
           const dome = new THREE.Mesh(
             new THREE.PlaneGeometry(s.radius * 2.15, s.radius * 2.15),
             createHexDomeMaterial(s.colorHex, secondary)
           );
-          dome.position.z = 2.2;
+          dome.position.z = 14;
           g.add(dome);
 
-          // Crisp outer glowing rim ribbon
+          // 1: Crisp outer rim ribbon
           g.add(
             new THREE.Mesh(
-              buildRibbonGeometry(createPolygonPoints(36, s.radius), 3.4, true, 2.7),
+              buildRibbonGeometry(createPolygonPoints(36, s.radius), 3.2, true, 14),
               createNeonRibbonMaterial(s.colorHex, 1.2, 0.9)
             )
           );
         } else {
-          // Forward Curved Geodesic Crescent Barrier + 3 Tether Lines (images/barrier.svg)
-          const stripGeo = createCurvedStripGeometry(s.radius * 0.82, s.radius * 1.08, -s.arc, s.arc, 28, 2.4);
-          g.add(new THREE.Mesh(stripGeo, createCurvedBarrierMaterial(s.colorHex, secondary)));
+          // 0: Vertical Standing 3D Curved Shield Wall (z = 2..48)
+          const wallGeo = createStandingCurvedWallGeometry(s.radius, -s.arc, s.arc, 46, 28, 2);
+          g.add(new THREE.Mesh(wallGeo, createCurvedBarrierMaterial(s.colorHex, secondary)));
 
-          // Triangulated 3D wireframe lattice along crescent
+          // 1: Triangulated 3D wireframe geodesic front
           const cols = 10;
           const rows = 2;
           const grid: THREE.Vector3[][] = [];
           for (let r = 0; r <= rows; r++) {
             const rowPts: THREE.Vector3[] = [];
-            const z = (r / rows - 0.5) * 32;
-            const radScale = 1 - Math.abs(r / rows - 0.5) * 0.14;
+            const z = 2 + (r / rows) * 46;
+            const radScale = 1 - Math.abs(r / rows - 0.5) * 0.08;
             for (let c = 0; c <= cols; c++) {
               const a = -s.arc + (c / cols) * (s.arc * 2);
-              rowPts.push(new THREE.Vector3(Math.cos(a) * s.radius * radScale, Math.sin(a) * s.radius * radScale, z + 3));
+              rowPts.push(new THREE.Vector3(Math.cos(a) * s.radius * radScale, Math.sin(a) * s.radius * radScale, z));
             }
             grid.push(rowPts);
           }
@@ -1112,20 +1276,20 @@ export class SpellVFX {
             new THREE.LineSegments(
               new THREE.BufferGeometry().setFromPoints(wirePts),
               new THREE.LineBasicMaterial({
-                color: new THREE.Color(secondary).multiplyScalar(1.12),
+                color: new THREE.Color(secondary).multiplyScalar(1.15),
                 transparent: true,
                 opacity: 0.85,
               })
             )
           );
 
-          // 3 green/element dashed tether lines from ship to crescent back
+          // 2: 3 dashed tether lines from ship center to shield crescent back
           const tetherPts: THREE.Vector3[] = [];
           for (const frac of [-0.62, 0, 0.62]) {
             const ta = frac * s.arc;
             tetherPts.push(
-              new THREE.Vector3(16, frac * 14, 2.0),
-              new THREE.Vector3(Math.cos(ta) * s.radius * 0.84, Math.sin(ta) * s.radius * 0.84, 2.0)
+              new THREE.Vector3(16, frac * 14, 14),
+              new THREE.Vector3(Math.cos(ta) * s.radius * 0.96, Math.sin(ta) * s.radius * 0.96, 22)
             );
           }
           const tetherLine = new THREE.LineSegments(
@@ -1135,17 +1299,17 @@ export class SpellVFX {
               dashSize: 6,
               gapSize: 4,
               transparent: true,
-              opacity: 0.78,
+              opacity: 0.8,
             })
           );
           tetherLine.computeLineDistances();
           g.add(tetherLine);
 
-          // Outer crisp crescent edge ribbon
+          // 3: Top crisp curved edge ribbon
           g.add(
             new THREE.Mesh(
-              buildRibbonGeometry(createArcPoints(-s.arc, s.arc, s.radius * 1.04, 24), 3.4, false, 3.2),
-              createNeonRibbonMaterial(s.colorHex, 1.25, 0.95)
+              buildRibbonGeometry(createArcPoints(-s.arc, s.arc, s.radius, 24), 3.4, false, 48),
+              createNeonRibbonMaterial(s.colorHex, 1.3, 0.95)
             )
           );
         }
@@ -1171,36 +1335,21 @@ export class SpellVFX {
       let g = this.poolMeshes.get(p.id);
       if (!g) {
         g = new THREE.Group();
-        const seed = p.id * 1.7;
-        // 3 nested organically-wobbling HDR neon contour ribbons (images/flux.svg puddles)
-        for (let ring = 0; ring < 3; ring++) {
-          const baseR = p.radius * (1 - ring * 0.28);
-          const pts: Array<{ x: number; y: number }> = [];
-          for (let i = 0; i < 28; i++) {
-            const a = (i / 28) * Math.PI * 2;
-            const wobble = 1 + 0.14 * Math.sin(3 * a + seed + ring) + 0.08 * Math.cos(5 * a - seed);
-            pts.push({ x: Math.cos(a) * baseR * wobble, y: Math.sin(a) * baseR * wobble });
-          }
-          g.add(
-            new THREE.Mesh(
-              buildRibbonGeometry(pts, ring === 0 ? 3.4 : 2.5, true, 0.6 + ring * 0.25),
-              createNeonRibbonMaterial(p.colorHex, ring === 0 ? 1.2 : 1.0, 0.85 - ring * 0.15)
-            )
-          );
-        }
-        g.add(createGlowSprite(p.colorHex, p.radius * 1.9, 0.16));
+        const secondary = p.kind === 'PLASMA' ? 0xff9944 : 0x00f5ff;
+        const poolDisk = new THREE.Mesh(
+          new THREE.PlaneGeometry(p.radius * 2.15, p.radius * 2.15),
+          createLiquidPoolMaterial(p.colorHex, secondary, p.id * 1.37)
+        );
+        poolDisk.position.z = 1.0;
+        g.add(poolDisk);
         g.position.set(p.x, p.y, 0);
         this.poolMeshes.set(p.id, g);
         this.scene.add(g);
       }
-      const breathe = 1 + Math.sin(timeSec * 3.5 + p.id) * 0.045;
-      g.scale.set(breathe, breathe, 1);
       const fade = Math.min(1, (p.life / p.maxLife) * 1.4);
-      for (let r = 0; r < 3; r++) {
-        const child = g.children[r] as THREE.Mesh;
-        setShaderUniform(child.material, 'uOpacity', (0.85 - r * 0.15) * fade);
-      }
-      (g.children[3] as THREE.Sprite).material.opacity = 0.16 * fade;
+      const disk = g.children[0] as THREE.Mesh;
+      setShaderUniform(disk.material, 'uTime', timeSec);
+      setShaderUniform(disk.material, 'uOpacity', fade);
     }
     this.pruneMap(this.poolMeshes, alive);
   }
@@ -1213,14 +1362,11 @@ export class SpellVFX {
       if (!g) {
         g = new THREE.Group();
         const secondary = s.colors.find((c) => c !== s.colorHex) ?? s.colorHex;
-        // Curved HDR energy crescent blade
-        const bladeGeo = createCurvedStripGeometry(s.radius * 0.56, s.radius * 1.05, -s.arc, s.arc, 24, 3.4);
+        const bladeGeo = createCurvedStripGeometry(s.radius * 0.56, s.radius * 1.05, -s.arc, s.arc, 24, 15);
         g.add(new THREE.Mesh(bladeGeo, createSlashMaterial(s.colorHex, secondary)));
-
-        // Sharp outer neon cutting arc
         g.add(
           new THREE.Mesh(
-            buildRibbonGeometry(createArcPoints(-s.arc, s.arc, s.radius, 20), 4.0, false, 3.8),
+            buildRibbonGeometry(createArcPoints(-s.arc, s.arc, s.radius, 20), 4.0, false, 15.5),
             createNeonRibbonMaterial(0xffffff, 1.3, 0.95)
           )
         );
@@ -1238,38 +1384,45 @@ export class SpellVFX {
 
   private syncPillars(items: readonly ArenaPillar[]): void {
     const alive = new Set<string>();
+    const colHex = SECTOR_PILLAR_COLORS[this.currentThemeIdx]!;
     for (const p of items) {
-      const key = `${p.id}:${p.x}:${p.y}:${p.radius}`;
+      const key = `${p.id}:${p.x}:${p.y}:${p.radius}:${this.currentThemeIdx}`;
       alive.add(key);
       if (!this.pillarMeshes.has(key)) {
         const g = new THREE.Group();
-        const cyl = new THREE.CylinderGeometry(p.radius, p.radius, 48, p.sides, 1);
+        const h = 76;
+        const cyl = new THREE.CylinderGeometry(p.radius * 0.92, p.radius, h, p.sides, 1);
         cyl.rotateX(Math.PI / 2);
         const wire = new THREE.WireframeGeometry(cyl);
         g.add(
           new THREE.LineSegments(
             wire,
-            new THREE.LineBasicMaterial({ color: new THREE.Color(0x1a6bff).multiplyScalar(1.1), transparent: true, opacity: 0.85 })
+            new THREE.LineBasicMaterial({ color: new THREE.Color(colHex).multiplyScalar(1.1), transparent: true, opacity: 0.85 })
           )
         );
         g.add(
           new THREE.Mesh(
             cyl,
             new THREE.MeshBasicMaterial({
-              color: 0x00f5ff,
+              color: colHex,
               transparent: true,
-              opacity: 0.09,
+              opacity: 0.14,
               blending: THREE.AdditiveBlending,
             })
           )
         );
+        // Base & top illuminated neon rings
         g.add(
           new THREE.Mesh(
-            buildRibbonGeometry(createPolygonPoints(p.sides, p.radius * 1.03), 3.0, true, -21),
-            createNeonRibbonMaterial(0x00f5ff, 1.05, 0.78)
+            buildRibbonGeometry(createPolygonPoints(p.sides, p.radius * 1.04), 3.0, true, -h * 0.5 + 1),
+            createNeonRibbonMaterial(colHex, 1.15, 0.82)
+          ),
+          new THREE.Mesh(
+            buildRibbonGeometry(createPolygonPoints(p.sides, p.radius * 0.94), 2.6, true, h * 0.5),
+            createNeonRibbonMaterial(colHex, 1.15, 0.85)
           )
         );
-        g.position.set(p.x, p.y, 23);
+        g.position.set(p.x, p.y, h * 0.5);
         this.pillarMeshes.set(key, g);
         this.scene.add(g);
       }
@@ -1292,17 +1445,17 @@ export class SpellVFX {
         g = new THREE.Group();
         g.add(
           new THREE.Mesh(
-            buildRibbonGeometry(createPolygonPoints(16, r.radius), 3.2, true, 1.6),
+            buildRibbonGeometry(createPolygonPoints(16, r.radius), 3.2, true, 1.8),
             createNeonRibbonMaterial(0xb429ff, 1.2, 0.92)
           )
         );
         g.add(
           new THREE.Mesh(
-            buildRibbonGeometry(createPolygonPoints(8, r.radius), 2.8, true, 2.1),
+            buildRibbonGeometry(createPolygonPoints(8, r.radius), 2.8, true, 2.3),
             createNeonRibbonMaterial(0x00f5ff, 1.15, 0.95)
           )
         );
-        g.add(createGlowSprite(0xb429ff, r.radius * 2.0, 0.18));
+        g.add(createGlowSprite(0xb429ff, r.radius * 2.0, 0.2));
         g.position.set(r.x, r.y, 0);
         this.riftMeshes.set(r.id, g);
         this.scene.add(g);
@@ -1361,18 +1514,18 @@ export class SpellVFX {
       ];
       g.add(
         new THREE.Mesh(
-          buildRibbonGeometry(archPts, 4.0, false, 2.2),
+          buildRibbonGeometry(archPts, 4.0, false, 6),
           createNeonRibbonMaterial(color, gate.open ? 1.25 : 0.85, gate.open ? 0.95 : 0.45)
         )
       );
       if (gate.open) {
         g.add(
           new THREE.Mesh(
-            buildRibbonGeometry(createPolygonPoints(24, gate.radius * 0.52), 3.2, true, 2.6),
+            buildRibbonGeometry(createPolygonPoints(24, gate.radius * 0.52), 3.2, true, 8),
             createNeonRibbonMaterial(0x00f5ff, 1.2, 0.9)
           )
         );
-        g.add(createGlowSprite(0x39ff14, gate.radius * 2.0, 0.2));
+        g.add(createGlowSprite(0x39ff14, gate.radius * 2.0, 0.22));
       }
       g.position.set(gate.x, gate.y, 0);
       this.gateGroup = g;

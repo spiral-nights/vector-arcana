@@ -17,6 +17,9 @@ export class WarpingGrid {
   private readonly lineColors: Float32Array;
   private readonly geometry: THREE.BufferGeometry;
   public readonly mesh: THREE.LineSegments;
+  private themeIdx = -1;
+  private baseRgb: [number, number, number] = [0.08, 0.14, 0.48];
+  private warpRgb: [number, number, number] = [0.55, 0.80, 0.62];
 
   constructor(scene: THREE.Scene) {
     this.count = this.cols * this.rows;
@@ -147,8 +150,27 @@ export class WarpingGrid {
     this.syncBuffers();
   }
 
+  public setSectorTheme(wave: number): void {
+    const idx = Math.max(0, wave - 1) % 5;
+    if (idx === this.themeIdx) return;
+    this.themeIdx = idx;
+    const themes: Array<{ base: [number, number, number]; warp: [number, number, number] }> = [
+      { base: [0.08, 0.14, 0.48], warp: [0.55, 0.80, 0.62] }, // Cyber Vault
+      { base: [0.28, 0.08, 0.12], warp: [0.75, 0.42, 0.22] }, // Reactor Choke
+      { base: [0.06, 0.22, 0.44], warp: [0.35, 0.82, 0.72] }, // Cryo Gauntlet
+      { base: [0.06, 0.26, 0.22], warp: [0.32, 0.85, 0.52] }, // Bio-Core Ring
+      { base: [0.22, 0.08, 0.44], warp: [0.72, 0.35, 0.85] }, // Void Sanctum
+    ];
+    const t = themes[idx]!;
+    this.baseRgb = t.base;
+    this.warpRgb = t.warp;
+    this.syncBuffers();
+  }
+
   private syncBuffers(): void {
     let ptr = 0;
+    const [br, bg, bb] = this.baseRgb;
+    const [wr, wg, wb] = this.warpRgb;
     const writeVertex = (idx: number): void => {
       const x = this.posX[idx]!;
       const y = this.posY[idx]!;
@@ -160,10 +182,9 @@ export class WarpingGrid {
       this.linePositions[ptr + 1] = y;
       this.linePositions[ptr + 2] = -disp * 8;
 
-      // Deep indigo at rest -> vibrant electric cyan/violet when warped
-      this.lineColors[ptr] = 0.08 + disp * 0.55;
-      this.lineColors[ptr + 1] = 0.14 + disp * 0.80;
-      this.lineColors[ptr + 2] = 0.48 + disp * 0.62;
+      this.lineColors[ptr] = br + disp * wr;
+      this.lineColors[ptr + 1] = bg + disp * wg;
+      this.lineColors[ptr + 2] = bb + disp * wb;
       ptr += 3;
     };
 
