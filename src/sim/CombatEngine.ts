@@ -184,6 +184,22 @@ export class CombatEngine {
   private comboTextCooldown = new Map<number, number>();
   private splashCooldown = new Map<number, number>();
 
+  private getSpellAccentColor(elements: readonly QueueElement[], comp: ElementComposition): number {
+    if (elements.includes('VOID')) {
+      const other = elements.find((el) => el !== 'VOID' && el !== 'BARRIER');
+      return other ? ELEMENT_META[other].colorHex : ELEMENT_META.VOID.colorHex;
+    }
+    return comp.primaryColorHex;
+  }
+
+  private getSpellParticleColors(elements: readonly QueueElement[], colors: readonly number[]): number[] {
+    if (elements.includes('VOID')) {
+      const otherCols = colors.filter((c) => c !== ELEMENT_META.VOID.colorHex && c !== ELEMENT_META.BARRIER.colorHex);
+      if (otherCols.length > 0) return otherCols;
+    }
+    return [...colors];
+  }
+
   public reset(): void {
     this.nextId = 1;
     this.enemies = [];
@@ -294,10 +310,12 @@ export class CombatEngine {
 
       case 'VOID_BURST': {
         const radius = 130 + comp.totalPower * 35;
+        const accent = this.getSpellAccentColor(selfCast.elements, comp);
+        const burstColors = this.getSpellParticleColors(selfCast.elements, comp.colors);
         this.applyAoEDamage(player.x, player.y, radius, 42 * comp.totalPower, selfCast.elements, -160, events);
-        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius, colorHex: selfCast.colorHex });
-        events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: selfCast.colorHex, count: 28, radius: radius * 0.7 });
-        events.push({ type: 'vfx_shards', x: player.x, y: player.y, colors: comp.colors, count: 18, speedScale: 1.1 });
+        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius, colorHex: accent });
+        events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: accent, count: 28, radius: radius * 0.7 });
+        events.push({ type: 'vfx_shards', x: player.x, y: player.y, colors: burstColors, count: 18, speedScale: 1.1 });
         events.push({ type: 'grid_well', x: player.x, y: player.y, strength: 240 + comp.totalPower * 40, radius: radius + 40 });
         events.push({ type: 'screen_shake', intensity: 4.5 });
         events.push({ type: 'sfx', sound: 'beam' });
@@ -512,7 +530,8 @@ export class CombatEngine {
     } else if (ch.delivery === 'LIGHTNING_BOLT') {
       const voltCount = counts.VOLT ?? 1;
       const range = 440 + voltCount * 65;
-      this.castLightningBurst(player.x, player.y, angle, 1, range, 14 * voltCount, ch.elements, comp, false, events);
+      const dmg = 11 * voltCount + 4 * comp.totalPower;
+      this.castLightningBurst(player.x, player.y, angle, 1, range, dmg, ch.elements, comp, false, events);
       if (Math.random() < 0.4) {
         events.push({ type: 'sfx', sound: 'lightning' });
       }
@@ -569,7 +588,9 @@ export class CombatEngine {
             cur.aiTimer = Math.max(cur.aiTimer, 1.2);
           }
           this.applyElementalHit(cur, baseDamage, elements, cur.x - ox, cur.y - oy, events);
-          events.push({ type: 'vfx_burst', x: cur.x, y: cur.y, colorHex: comp.primaryColorHex, count: 6, radius: 24 });
+          for (const col of comp.colors) {
+            events.push({ type: 'vfx_burst', x: cur.x, y: cur.y, colorHex: col, count: 5, radius: 24 });
+          }
 
           const jumpRange = isPrimed ? 400 : 240;
           let nextTarget: EnemyEntity | null = null;
@@ -762,11 +783,12 @@ export class CombatEngine {
         const speed = 470 + kineticCount * 35;
         const damage = 68 * kineticCount;
         const pierce = 2 + kineticCount;
+        const rockAccent = this.getSpellAccentColor(spell.elements, comp);
         for (let i = 0; i < count; i++) {
           const a = angle + (i / count) * Math.PI * 2;
           this.spawnRock(player.x, player.y, a, speed, radius, damage, pierce, 1.8, color, comp, spell.elements);
         }
-        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 140 + comp.totalPower * 65, colorHex: color });
+        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 140 + comp.totalPower * 65, colorHex: rockAccent });
         events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 210 + comp.totalPower * 40, radius: 160 + comp.totalPower * 40 });
         events.push({ type: 'screen_shake', intensity: 4 + comp.totalPower * 1.5 });
         events.push({ type: 'sfx', sound: 'rock' });
@@ -831,7 +853,8 @@ export class CombatEngine {
             clashDist: length,
           });
         }
-        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 140 + comp.totalPower * 65, colorHex: color });
+        const beamAccent = this.getSpellAccentColor(spell.elements, comp);
+        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 140 + comp.totalPower * 65, colorHex: beamAccent });
         if (spell.elements.includes('VOID')) {
           events.push({ type: 'grid_well', x: player.x, y: player.y, strength: 220 + comp.totalPower * 60, radius: 190 + comp.totalPower * 50 });
         }
@@ -844,7 +867,8 @@ export class CombatEngine {
         const voltCount = counts.VOLT ?? 1;
         const arcs = 4 + comp.totalPower * 3;
         const range = 200 + comp.totalPower * 95;
-        this.castLightningBurst(player.x, player.y, angle, arcs, range, 34 * voltCount, spell.elements, comp, true, events);
+        const dmg = 26 * voltCount + 10 * comp.totalPower;
+        this.castLightningBurst(player.x, player.y, angle, arcs, range, dmg, spell.elements, comp, true, events);
         events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: range * 0.85, colorHex: color });
         events.push({ type: 'sfx', sound: 'lightning' });
         break;
@@ -983,11 +1007,13 @@ export class CombatEngine {
     const kineticCount = counts.KINETIC ?? 1;
     const blastRadius = 95 + kineticCount * 38;
 
+    const rockAccent = this.getSpellAccentColor(p.elements, p.composition);
+    const rockShardCols = this.getSpellParticleColors(p.elements, p.colors);
     const hits = this.applyAoEDamage(p.x, p.y, blastRadius, p.damage, p.elements, 320, events);
     events.push({ type: 'grid_impulse', x: p.x, y: p.y, strength: 220 + kineticCount * 90, radius: blastRadius + 50 });
-    events.push({ type: 'vfx_burst', x: p.x, y: p.y, colorHex: p.colorHex, count: 22 + kineticCount * 6, radius: blastRadius * 0.7 });
-    events.push({ type: 'vfx_shards', x: p.x, y: p.y, colors: p.colors, count: 16 + kineticCount * 6, speedScale: 1.25 });
-    events.push({ type: 'vfx_ring', x: p.x, y: p.y, radius: blastRadius, colorHex: p.colorHex });
+    events.push({ type: 'vfx_burst', x: p.x, y: p.y, colorHex: rockAccent, count: 22 + kineticCount * 6, radius: blastRadius * 0.7 });
+    events.push({ type: 'vfx_shards', x: p.x, y: p.y, colors: rockShardCols, count: 16 + kineticCount * 6, speedScale: 1.25 });
+    events.push({ type: 'vfx_ring', x: p.x, y: p.y, radius: blastRadius, colorHex: rockAccent });
     events.push({ type: 'screen_shake', intensity: 5 + kineticCount * 2 });
 
     if (p.elements.includes('FLUX') && (hitTarget || hits.length > 0)) {
@@ -1043,7 +1069,7 @@ export class CombatEngine {
             this.comboTextCooldown.set(e.id, 0.35);
             events.push({ type: 'damage_number', x: e.x, y: e.y - e.radius - 10, text: 'SHIELD BREAK!', colorHex: 0xe8741a, big: true });
           }
-          events.push({ type: 'vfx_shards', x: e.x, y: e.y, colors: [0xe6f0ff, 0xe8741a], count: 16, speedScale: 1.2 });
+          events.push({ type: 'vfx_shards', x: e.x, y: e.y, colors: [0xe6f0ff, ELEMENT_META.KINETIC.colorHex], count: 16, speedScale: 1.2 });
           events.push({ type: 'grid_impulse', x: e.x, y: e.y, strength: 190, radius: 120 });
           events.push({ type: 'hit_stop', duration: 0.035 });
           events.push({ type: 'screen_shake', intensity: 7 });
@@ -1070,8 +1096,16 @@ export class CombatEngine {
 
     let dmg = effectiveDamage;
 
+    // Interrupt charging / windup enemies whenever hit by VOLT in any mixed spell
+    if (elements.includes('VOLT') && (e.aiState === 'CHARGE' || e.aiState === 'TELEPORT_WINDUP')) {
+      e.aiState = 'SEEK';
+      e.aiTimer = Math.max(e.aiTimer, 1.2);
+    }
+
     // Primer combos
+    let overloadFired = false;
     if (e.statuses.PRIMED && elements.includes('VOLT')) {
+      overloadFired = true;
       dmg *= 2.0;
       if (!this.comboTextCooldown.has(e.id)) {
         this.comboTextCooldown.set(e.id, 0.35);
@@ -1081,6 +1115,7 @@ export class CombatEngine {
           if (other.id !== e.id && other.hp > 0 && Math.hypot(other.x - e.x, other.y - e.y) <= 105 + other.radius) {
             other.hp -= 24 / (1 + other.baseArmor);
             other.hitFlash = 0.08;
+            this.applyElementalStatuses(other, elements, events, true);
           }
         }
       }
@@ -1168,27 +1203,49 @@ export class CombatEngine {
       }
     }
 
-    // Apply status effects
-    for (const el of elements) {
-      if (el === 'FLUX' || el === 'PLASMA') {
-        this.setStatus(e, 'PRIMED', 5, 1);
+    // Apply all mixed status effects (PRIMED -> CRYO Freeze/Chill -> THERMAL Ignite -> NANO Corrupt)
+    this.applyElementalStatuses(e, elements, events, overloadFired);
+  }
+
+  private applyElementalStatuses(
+    e: EnemyEntity,
+    elements: readonly QueueElement[],
+    events: SimEvent[],
+    overloadFired = false
+  ): void {
+    if (elements.includes('FLUX') || elements.includes('PLASMA')) {
+      this.setStatus(e, 'PRIMED', 5, 1);
+    }
+    if (elements.includes('CRYO') || elements.includes('CRYSTAL')) {
+      if (e.statuses.PRIMED) {
+        const wasFrozen = Boolean(e.statuses.FROZEN);
+        delete e.statuses.PRIMED;
+        this.setStatus(e, 'FROZEN', 2.5, 1);
+        if (!wasFrozen) {
+          events.push({ type: 'vfx_burst', x: e.x, y: e.y, colorHex: 0x00f5ff, count: 12, radius: 32 });
+          events.push({ type: 'vfx_ring', x: e.x, y: e.y, radius: e.radius * 1.9, colorHex: 0x00f5ff, duration: 0.24 });
+          events.push({
+            type: 'damage_number',
+            x: e.x,
+            y: e.y - e.radius - (overloadFired ? 28 : 10),
+            text: 'FROZEN!',
+            colorHex: 0x00f5ff,
+            big: true,
+          });
+        }
+      } else if (!e.statuses.FROZEN) {
+        this.setStatus(e, 'CHILLED', 3.0, 1);
       }
-      if (el === 'THERMAL' || el === 'PLASMA') {
+    }
+    if (elements.includes('THERMAL') || elements.includes('PLASMA')) {
+      if (!elements.includes('CRYO') && !elements.includes('CRYSTAL')) {
         delete e.statuses.FROZEN;
         delete e.statuses.CHILLED;
-        this.setStatus(e, 'IGNITED', 3.5, 1);
       }
-      if (el === 'CRYO' || el === 'CRYSTAL') {
-        if (e.statuses.PRIMED) {
-          delete e.statuses.PRIMED;
-          this.setStatus(e, 'FROZEN', 2.5, 1);
-        } else if (!e.statuses.FROZEN) {
-          this.setStatus(e, 'CHILLED', 3.0, 1);
-        }
-      }
-      if (el === 'NANO') {
-        this.setStatus(e, 'CORRUPTED', 4.0, 1);
-      }
+      this.setStatus(e, 'IGNITED', 3.5, 1);
+    }
+    if (elements.includes('NANO')) {
+      this.setStatus(e, 'CORRUPTED', 4.0, 1);
     }
   }
 
@@ -1281,7 +1338,7 @@ export class CombatEngine {
       player.armorHp -= absorbed;
       dmg -= absorbed;
       if (player.armorHp <= 0) {
-        events.push({ type: 'vfx_shards', x: player.x, y: player.y, colors: [0xe8741a], count: 12, speedScale: 1 });
+        events.push({ type: 'vfx_shards', x: player.x, y: player.y, colors: [ELEMENT_META.KINETIC.colorHex], count: 12, speedScale: 1 });
       }
     }
 
@@ -1636,6 +1693,10 @@ export class CombatEngine {
           const { perpDist } = pointToRayDist(e.x, e.y, b.x, b.y, cos, sin, effectiveLen);
           if (perpDist <= e.radius + b.width * 0.5) {
             this.applyElementalHit(e, b.damagePerSec * dt, b.elements, cos, sin, events);
+            if (b.elements.includes('FLUX')) {
+              e.vx += cos * 220 * dt;
+              e.vy += sin * 220 * dt;
+            }
           }
         }
       } else {
@@ -1753,7 +1814,7 @@ export class CombatEngine {
           if (e.hp <= 0) continue;
           const closest = pointToSegmentClosest(e.x, e.y, a.x, a.y, b.x, b.y);
           if (closest.dist <= 46 + e.radius) {
-            this.applyElementalHit(e, 16, ['VOLT'], e.x - closest.cx, e.y - closest.cy, events, true);
+            this.applyElementalHit(e, 16, a.elements, e.x - closest.cx, e.y - closest.cy, events, true);
           }
         }
       }
@@ -1787,16 +1848,16 @@ export class CombatEngine {
       if (w.pulseTimer <= 0) {
         w.pulseTimer = 0.45;
         if (w.elements.includes('THERMAL')) {
-          this.applyAoEDamage(w.x, w.y, 92, 14, ['THERMAL'], 45, events);
+          this.applyAoEDamage(w.x, w.y, 92, 14, w.elements, 45, events);
         }
         if (w.elements.includes('CRYO') || w.elements.includes('CRYSTAL')) {
-          this.applyAoEDamage(w.x, w.y, 92, 8, ['CRYO'], 0, events);
+          this.applyAoEDamage(w.x, w.y, 92, 8, w.elements, 0, events);
         }
         if (w.elements.includes('FLUX')) {
-          this.applyAoEDamage(w.x, w.y, 85, 0, ['FLUX'], 160, events);
+          this.applyAoEDamage(w.x, w.y, 85, 0, w.elements, 160, events);
         }
         if (w.elements.includes('VOID')) {
-          this.applyAoEDamage(w.x, w.y, 135, 10, ['VOID'], -75, events);
+          this.applyAoEDamage(w.x, w.y, 135, 10, w.elements, -75, events);
           events.push({ type: 'grid_well', x: w.x, y: w.y, strength: 135, radius: 135 });
         }
         if (w.elements.includes('NANO')) {
@@ -1854,10 +1915,12 @@ export class CombatEngine {
         }
       }
       if (triggered) {
+        const mineAccent = this.getSpellAccentColor(m.elements, m.composition);
+        const mineShardCols = this.getSpellParticleColors(m.elements, m.colors);
         this.applyAoEDamage(m.x, m.y, m.blastRadius, m.damage, m.elements, 280, events);
-        events.push({ type: 'vfx_burst', x: m.x, y: m.y, colorHex: m.colorHex, count: 20, radius: m.blastRadius * 0.6 });
-        events.push({ type: 'vfx_shards', x: m.x, y: m.y, colors: m.colors, count: 14, speedScale: 1.1 });
-        events.push({ type: 'vfx_ring', x: m.x, y: m.y, radius: m.blastRadius, colorHex: m.colorHex });
+        events.push({ type: 'vfx_burst', x: m.x, y: m.y, colorHex: mineAccent, count: 20, radius: m.blastRadius * 0.6 });
+        events.push({ type: 'vfx_shards', x: m.x, y: m.y, colors: mineShardCols, count: 14, speedScale: 1.1 });
+        events.push({ type: 'vfx_ring', x: m.x, y: m.y, radius: m.blastRadius, colorHex: mineAccent });
         events.push({ type: 'grid_impulse', x: m.x, y: m.y, strength: 220, radius: m.blastRadius + 30 });
         events.push({ type: 'sfx', sound: 'mine_explode' });
         this.mines.splice(i, 1);
@@ -1908,7 +1971,10 @@ export class CombatEngine {
           events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: ELEMENT_META.NANO.colorHex, count: 6, radius: 30 });
         }
 
-        const payloadColors = s.colors.filter((c) => c !== ELEMENT_META.BARRIER.colorHex);
+        const rawPayload = s.colors.filter((c) => c !== ELEMENT_META.BARRIER.colorHex);
+        const payloadColors = s.elements.includes('VOID')
+          ? this.getSpellParticleColors(s.elements, rawPayload)
+          : rawPayload;
         const palette = payloadColors.length > 0 ? payloadColors : [s.colorHex];
         const strikeColor = palette[Math.floor(Math.random() * palette.length)]!;
         const altColor = palette.find((c) => c !== strikeColor) ?? strikeColor;

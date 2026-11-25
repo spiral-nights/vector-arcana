@@ -259,24 +259,25 @@ export function createBeamCoreMaterial(
         if (uIsVoid > 0.5) {
           float ripple = sin(x * 7.5 - uTime * 28.0) * 0.025 + sin(x * 13.0 + uTime * 19.0) * 0.015;
           float d = abs(y + ripple);
-          float darkMask = smoothstep(0.21, 0.08, d);
-          float rimMask = exp(-pow((d - 0.21) * 18.0, 2.0));
-          float outerGlow = exp(-d * d * 12.0) * 0.6;
+          float darkMask = smoothstep(0.25, 0.09, d);
+          float rimMask = exp(-pow((d - 0.24) * 18.0, 2.0));
+          float outerGlow = exp(-d * d * 11.0) * 0.65;
 
-          vec3 darkCore = vec3(0.04, 0.0, 0.08);
-          vec3 rimCol = mix(uColorA, uColorB, 0.5 + 0.5 * sin(x * 3.0 - uTime * 14.0)) * 1.45;
+          vec3 darkCore = vec3(0.02, 0.01, 0.02);
+          vec3 rimCol = mix(uColorA, uColorB, 0.5 + 0.5 * sin(x * 3.0 - uTime * 14.0)) * 1.25;
           vec3 col = mix(rimCol, darkCore, darkMask);
-          float alpha = clamp((darkMask * 0.96 + rimMask * 0.92 + outerGlow) * env, 0.0, 0.98);
+          float alpha = clamp((darkMask * 0.98 + rimMask * 0.92 + outerGlow) * env, 0.0, 0.99);
           gl_FragColor = vec4(col, alpha);
         } else {
-          float whiteMask = smoothstep(0.23, 0.055, ay);
-          float rimMask = exp(-pow((ay - 0.22) * 14.0, 2.0));
+          float whiteMask = smoothstep(0.20, 0.055, ay);
+          float rimMask = exp(-pow((ay - 0.20) * 14.0, 2.0));
           float outerGlow = exp(-ay * ay * 9.0) * 0.55;
+          float softSurge = 0.92 + 0.08 * sin(x * 6.0 - uTime * 34.0);
 
           vec3 edgeTint = mix(uColorA, uColorB, 0.45 + 0.35 * sin(x * 3.5 - uTime * 16.0));
-          vec3 whiteCore = mix(edgeTint, vec3(1.0, 0.99, 0.96), 0.88) * (1.28 * surge);
-          vec3 col = mix(edgeTint * 1.15, whiteCore, whiteMask);
-          float alpha = clamp((whiteMask * 0.97 + rimMask * 0.88 + outerGlow) * env, 0.0, 0.98);
+          vec3 whiteCore = mix(edgeTint, vec3(0.92, 0.96, 0.94), 0.65) * (0.84 * softSurge);
+          vec3 col = mix(edgeTint * 0.85, whiteCore, whiteMask);
+          float alpha = clamp((whiteMask * 0.92 + rimMask * 0.78 + outerGlow) * env, 0.0, 0.94);
           gl_FragColor = vec4(col, alpha);
         }
       }
@@ -350,22 +351,25 @@ export function createBraidedBeamMaterial(
         float flowTurb = (noise1(x * 1.4 - uTime * 8.5) - 0.5) * 0.14;
         float yy = y + crackle + flowTurb * 0.45;
 
-        // Layer 1: Continuous unbroken glowing volume across the whole beam
-        float volWide = exp(-yy * yy * 2.1) * (0.42 - 0.08 * uIsVoid);
-        float volInner = exp(-yy * yy * 8.5) * 0.52;
+        // Void beams mask additive light over the dark core; light beams keep center un-blown
+        float centerCutout = mix(1.0, smoothstep(0.11, 0.27, abs(yy)), uIsVoid);
+
+        // Layer 1: Soft glowing outer volume
+        float volWide = exp(-yy * yy * 2.1) * 0.24 * centerCutout;
+        float volInner = exp(-yy * yy * 8.5) * 0.20 * centerCutout;
         vec3 baseTint = mix(uColorA, uColorB, 0.5 + 0.5 * sin(x * 0.65 - uTime * 4.0));
         vec3 col = baseTint * volWide + mix(uColorA, uColorB, 0.35) * volInner;
 
-        // Bright coursing energy core running rapidly down the beam center
-        float beamCore = exp(-yy * yy * 26.0);
-        float surge = 0.72 + 0.32 * sin(x * 4.2 - uTime * 30.0) + 0.16 * sin(x * 10.5 - uTime * 48.0);
-        vec3 coreTint = mix(mix(uColorA, vec3(1.0), 0.72), mix(uColorB, vec3(1.0, 0.78, 1.0), 0.65), uIsVoid);
-        col += coreTint * beamCore * surge * 1.15;
+        // Subtle coursing pulse along standard beam core (zero for Void so dark center stays black)
+        float beamCore = exp(-yy * yy * 26.0) * (1.0 - uIsVoid);
+        float surge = 0.82 + 0.18 * sin(x * 4.2 - uTime * 30.0);
+        vec3 coreTint = mix(uColorA, vec3(0.95, 1.0, 0.96), 0.45);
+        col += coreTint * beamCore * surge * 0.22;
 
         // Layer 2: 5 intertwined braided organic silk ribbons (or jagged void tendrils)
         float freq = mix(1.85, 2.9, uIsVoid);
         float speed = mix(9.5, 16.0, uIsVoid);
-        float amp = mix(0.26, 0.33, uIsVoid);
+        float amp = mix(0.26, 0.34, uIsVoid);
 
         float s0 = sin(x * freq - uTime * speed) * amp;
         float s1 = sin(x * (freq * 0.85) - uTime * (speed * 1.12) + 1.35) * (amp * 1.15);
@@ -374,44 +378,44 @@ export function createBraidedBeamMaterial(
         float s4 = sin(x * (freq * 0.65) - uTime * (speed * 0.8) + 5.2) * (amp * 1.25);
 
         float ribW = mix(13.0, 15.0, uIsVoid);
-        float r0 = exp(-pow((yy - s0) * ribW, 2.0));
-        float r1 = exp(-pow((yy - s1) * ribW, 2.0));
-        float r2 = exp(-pow((yy - s2) * ribW, 2.0));
-        float r3 = exp(-pow((yy - s3) * (ribW * 1.15), 2.0));
-        float r4 = exp(-pow((yy - s4) * (ribW * 0.9), 2.0));
+        float r0 = exp(-pow((yy - s0) * ribW, 2.0)) * centerCutout;
+        float r1 = exp(-pow((yy - s1) * ribW, 2.0)) * centerCutout;
+        float r2 = exp(-pow((yy - s2) * ribW, 2.0)) * centerCutout;
+        float r3 = exp(-pow((yy - s3) * (ribW * 1.15), 2.0)) * centerCutout;
+        float r4 = exp(-pow((yy - s4) * (ribW * 0.9), 2.0)) * centerCutout;
 
         col += uColorA * (r0 * 0.68 + r4 * 0.52);
         col += uColorB * (r1 * 0.72 + r3 * 0.52);
         col += uColorC * (r2 * 0.68);
 
         // Layer 3: Crisp luminous thin center filaments inside main ribbons
-        float fil0 = exp(-pow((yy - s0) * 34.0, 2.0));
-        float fil1 = exp(-pow((yy - s1) * 34.0, 2.0));
-        float fil2 = exp(-pow((yy - s2) * 36.0, 2.0));
-        vec3 filamentCol = mix(vec3(1.0, 0.96, 0.85), vec3(1.0, 0.45, 0.95), uIsVoid);
-        col += filamentCol * (fil0 + fil1 + fil2 * 0.8) * 0.45;
+        float fil0 = exp(-pow((yy - s0) * 34.0, 2.0)) * centerCutout;
+        float fil1 = exp(-pow((yy - s1) * 34.0, 2.0)) * centerCutout;
+        float fil2 = exp(-pow((yy - s2) * 36.0, 2.0)) * centerCutout;
+        vec3 filamentCol = mix(mix(uColorA, vec3(0.95), 0.45), mix(uColorA, vec3(1.0), 0.25), uIsVoid);
+        col += filamentCol * (fil0 + fil1 + fil2 * 0.8) * 0.35;
 
         // Layer 4: Intersection node hotspot flares where ribbons cross
-        float cross01 = exp(-pow((yy - s0) * 16.0, 2.0) - pow((yy - s1) * 16.0, 2.0));
-        float cross12 = exp(-pow((yy - s1) * 16.0, 2.0) - pow((yy - s2) * 16.0, 2.0));
+        float cross01 = exp(-pow((yy - s0) * 16.0, 2.0) - pow((yy - s1) * 16.0, 2.0)) * centerCutout;
+        float cross12 = exp(-pow((yy - s1) * 16.0, 2.0) - pow((yy - s2) * 16.0, 2.0)) * centerCutout;
         float hotspot = clamp(cross01 + cross12, 0.0, 1.0);
-        col += mix(uColorB, vec3(1.0), 0.45) * hotspot * 0.48;
+        col += mix(uColorB, vec3(1.0), 0.28) * hotspot * 0.38;
 
-        // Menacing Void pulse accent
+        // Menacing Void pulse accent matching primary outline color
         if (uIsVoid > 0.5) {
-          float abyssEdge = exp(-pow((abs(yy) - 0.48) * 9.0, 2.0));
+          float abyssEdge = exp(-pow((abs(yy) - 0.48) * 9.0, 2.0)) * centerCutout;
           float voidPulse = 0.7 + 0.3 * sin(x * 4.5 - uTime * 18.0);
-          col += vec3(0.55, 0.05, 0.95) * abyssEdge * 0.42 * voidPulse;
+          col += uColorA * abyssEdge * 0.42 * voidPulse;
         }
 
-        // Gentle core-friendly rolloff so bright center blooms while edges stay deeply saturated
+        // Clean luminance cap so center never washes out to harsh white
         float peak = max(col.r, max(col.g, col.b));
-        if (peak > 1.55) {
-          col *= (1.55 + (peak - 1.55) * 0.14) / peak;
+        if (peak > 1.08) {
+          col *= (1.08 + (peak - 1.08) * 0.14) / peak;
         }
 
         col *= env;
-        float alpha = clamp((volWide * 1.1 + volInner + beamCore * 0.85 + (r0 + r1 + r2 + r3 + r4) * 0.42) * env, 0.0, 0.98);
+        float alpha = clamp((volWide + volInner + beamCore * 0.45 + (r0 + r1 + r2 + r3 + r4) * 0.42) * env, 0.0, 0.95);
         gl_FragColor = vec4(col, alpha);
       }
     `,
@@ -423,15 +427,17 @@ export function createBraidedBeamMaterial(
 }
 
 /**
- * Overhead billowing procedural Storm Cloud disk shader with swirling eye and lightning flashes.
+ * Overhead billowing procedural Storm Cloud disk shader tailored per element style.
+ * Styles: 0=THERMAL/PLASMA inferno, 1=CRYO blizzard, 2=FLUX maelstrom, 3=VOLT storm, 4=VOID singularity, 5=NANO cyber-lattice
  */
-export function createStormCloudMaterial(colorA: number, colorB: number): THREE.ShaderMaterial {
+export function createStormCloudMaterial(colorA: number, colorB: number, style = 0): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uColorA: { value: new THREE.Color(colorA) },
       uColorB: { value: new THREE.Color(colorB) },
       uTime: { value: 0 },
       uOpacity: { value: 1 },
+      uStyle: { value: style },
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -445,6 +451,7 @@ export function createStormCloudMaterial(colorA: number, colorB: number): THREE.
       uniform vec3 uColorB;
       uniform float uTime;
       uniform float uOpacity;
+      uniform float uStyle;
       varying vec2 vUv;
 
       float hash(vec2 p) {
@@ -479,25 +486,57 @@ export function createStormCloudMaterial(colorA: number, colorB: number): THREE.
         if (r > 1.0) discard;
 
         float ang = atan(p.y, p.x);
-        float swirlA = ang + (1.0 - r) * 2.2 - uTime * 1.4;
-        vec2 swirlUv = vec2(cos(swirlA), sin(swirlA)) * r * 3.2;
+        float radialEdge = smoothstep(1.0, 0.3, r);
+        vec3 col = vec3(0.0);
+        float alpha = 0.0;
 
-        float cloud = fbm(swirlUv + vec2(uTime * 0.45, -uTime * 0.35));
-        float cloud2 = fbm(swirlUv * 1.6 - vec2(uTime * 0.7, uTime * 0.4));
-
-        float radialEdge = smoothstep(1.0, 0.32, r + (cloud - 0.5) * 0.32);
-        float eyeRim = exp(-pow((r - 0.45) * 6.5, 2.0)) * cloud2;
-        float flash = pow(max(0.0, sin(uTime * 10.5 + cloud * 12.0)), 14.0);
-
-        vec3 darkBody = mix(uColorA, uColorB, 0.35) * (0.28 + cloud * 0.55);
-        vec3 lightningVein = mix(uColorB, vec3(1.0), 0.45) * (flash * cloud2 * 1.15 + eyeRim * 0.7);
-        vec3 col = (darkBody + lightningVein) * radialEdge;
+        if (uStyle > 3.5 && uStyle < 4.5) {
+          // 4: VOID black singularity vortex canopy
+          float swirlA = ang - r * 3.8 + uTime * 2.2;
+          vec2 uvS = vec2(cos(swirlA), sin(swirlA)) * r * 3.4;
+          float cloud = fbm(uvS);
+          float blackHole = smoothstep(0.32, 0.14, r);
+          float photon = exp(-pow((r - 0.33) * 18.0, 2.0));
+          vec3 rim = mix(uColorA, uColorB, cloud);
+          col = mix(rim * (0.45 * cloud + photon * 1.1) * radialEdge, vec3(0.02, 0.01, 0.02), blackHole);
+          alpha = clamp((blackHole * 0.92 + photon * 0.8 + cloud * 0.45 * radialEdge) * uOpacity, 0.0, 0.95);
+        } else if (uStyle > 4.5) {
+          // 5: NANO cybernetic telemetry halo canopy
+          float ring1 = exp(-pow((r - 0.82) * 28.0, 2.0)) * (0.4 + 0.6 * sin(ang * 6.0 + uTime * 3.0));
+          float ring2 = exp(-pow((r - 0.52) * 26.0, 2.0));
+          float crossBars = max(exp(-abs(p.x) * 24.0), exp(-abs(p.y) * 24.0)) * smoothstep(0.65, 0.15, r);
+          col = (uColorA * (ring1 + crossBars * 0.65) + uColorB * ring2 * 0.6) * radialEdge;
+          alpha = clamp((ring1 * 0.55 + ring2 * 0.4 + crossBars * 0.4) * uOpacity, 0.0, 0.72);
+        } else if (uStyle > 0.5 && uStyle < 1.5) {
+          // 1: CRYO crisp 6-fold frost cyclone
+          float spokes = pow(abs(cos((ang - uTime * 0.85 + r * 1.4) * 3.0)), 6.0);
+          float frost = fbm(p * 3.5 + vec2(uTime * 0.2, -uTime * 0.15));
+          col = mix(uColorA, uColorB, spokes) * (0.28 + frost * 0.38 + spokes * 0.55) * radialEdge;
+          alpha = clamp((0.25 + spokes * 0.45 + frost * 0.25) * radialEdge * uOpacity, 0.0, 0.82);
+        } else if (uStyle > 1.5 && uStyle < 2.5) {
+          // 2: FLUX smooth sweeping rainband cyclone
+          float band = 0.5 + 0.5 * sin(ang * 2.0 - r * 5.5 + uTime * 3.0);
+          float mist = fbm(vec2(r * 3.0, ang) - vec2(0.0, uTime * 0.5));
+          col = mix(uColorA, uColorB, band) * (0.26 + band * 0.42 + mist * 0.3) * radialEdge;
+          alpha = clamp((0.3 + band * 0.42) * radialEdge * uOpacity, 0.0, 0.82);
+        } else {
+          // 0: THERMAL billowing ember cloud, or 3: VOLT flashing thunderhead
+          float isVolt = step(2.5, uStyle);
+          float swirlSpeed = mix(1.2, 2.2, isVolt);
+          float swirlA = ang + (1.0 - r) * 2.4 - uTime * swirlSpeed;
+          vec2 swirlUv = vec2(cos(swirlA), sin(swirlA)) * r * 3.2;
+          float cloud = fbm(swirlUv + vec2(uTime * 0.45, -uTime * 0.35));
+          float cloud2 = fbm(swirlUv * 1.7 - vec2(uTime * 0.7, uTime * 0.4));
+          float cEdge = smoothstep(1.0, 0.32, r + (cloud - 0.5) * 0.3);
+          float flash = isVolt * pow(max(0.0, sin(uTime * 12.0 + cloud * 14.0)), 14.0);
+          float heatPulse = (1.0 - isVolt) * pow(cloud2, 2.0) * 0.75;
+          col = (mix(uColorA, uColorB, cloud2) * (0.28 + cloud * 0.52 + heatPulse) + vec3(1.0, 0.98, 0.75) * (flash * cloud2 * 1.25)) * cEdge;
+          alpha = clamp((cEdge * (0.38 + cloud * 0.4) + flash * 0.3) * uOpacity, 0.0, 0.88);
+        }
 
         float peak = max(col.r, max(col.g, col.b));
-        if (peak > 1.2) col *= 1.2 / peak;
+        if (peak > 1.15) col *= 1.15 / peak;
         col *= uOpacity;
-
-        float alpha = clamp((radialEdge * (0.42 + cloud * 0.42) + flash * 0.25) * uOpacity, 0.0, 0.9);
         gl_FragColor = vec4(col, alpha);
       }
     `,
@@ -892,13 +931,15 @@ export function createSprayConeMaterial(colorA: number, colorB: number): THREE.S
 }
 
 /**
- * Crystal Blade shader mixing CRYSTAL cyan (uColorA) with any infused element (uColorB).
+ * Crystal Blade shader mixing CRYSTAL cyan (uColorA) with any infused element (uColorB),
+ * or dark obsidian center with glowing element rim when Void is present.
  */
-export function createCrystalBladeMaterial(colorA: number, colorB: number): THREE.ShaderMaterial {
+export function createCrystalBladeMaterial(colorA: number, colorB: number, isVoid = false): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uColorA: { value: new THREE.Color(colorA) },
       uColorB: { value: new THREE.Color(colorB) },
+      uIsVoid: { value: isVoid ? 1.0 : 0.0 },
       uTime: { value: 0 },
     },
     vertexShader: /* glsl */ `
@@ -911,6 +952,7 @@ export function createCrystalBladeMaterial(colorA: number, colorB: number): THRE
     fragmentShader: /* glsl */ `
       uniform vec3 uColorA;
       uniform vec3 uColorB;
+      uniform float uIsVoid;
       uniform float uTime;
       varying vec2 vUv;
 
@@ -918,8 +960,17 @@ export function createCrystalBladeMaterial(colorA: number, colorB: number): THRE
         float distFromSpine = abs(vUv.y - 0.5) * 2.0;
         float spine = exp(-distFromSpine * distFromSpine * 22.0);
         float tipGlow = smoothstep(0.4, 1.0, vUv.x);
-        float facetRim = smoothstep(0.62, 0.98, distFromSpine);
+        float facetRim = smoothstep(0.58, 0.95, distFromSpine);
         float shimmer = 0.88 + 0.12 * sin(vUv.x * 10.0 - uTime * 14.0);
+
+        if (uIsVoid > 0.5) {
+          vec3 darkCore = vec3(0.03, 0.02, 0.04);
+          vec3 rimCol = uColorB * (1.15 + tipGlow * 0.35) * shimmer;
+          vec3 col = mix(darkCore, rimCol, facetRim);
+          float alpha = clamp(0.95, 0.0, 1.0);
+          gl_FragColor = vec4(col, alpha);
+          return;
+        }
 
         vec3 grad = mix(uColorA, uColorB, 0.28 + 0.55 * vUv.x + 0.17 * distFromSpine);
         vec3 col = grad * (0.95 + facetRim * 0.65) + uColorB * (facetRim * 0.45) + vec3(1.0) * (spine * 0.45 + tipGlow * 0.28);
@@ -932,19 +983,20 @@ export function createCrystalBladeMaterial(colorA: number, colorB: number): THRE
       }
     `,
     transparent: true,
-    blending: THREE.AdditiveBlending,
+    blending: isVoid ? THREE.NormalBlending : THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
 }
 
 /**
- * Ground Vortex rune shader for storm impact zone.
+ * Ground Vortex rune shader tailored per element storm style (0=Fire, 1=Cryo, 2=Flux, 3=Volt, 4=Void, 5=Nano).
  */
 export function createStormVortexMaterial(
   barrierColor: number,
   colorA: number,
-  colorB: number
+  colorB: number,
+  style = 0
 ): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
@@ -953,6 +1005,7 @@ export function createStormVortexMaterial(
       uColorB: { value: new THREE.Color(colorB) },
       uTime: { value: 0 },
       uOpacity: { value: 1 },
+      uStyle: { value: style },
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -967,7 +1020,37 @@ export function createStormVortexMaterial(
       uniform vec3 uColorB;
       uniform float uTime;
       uniform float uOpacity;
+      uniform float uStyle;
       varying vec2 vUv;
+
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(
+          mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+          mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+          u.y
+        );
+      }
+
+      float hexDist(vec2 p) {
+        p = abs(p);
+        return max(dot(p, normalize(vec2(1.0, 1.7320508))), p.x);
+      }
+
+      float hexEdge(vec2 p) {
+        vec2 r = vec2(1.0, 1.7320508);
+        vec2 h = r * 0.5;
+        vec2 a = mod(p, r) - h;
+        vec2 b = mod(p - h, r) - h;
+        vec2 gv = dot(a, a) < dot(b, b) ? a : b;
+        return smoothstep(0.08, 0.02, 0.5 - hexDist(gv));
+      }
 
       void main() {
         vec2 p = (vUv - 0.5) * 2.0;
@@ -975,26 +1058,72 @@ export function createStormVortexMaterial(
         if (r > 1.0) discard;
 
         float ang = atan(p.y, p.x);
-        float spiral1 = pow(0.5 + 0.5 * sin(ang * 3.0 - r * 11.0 + uTime * 5.2), 3.0);
-        float spiral2 = pow(0.5 + 0.5 * sin(ang * 5.0 - r * 15.0 + uTime * 7.8 + 1.5), 4.0);
-        float rim = exp(-pow((r - 0.94) * 26.0, 2.0));
-        float innerRing = exp(-pow((r - 0.62) * 32.0, 2.0)) * (0.5 + 0.5 * sin(ang * 8.0 - uTime * 4.0));
-        float eye = smoothstep(0.05, 0.25, r) * smoothstep(1.0, 0.2, r);
-
+        float edgeFade = smoothstep(1.0, 0.62, r);
         vec3 col = vec3(0.0);
-        col += uColorA * (spiral1 * 0.78 * eye + innerRing * 0.45);
-        col += uColorB * (spiral2 * 0.88 * eye);
-        float edgeFade = smoothstep(1.0, 0.65, r);
+        float alpha = 0.0;
+
+        if (uStyle < 0.5) {
+          // 0: THERMAL / PLASMA — Turbulent outward fire tongues
+          float turb = noise(p * 4.5 - vec2(uTime * 1.4, -uTime * 1.2));
+          float tongues = pow(0.5 + 0.5 * sin(ang * 4.0 - r * 7.5 + turb * 3.5 + uTime * 4.5), 2.8);
+          float embers = pow(noise(p * 8.0 - vec2(0.0, uTime * 2.2)), 3.2);
+          float eye = smoothstep(0.05, 0.25, r);
+          col = (uColorA * (tongues * 0.95 * eye + 0.14) + uColorB * (embers * 0.85 + tongues * 0.35)) * edgeFade;
+          alpha = clamp((tongues * 0.65 + embers * 0.4 + 0.14) * edgeFade * uOpacity, 0.0, 0.85);
+        } else if (uStyle < 1.5) {
+          // 1: CRYO / CRYSTAL — 6-fold geometric crystalline frost snowflake vortex
+          float rotAng = ang - uTime * 1.1;
+          float sixFold = pow(abs(cos(rotAng * 3.0 + r * 2.0)), 8.0);
+          float frostHex = exp(-pow((hexDist(p * (0.9 + 0.05 * sin(uTime * 3.0))) - 0.62) * 18.0, 2.0));
+          float frostHex2 = exp(-pow((hexDist(p) - 0.34) * 22.0, 2.0));
+          col = (uColorA * (sixFold * 0.85 + frostHex2 * 0.7) + uColorB * (frostHex * 0.95 + sixFold * 0.3)) * edgeFade;
+          alpha = clamp((sixFold * 0.58 + frostHex * 0.5 + frostHex2 * 0.4 + 0.1) * edgeFade * uOpacity, 0.0, 0.85);
+        } else if (uStyle < 2.5) {
+          // 2: FLUX — Concentric water ripples + smooth fluid spiral whirlpool
+          float ripples = pow(0.5 + 0.5 * sin(r * 24.0 - uTime * 7.0), 3.5);
+          float current = pow(0.5 + 0.5 * sin(ang * 2.0 - r * 9.5 + uTime * 4.2), 2.0);
+          float eye = smoothstep(0.06, 0.28, r);
+          col = (uColorA * (current * 0.72 * eye + ripples * 0.45) + uColorB * (ripples * 0.55)) * edgeFade;
+          alpha = clamp((current * 0.45 + ripples * 0.38 + 0.12) * edgeFade * uOpacity, 0.0, 0.82);
+        } else if (uStyle < 3.5) {
+          // 3: VOLT — Jagged strobing lightning spokes & capacitor rings
+          float boltWave = abs(sin(ang * 7.0 + sin(r * 16.0 - uTime * 18.0) * 1.4));
+          float spokes = pow(boltWave, 14.0);
+          float capRing = exp(-pow((r - 0.56) * 28.0, 2.0)) * (0.55 + 0.45 * sin(ang * 12.0 - uTime * 16.0));
+          float flicker = 0.75 + 0.25 * sin(uTime * 32.0);
+          col = (uColorA * (spokes * 1.1 + capRing * 0.9) + uColorB * (capRing * 0.6)) * flicker * edgeFade;
+          alpha = clamp((spokes * 0.65 + capRing * 0.55 + 0.1) * edgeFade * uOpacity, 0.0, 0.85);
+        } else if (uStyle < 4.5) {
+          // 4: VOID — Black hole singularity core + glowing photon ring + inward accretion
+          float blackHole = smoothstep(0.35, 0.16, r);
+          float photon = exp(-pow((r - 0.35) * 22.0, 2.0));
+          float inward = pow(0.5 + 0.5 * sin(ang * 6.0 + r * 18.0 + uTime * 8.5), 4.0) * smoothstep(0.28, 0.5, r);
+          vec3 ringCol = (uColorA * (inward * 0.9 + photon * 1.2) + uColorB * (inward * 0.45 + photon * 0.4)) * edgeFade;
+          col = mix(ringCol, vec3(0.02, 0.01, 0.02), blackHole);
+          alpha = clamp((blackHole * 0.96 + photon * 0.92 + inward * 0.58 * edgeFade) * uOpacity, 0.0, 0.96);
+        } else {
+          // 5: NANO — Rotating cybernetic hex floor lattice + radar sweep + center cross
+          float c = cos(uTime * 0.45);
+          float s = sin(uTime * 0.45);
+          vec2 rp = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+          float hex = hexEdge(rp * 4.5);
+          float radar = smoothstep(0.7, 1.0, sin(ang - uTime * 3.5)) * smoothstep(0.95, 0.2, r);
+          float crossMark = max(
+            smoothstep(0.055, 0.015, abs(p.x)) * step(abs(p.y), 0.22),
+            smoothstep(0.055, 0.015, abs(p.y)) * step(abs(p.x), 0.22)
+          );
+          col = (uColorA * (hex * 0.55 + radar * 0.55 + crossMark * 1.05) + uColorB * (hex * 0.35)) * edgeFade;
+          alpha = clamp((hex * 0.38 + radar * 0.38 + crossMark * 0.72 + 0.1) * edgeFade * uOpacity, 0.0, 0.85);
+        }
+
         float peak = max(col.r, max(col.g, col.b));
         if (peak > 1.1) col *= 1.1 / peak;
-        col *= edgeFade * uOpacity;
-
-        float alpha = clamp(((spiral1 + spiral2) * 0.42 * eye + innerRing * 0.4 + 0.12) * edgeFade * uOpacity, 0.0, 0.8);
+        col *= uOpacity;
         gl_FragColor = vec4(col, alpha);
       }
     `,
     transparent: true,
-    blending: THREE.AdditiveBlending,
+    blending: style === 4 ? THREE.NormalBlending : THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
   });

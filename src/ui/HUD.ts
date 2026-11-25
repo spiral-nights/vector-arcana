@@ -37,6 +37,7 @@ function getElementSvg(id: QueueElement, color: string): string {
       </svg>`;
     case 'VOID':
       return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.9" stroke-linecap="round">
+        <circle cx="12" cy="12" r="8.5" fill="#07050a" stroke="${color}" stroke-width="1.3"/>
         <path d="M12 12a2 2 0 1 0 2-2 4 4 0 1 0-4 4 6 6 0 1 0 6-6 8 8 0 1 0-8 8"/>
       </svg>`;
     case 'KINETIC':

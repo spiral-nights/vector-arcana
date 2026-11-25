@@ -757,4 +757,69 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     expect(steeredProj).toBeDefined();
     expect(steeredProj.vy).toBeGreaterThan(initialVy);
   });
+
+  it('mixed VOLT + CRYO on wet (PRIMED) enemies triggers both OVERLOAD and FROZEN on target and AoE bystander', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    const e1 = sim.combat.spawnEnemy('BASTION', 200, 0, 1);
+    e1.hasFrontShield = false;
+    e1.statuses.PRIMED = { type: 'PRIMED', remaining: 5, stacks: 1, potency: 1 };
+    const e2 = sim.combat.spawnEnemy('BASTION', 260, 0, 1);
+    e2.hasFrontShield = false;
+    e2.statuses.PRIMED = { type: 'PRIMED', remaining: 5, stacks: 1, potency: 1 };
+
+    const events: ReturnType<typeof sim.drainEvents> = [];
+    sim.combat.applyElementalHit(e1, 20, ['VOLT', 'CRYO'], 1, 0, events);
+
+    expect(e1.hp).toBeLessThan(e1.maxHp - 25); // 2x Overload damage
+    expect(e1.statuses.FROZEN).toBeDefined();
+    expect(e1.statuses.PRIMED).toBeUndefined();
+    expect(e2.statuses.FROZEN).toBeDefined();
+    expect(e2.statuses.PRIMED).toBeUndefined();
+    const texts = events.filter((ev) => ev.type === 'damage_number').map((ev) => ev.text);
+    expect(texts).toContain('OVERLOAD!');
+    expect(texts).toContain('FROZEN!');
+  });
+
+  it('continues moving toward held cursor after dash ends, and stops cleanly when released', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    sim.waveDirector.pillars = [];
+    sim.waveDirector.blocks = [];
+    const p = sim.getSnapshot().player;
+    p.x = 0;
+    p.y = 0;
+
+    // Trigger dash while holding LMB (moveToCursor: true)
+    sim.step(makeInput({ dashPressed: true, moveToCursor: true, aimX: 600, aimY: 0 }));
+    expect(p.dashTimer).toBeGreaterThan(0);
+
+    for (let i = 0; i < 14; i++) {
+      sim.step(makeInput({ moveToCursor: true, aimX: 600, aimY: 0 }));
+    }
+    expect(p.dashTimer).toBe(0);
+    expect(p.moving).toBe(true);
+
+    const xAfterDash = p.x;
+    for (let i = 0; i < 10; i++) {
+      sim.step(makeInput({ moveToCursor: true, aimX: 600, aimY: 0 }));
+    }
+    expect(p.x).toBeGreaterThan(xAfterDash + 15);
+    expect(p.moving).toBe(true);
+
+    // Releasing LMB slows down and marks moving = false
+    for (let i = 0; i < 15; i++) {
+      sim.step(makeInput({ moveToCursor: false, aimX: 600, aimY: 0 }));
+    }
+    expect(p.moving).toBe(false);
+    expect(Math.abs(p.vx)).toBeLessThan(15);
+  });
+
+  it('uses distinct crimson VOID, fire orange THERMAL, and earthy brown KINETIC element colors', () => {
+    expect(ELEMENT_META.VOID.colorHex).toBe(0xff2438);
+    expect(ELEMENT_META.THERMAL.colorHex).toBe(0xff6a00);
+    expect(ELEMENT_META.KINETIC.colorHex).toBe(0xa86b3e);
+  });
 });

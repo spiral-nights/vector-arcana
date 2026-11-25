@@ -199,13 +199,13 @@ function frame(now: number): void {
     const moveY = (keysDown.has('ArrowUp') ? 1 : 0) - (keysDown.has('ArrowDown') ? 1 : 0);
     const castHeld = preset === 'CLASSIC' ? rmbDown && !shiftHeld : lmbDown;
     const selfHeld = mmbDown || keysDown.has('KeyC');
-    const moveToCursor = preset === 'CLASSIC' && lmbDown && !shiftHeld;
+    const moveToCursor = preset === 'CLASSIC' && lmbDown;
 
     sim.step({
       moveX,
       moveY,
       moveToCursor,
-      moveClickTarget: moveToCursor ? aimWorld : pendingMoveClick,
+      moveClickTarget: moveToCursor && !pendingDash ? aimWorld : pendingMoveClick,
       aimX: aimWorld.x,
       aimY: aimWorld.y,
       queuedElements: pendingQueue,

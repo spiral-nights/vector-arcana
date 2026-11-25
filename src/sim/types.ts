@@ -43,9 +43,9 @@ export const ELEMENT_META: Record<QueueElement, ElementMeta> = {
   BARRIER: { id: 'BARRIER', name: 'Barrier', color: '#E6F0FF', colorHex: 0xe6f0ff, hotkey: 'E', isSub: false },
   CRYO: { id: 'CRYO', name: 'Cryo', color: '#00F5FF', colorHex: 0x00f5ff, hotkey: 'R', isSub: false },
   VOLT: { id: 'VOLT', name: 'Volt', color: '#FFF733', colorHex: 0xfff733, hotkey: 'A', isSub: false },
-  VOID: { id: 'VOID', name: 'Void', color: '#B429FF', colorHex: 0xb429ff, hotkey: 'S', isSub: false },
-  KINETIC: { id: 'KINETIC', name: 'Kinetic', color: '#E8741A', colorHex: 0xe8741a, hotkey: 'D', isSub: false },
-  THERMAL: { id: 'THERMAL', name: 'Thermal', color: '#FF1E2D', colorHex: 0xff1e2d, hotkey: 'F', isSub: false },
+  VOID: { id: 'VOID', name: 'Void', color: '#FF2438', colorHex: 0xff2438, hotkey: 'S', isSub: false },
+  KINETIC: { id: 'KINETIC', name: 'Kinetic', color: '#A86B3E', colorHex: 0xa86b3e, hotkey: 'D', isSub: false },
+  THERMAL: { id: 'THERMAL', name: 'Thermal', color: '#FF6A00', colorHex: 0xff6a00, hotkey: 'F', isSub: false },
   CRYSTAL: { id: 'CRYSTAL', name: 'Crystal', color: '#80FFFF', colorHex: 0x80ffff, hotkey: '', isSub: true },
   PLASMA: { id: 'PLASMA', name: 'Plasma', color: '#FF5E99', colorHex: 0xff5e99, hotkey: '', isSub: true },
 };

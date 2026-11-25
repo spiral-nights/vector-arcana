@@ -425,18 +425,63 @@ export class SpellVFX {
     this.snowflakeTexture = createSnowflakeTexture();
     this.crossTexture = createCrossTexture();
 
-    this.orbPool = new ParticlePool(scene, 1400, 8.2, this.orbTexture, 0.9);
-    this.snowPool = new ParticlePool(scene, 480, 14, this.snowflakeTexture, 0.92);
-    this.crossPool = new ParticlePool(scene, 480, 13, this.crossTexture, 0.92);
+    this.orbPool = new ParticlePool(scene, 2200, 8.2, this.orbTexture, 0.9);
+    this.snowPool = new ParticlePool(scene, 720, 14, this.snowflakeTexture, 0.92);
+    this.crossPool = new ParticlePool(scene, 720, 13, this.crossTexture, 0.92);
+  }
+
+  private getVoidPalette(
+    elements: readonly QueueElement[],
+    colors: readonly number[],
+    isEnemy = false
+  ): { isVoid: boolean; outlineA: number; outlineB: number; outlineC: number; particleColors: number[] } {
+    const isVoid = elements.includes('VOID');
+    if (isVoid && isEnemy) {
+      return {
+        isVoid: true,
+        outlineA: 0xb429ff,
+        outlineB: 0xff2e97,
+        outlineC: 0x581c87,
+        particleColors: [0xb429ff, 0xff2e97],
+      };
+    }
+    if (isVoid) {
+      const otherEls = elements.filter((el) => el !== 'VOID' && el !== 'BARRIER');
+      if (otherEls.length === 0) {
+        return {
+          isVoid: true,
+          outlineA: ELEMENT_META.VOID.colorHex,
+          outlineB: 0xc80a20,
+          outlineC: 0xff5a68,
+          particleColors: [ELEMENT_META.VOID.colorHex, 0xc80a20],
+        };
+      }
+      const otherCols: number[] = [];
+      for (const el of otherEls) {
+        const hex = ELEMENT_META[el].colorHex;
+        if (!otherCols.includes(hex)) otherCols.push(hex);
+      }
+      const a = otherCols[0]!;
+      const b = otherCols[1] ?? a;
+      const c = otherCols[2] ?? b;
+      return { isVoid: true, outlineA: a, outlineB: b, outlineC: c, particleColors: otherCols };
+    }
+    const a = colors[0] ?? 0x00f5ff;
+    const b = colors[1] ?? a;
+    const c = colors[2] ?? b;
+    return { isVoid: false, outlineA: a, outlineB: b, outlineC: c, particleColors: [...colors] };
   }
 
   public emitElementEmission(x: number, y: number, z: number, elements: readonly QueueElement[], radius = 14): void {
+    const hasVoid = elements.includes('VOID');
+    const hasNonVoid = elements.some((e) => e !== 'VOID' && e !== 'BARRIER');
     for (const el of elements) {
       if (el === 'BARRIER') continue;
+      if (el === 'VOID' && hasVoid && hasNonVoid) continue;
       const ox = x + (Math.random() - 0.5) * radius * 2;
       const oy = y + (Math.random() - 0.5) * radius * 2;
       if (el === 'THERMAL' || el === 'PLASMA') {
-        const flameCol = new THREE.Color(Math.random() < 0.5 ? 0xff4518 : 0xffaa22);
+        const flameCol = new THREE.Color(Math.random() < 0.5 ? 0xff6a00 : 0xffaa1d);
         this.orbPool.add({
           x: ox,
           y: oy,
@@ -498,6 +543,93 @@ export class SpellVFX {
           color: col,
         });
       }
+    }
+  }
+
+  private emitRockTrail(p: ProjectileEntity): void {
+    const spd = Math.max(1, Math.hypot(p.vx, p.vy));
+    const bx = -p.vx / spd;
+    const by = -p.vy / spd;
+    const nx = -by;
+    const ny = bx;
+    const r = p.radius * 0.9;
+    const els = p.elements;
+    const vp = this.getVoidPalette(els, p.colors);
+
+    const addOrb = (colHex: number, count: number, zDrift = 38): void => {
+      for (let i = 0; i < count; i++) {
+        const lat = (Math.random() - 0.5) * r * 1.8;
+        const back = Math.random() * r * 0.9;
+        const slip = 55 + Math.random() * 95;
+        const maxLife = 0.24 + Math.random() * 0.24;
+        this.orbPool.add({
+          x: p.x + bx * back + nx * lat,
+          y: p.y + by * back + ny * lat,
+          z: 10 + Math.random() * 12,
+          vx: bx * slip + (Math.random() - 0.5) * 45,
+          vy: by * slip + (Math.random() - 0.5) * 45,
+          vz: (Math.random() - 0.25) * zDrift,
+          life: maxLife,
+          maxLife,
+          color: new THREE.Color(colHex),
+        });
+      }
+    };
+
+    if (els.includes('THERMAL') || els.includes('PLASMA')) {
+      addOrb(0xff6a00, 3, 68);
+      addOrb(0xffbb22, 2, 75);
+    }
+    if (els.includes('CRYO') || els.includes('CRYSTAL')) {
+      for (let i = 0; i < 4; i++) {
+        const lat = (Math.random() - 0.5) * r * 1.9;
+        this.snowPool.add({
+          x: p.x + nx * lat,
+          y: p.y + ny * lat,
+          z: 12 + Math.random() * 12,
+          vx: bx * (45 + Math.random() * 70) + (Math.random() - 0.5) * 35,
+          vy: by * (45 + Math.random() * 70) + (Math.random() - 0.5) * 35,
+          vz: 10 + Math.random() * 25,
+          life: 0.35 + Math.random() * 0.22,
+          maxLife: 0.57,
+          color: new THREE.Color(0x80ffff),
+        });
+      }
+      addOrb(0x00f5ff, 3, 30);
+    }
+    if (els.includes('NANO')) {
+      for (let i = 0; i < 4; i++) {
+        const lat = (Math.random() - 0.5) * r * 1.8;
+        this.crossPool.add({
+          x: p.x + nx * lat,
+          y: p.y + ny * lat,
+          z: 12 + Math.random() * 12,
+          vx: bx * (40 + Math.random() * 65) + (Math.random() - 0.5) * 30,
+          vy: by * (40 + Math.random() * 65) + (Math.random() - 0.5) * 30,
+          vz: 20 + Math.random() * 35,
+          life: 0.32 + Math.random() * 0.2,
+          maxLife: 0.52,
+          color: new THREE.Color(0x39ff14),
+        });
+      }
+      addOrb(0x39ff14, 2, 35);
+    }
+    if (els.includes('FLUX')) {
+      addOrb(0x1a6bff, 3, 30);
+      addOrb(0x66b2ff, 2, 30);
+    }
+    if (els.includes('VOID')) {
+      for (let i = 0; i < 5; i++) {
+        const col = vp.particleColors[i % vp.particleColors.length]!;
+        addOrb(col, 1, 35);
+      }
+    }
+
+    // Always shed earthy stone sparks + occasional geometric stone chips
+    addOrb(vp.isVoid ? vp.outlineA : ELEMENT_META.KINETIC.colorHex, 3, 45);
+    if (Math.random() < 0.28) {
+      const chipColors = vp.isVoid ? vp.particleColors : [ELEMENT_META.KINETIC.colorHex, ...p.colors];
+      this.spawnShards(p.x, p.y, chipColors, 1, 0.45, Math.atan2(by, bx));
     }
   }
 
@@ -611,7 +743,7 @@ export class SpellVFX {
   }
 
   public spawnShards(x: number, y: number, colors: number[], count: number, speedScale = 1, dirAngle?: number): void {
-    const palette = colors.length > 0 ? colors : [0xe8741a];
+    const palette = colors.length > 0 ? colors : [ELEMENT_META.KINETIC.colorHex];
     for (let i = 0; i < count; i++) {
       if (this.shards.length >= this.maxShards) {
         const oldest = this.shards.shift()!;
@@ -1007,17 +1139,23 @@ export class SpellVFX {
           const s = p.radius * 1.12;
           const rockGeo = new THREE.DodecahedronGeometry(s, 0);
           const wire = new THREE.WireframeGeometry(rockGeo);
-          const infused = p.colors.find((c) => c !== ELEMENT_META.KINETIC.colorHex) ?? p.colorHex;
-          const bodyTint = new THREE.Color(0x3a2a24).lerp(new THREE.Color(infused), 0.45);
+          const vp = this.getVoidPalette(p.elements, p.colors);
+          const infused = vp.isVoid
+            ? vp.outlineA
+            : p.colors.find((c) => c !== ELEMENT_META.KINETIC.colorHex) ?? p.colorHex;
+          const isPureBrown = infused === ELEMENT_META.KINETIC.colorHex;
+          const bodyTint = vp.isVoid
+            ? new THREE.Color(0x060508)
+            : new THREE.Color(0x3d281a).lerp(new THREE.Color(infused), isPureBrown ? 0.35 : 0.5);
 
-          // Solid opaque shaded 3D boulder strongly tinted by infused element(s)
+          // Solid opaque shaded 3D boulder (pitch-black core for Void, earthy brown or infused for non-Void)
           g.add(
             new THREE.Mesh(
               rockGeo,
               new THREE.MeshStandardMaterial({
                 color: bodyTint,
                 emissive: infused,
-                emissiveIntensity: 0.65,
+                emissiveIntensity: vp.isVoid ? 0.22 : 0.55,
                 roughness: 0.55,
                 metalness: 0.25,
               })
@@ -1031,10 +1169,11 @@ export class SpellVFX {
           );
           g.add(createGlowSprite(infused, s * 2.8, 0.3));
         } else {
-          // Crystal Shard Blade blending CRYSTAL cyan + any mixed element color cleanly
-          const mixedColor =
-            p.colors.find((c) => c !== ELEMENT_META.CRYSTAL.colorHex && c !== 0x80ffff) ??
-            p.colorHex;
+          const vp = this.getVoidPalette(p.elements, p.colors);
+          // Crystal Shard Blade blending CRYSTAL cyan + any mixed element color cleanly (black core when Void)
+          const mixedColor = vp.isVoid
+            ? vp.outlineA
+            : p.colors.find((c) => c !== ELEMENT_META.CRYSTAL.colorHex && c !== 0x80ffff) ?? p.colorHex;
           const r = p.radius;
           const tip = r * 2.7;
           const back = -r * 1.15;
@@ -1058,7 +1197,7 @@ export class SpellVFX {
             new THREE.Float32BufferAttribute([1, 0.5, 0.45, 1, 0, 0.5, 0.45, 0], 2)
           );
           bladeGeo.setIndex([0, 1, 2, 0, 2, 3]);
-          g.add(new THREE.Mesh(bladeGeo, createCrystalBladeMaterial(0x80ffff, mixedColor)));
+          g.add(new THREE.Mesh(bladeGeo, createCrystalBladeMaterial(0x80ffff, mixedColor, vp.isVoid)));
 
           const edgePts = [
             { x: tip, y: 0 },
@@ -1091,7 +1230,7 @@ export class SpellVFX {
       if (p.kind === 'ROCK') {
         g.rotation.x = p.spin;
         g.rotation.y = p.spin * 0.7;
-        this.emitElementEmission(p.x, p.y, 14, p.elements, 10);
+        this.emitRockTrail(p);
       } else {
         g.rotation.z = Math.atan2(p.vy, p.vx);
         const blade = g.children[0];
@@ -1117,19 +1256,16 @@ export class SpellVFX {
       const nx = -sin;
       const ny = cos;
 
-      const isVoid = b.elements.includes('VOID');
-      let cA = b.colors[0] ?? b.colorHex;
-      let cB = b.colors[1] ?? b.composition.secondaryColorHex;
-      let cC = b.colors[2] ?? cB;
+      const vp = this.getVoidPalette(b.elements, b.colors, b.owner === 'ENEMY');
+      const isVoid = vp.isVoid;
+      let cA = vp.outlineA;
+      let cB = vp.outlineB;
+      let cC = vp.outlineC;
 
       if (!isVoid && b.colors.length === 1 && b.elements.includes('NANO')) {
         cA = 0x39ff14;
-        cB = 0xf59e0b;
+        cB = 0x00e676;
         cC = 0xa7f3d0;
-      } else if (isVoid && b.colors.length === 1) {
-        cA = 0x8b2cf5;
-        cB = 0xff2e97;
-        cC = 0x581c87;
       }
 
       if (!group) {
@@ -1223,7 +1359,8 @@ export class SpellVFX {
         sp.material.opacity = Math.sin(frac * Math.PI) * 0.88 * fade;
       }
 
-      this.spawnBeamFlowParticle(b.x, b.y, cos, sin, nx, ny, len, b.width, b.composition.weightedColors, b.elements);
+      const flowColors = isVoid ? vp.particleColors : b.composition.weightedColors;
+      this.spawnBeamFlowParticle(b.x, b.y, cos, sin, nx, ny, len, b.width, flowColors, b.elements);
       if (isVoid && Math.random() < 0.35) {
         const d = Math.random() * len;
         this.spawnShards(
@@ -1254,9 +1391,10 @@ export class SpellVFX {
       arr.push(w);
 
       let g = this.wallMeshes.get(w.id);
+      const vp = this.getVoidPalette(w.elements, w.colors);
       const payloadColors = w.colors.filter((c) => c !== 0xe6f0ff);
-      const p1 = payloadColors[0] ?? w.colorHex;
-      const p2 = payloadColors[1] ?? p1;
+      const p1 = vp.isVoid ? vp.outlineA : (payloadColors[0] ?? w.colorHex);
+      const p2 = vp.isVoid ? vp.outlineB : (payloadColors[1] ?? p1);
 
       if (!g) {
         g = new THREE.Group();
@@ -1267,9 +1405,9 @@ export class SpellVFX {
           new THREE.Mesh(
             cyl,
             new THREE.MeshStandardMaterial({
-              color: 0x182236,
+              color: vp.isVoid ? 0x060508 : 0x182236,
               emissive: p1,
-              emissiveIntensity: 0.45,
+              emissiveIntensity: vp.isVoid ? 0.15 : 0.45,
               roughness: 0.4,
               metalness: 0.4,
             })
@@ -1309,9 +1447,10 @@ export class SpellVFX {
       const panelKey = `${a.id}-${b.id}`;
       activePanelKeys.add(panelKey);
       let panelGroup = this.wallPanels.get(panelKey);
+      const vpPanel = this.getVoidPalette(a.elements, a.colors);
       const payloadColors = a.colors.filter((c) => c !== 0xe6f0ff);
-      const p1 = payloadColors[0] ?? a.colorHex;
-      const p2 = payloadColors[1] ?? p1;
+      const p1 = vpPanel.isVoid ? vpPanel.outlineA : (payloadColors[0] ?? a.colorHex);
+      const p2 = vpPanel.isVoid ? vpPanel.outlineB : (payloadColors[1] ?? p1);
       const isFire = a.elements.includes('THERMAL') || a.elements.includes('PLASMA');
 
       if (!panelGroup) {
@@ -1369,12 +1508,13 @@ export class SpellVFX {
       let g = this.mineMeshes.get(m.id);
       if (!g) {
         g = new THREE.Group();
+        const vp = this.getVoidPalette(m.elements, m.colors);
         const payloadColors = m.colors.filter((c) => c !== 0xe6f0ff);
-        const p1 = payloadColors[0] ?? m.colorHex;
-        const p2 = payloadColors[1] ?? p1;
-        const p3 = payloadColors[2] ?? p2;
+        const p1 = vp.isVoid ? vp.outlineA : (payloadColors[0] ?? m.colorHex);
+        const p2 = vp.isVoid ? vp.outlineB : (payloadColors[1] ?? p1);
+        const p3 = vp.isVoid ? vp.outlineC : (payloadColors[2] ?? p2);
 
-        // 0: Cybernetic Hexagonal Circuit Emitter Base Pad
+        // 0: Cybernetic Hexagonal Circuit Emitter Base Pad (pitch-black core when Void)
         const padGroup = new THREE.Group();
         const padGeo = new THREE.CylinderGeometry(m.radius * 0.85, m.radius * 0.96, 5, 6);
         padGeo.rotateX(Math.PI / 2);
@@ -1382,9 +1522,9 @@ export class SpellVFX {
           new THREE.Mesh(
             padGeo,
             new THREE.MeshStandardMaterial({
-              color: 0x162236,
+              color: vp.isVoid ? 0x050508 : 0x162236,
               emissive: p1,
-              emissiveIntensity: 0.35,
+              emissiveIntensity: vp.isVoid ? 0.08 : 0.35,
               roughness: 0.4,
               metalness: 0.6,
             })
@@ -1397,25 +1537,34 @@ export class SpellVFX {
         padGroup.position.z = 3;
         g.add(padGroup);
 
-        // 1: Hovering Holographic Multi-Color Prism
+        // 1: Hovering Holographic Multi-Color Prism (black core + crisp neon wireframe for Void)
         const holoGroup = new THREE.Group();
+        const octGeo = new THREE.OctahedronGeometry(m.radius * 0.46, 0);
         holoGroup.add(
           new THREE.Mesh(
-            new THREE.OctahedronGeometry(m.radius * 0.46, 0),
+            octGeo,
             new THREE.MeshStandardMaterial({
-              color: p2,
-              emissive: p2,
-              emissiveIntensity: 0.75,
+              color: vp.isVoid ? 0x060508 : p2,
+              emissive: vp.isVoid ? p1 : p2,
+              emissiveIntensity: vp.isVoid ? 0.14 : 0.75,
               roughness: 0.25,
               metalness: 0.35,
             })
           )
         );
-        if (p3 !== p2 || p1 !== p2) {
+        if (vp.isVoid) {
+          holoGroup.add(
+            new THREE.LineSegments(
+              new THREE.WireframeGeometry(octGeo),
+              new THREE.LineBasicMaterial({ color: p1 })
+            )
+          );
+        }
+        if (vp.isVoid || p3 !== p2 || p1 !== p2) {
           holoGroup.add(
             new THREE.Mesh(
               buildRibbonGeometry(createPolygonPoints(4, m.radius * 0.62), 2.0, true, 0),
-              createNeonRibbonMaterial(p3 !== p2 ? p3 : p1, 1.25, 0.95)
+              createNeonRibbonMaterial(vp.isVoid ? p2 : (p3 !== p2 ? p3 : p1), 1.25, 0.95)
             )
           );
         }
@@ -1474,17 +1623,29 @@ export class SpellVFX {
     for (const s of items) {
       alive.add(s.id);
       let g = this.stormMeshes.get(s.id);
+      const vp = this.getVoidPalette(s.elements, s.colors);
       if (!g) {
         g = new THREE.Group();
         const barrierColor = s.colors.includes(0xe6f0ff) ? 0xe6f0ff : s.colorHex;
         const payloadColors = s.colors.filter((c) => c !== 0xe6f0ff);
-        const payloadColor = payloadColors[0] ?? s.colorHex;
-        const secondaryPayload = payloadColors[1] ?? payloadColor;
+        const payloadColor = vp.isVoid ? vp.outlineA : (payloadColors[0] ?? s.colorHex);
+        const secondaryPayload = vp.isVoid ? vp.outlineB : (payloadColors[1] ?? payloadColor);
+        const stormStyle = s.elements.includes('VOID')
+          ? 4
+          : s.elements.includes('NANO')
+          ? 5
+          : s.elements.includes('VOLT')
+          ? 3
+          : s.elements.includes('CRYO') || s.elements.includes('CRYSTAL')
+          ? 1
+          : s.elements.includes('FLUX') && !s.elements.includes('THERMAL') && !s.elements.includes('PLASMA')
+          ? 2
+          : 0;
 
-        // 0: Soft ground vortex rune (zero white border!)
+        // 0: Soft ground vortex rune with per-element swirl style
         const vortexMesh = new THREE.Mesh(
           new THREE.PlaneGeometry(s.radius * 2.05, s.radius * 2.05),
-          createStormVortexMaterial(barrierColor, payloadColor, secondaryPayload)
+          createStormVortexMaterial(barrierColor, payloadColor, secondaryPayload, stormStyle)
         );
         vortexMesh.position.z = 1.2;
         g.add(vortexMesh);
@@ -1492,7 +1653,7 @@ export class SpellVFX {
         // 1: Overhead billowing 3D Storm Cloud disk floating at z=120
         const cloudMesh = new THREE.Mesh(
           new THREE.PlaneGeometry(s.radius * 2.25, s.radius * 2.25),
-          createStormCloudMaterial(payloadColor, secondaryPayload)
+          createStormCloudMaterial(payloadColor, secondaryPayload, stormStyle)
         );
         cloudMesh.position.z = 120;
         g.add(cloudMesh);
@@ -1551,7 +1712,7 @@ export class SpellVFX {
             vz: -75 - Math.random() * 65,
             life: 0.55,
             maxLife: 0.55,
-            color: new THREE.Color(Math.random() < 0.5 ? 0xff4518 : 0xffaa22),
+            color: new THREE.Color(Math.random() < 0.5 ? 0xff6a00 : 0xffaa1d),
           });
         }
         if (s.elements.includes('FLUX')) {
@@ -1568,6 +1729,7 @@ export class SpellVFX {
           });
         }
         if (s.elements.includes('VOID')) {
+          const voidCol = vp.particleColors[k % vp.particleColors.length]!;
           this.orbPool.add({
             x: px,
             y: py,
@@ -1577,7 +1739,7 @@ export class SpellVFX {
             vz: -15,
             life: 0.5,
             maxLife: 0.5,
-            color: new THREE.Color(Math.random() < 0.5 ? 0x8b2cf5 : 0xff2e97),
+            color: new THREE.Color(voidCol),
           });
         }
       }

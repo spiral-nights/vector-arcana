@@ -158,7 +158,7 @@ export class GameSim {
       }
     }
 
-    if (input.moveClickTarget) {
+    if (input.moveClickTarget && p.dashTimer <= 0) {
       const margin = 18;
       p.moveTarget = {
         x: Math.max(-ARENA_HALF_W + margin, Math.min(ARENA_HALF_W - margin, input.moveClickTarget.x)),

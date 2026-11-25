@@ -198,7 +198,7 @@ export class EntityRenderer {
     // Forward Charge Indicator
     this.chargeCore = new THREE.Mesh(
       buildRibbonGeometry(createPolygonPts(4, 9.5, Math.PI / 4), 2.5, true, 2.4),
-      createNeonRibbonMaterial(0xe8741a, 1.2, 0.95)
+      createNeonRibbonMaterial(ELEMENT_META.KINETIC.colorHex, 1.2, 0.95)
     );
     this.chargeRing = new THREE.Mesh(
       buildRibbonGeometry(createPolygonPts(18, 12.5), 2.2, true, 2.0),
@@ -212,7 +212,7 @@ export class EntityRenderer {
     // Kinetic Self-Cast Armor Cage
     this.armorCage = new THREE.Mesh(
       buildRibbonGeometry(createPolygonPts(6, 26), 2.6, true, 1.8),
-      createNeonRibbonMaterial(0xe8741a, 1.1, 0.9)
+      createNeonRibbonMaterial(ELEMENT_META.KINETIC.colorHex, 1.1, 0.9)
     );
     this.armorCage.visible = false;
     this.playerGroup.add(this.armorCage);
@@ -303,7 +303,14 @@ export class EntityRenderer {
       )
     );
 
-    if (el === 'NANO') {
+    if (el === 'VOID') {
+      const coreDisk = new THREE.Mesh(
+        new THREE.CircleGeometry(6.6, 16),
+        new THREE.MeshBasicMaterial({ color: 0x060408 })
+      );
+      coreDisk.position.z = -0.2;
+      group.add(coreDisk);
+    } else if (el === 'NANO') {
       group.add(
         new THREE.Mesh(buildRibbonGeometry([{ x: -4.5, y: 0 }, { x: 4.5, y: 0 }], 2.0, false, 0.3), createNeonRibbonMaterial(meta.colorHex, 1.25, 0.95)),
         new THREE.Mesh(buildRibbonGeometry([{ x: 0, y: -4.5 }, { x: 0, y: 4.5 }], 2.0, false, 0.3), createNeonRibbonMaterial(meta.colorHex, 1.25, 0.95))
@@ -495,7 +502,7 @@ export class EntityRenderer {
         : e.statuses.FROZEN
         ? 0x00f5ff
         : e.statuses.IGNITED
-        ? 0xff5522
+        ? ELEMENT_META.THERMAL.colorHex
         : e.statuses.PRIMED
         ? 0x1a6bff
         : e.statuses.CORRUPTED
