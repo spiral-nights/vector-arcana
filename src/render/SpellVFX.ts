@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { BlockedRayScene, computeBlockedRayLength } from '../sim/ArenaGeometry';
 import { createGlowSprite } from './GlowUtil';
 import {
   buildRibbonGeometry,
@@ -903,6 +904,7 @@ export class SpellVFX {
   private particleScale = 1.0;
   private gateGroup: THREE.Group | null = null;
   private gateLastOpen = false;
+  private lastBlockedScene: BlockedRayScene | null = null;
 
   private sprayConeMesh: THREE.Mesh | null = null;
   private sprayConeKey = '';
@@ -1926,6 +1928,10 @@ export class SpellVFX {
     });
   }
 
+  public setBlockedScene(scene: BlockedRayScene): void {
+    this.lastBlockedScene = scene;
+  }
+
   public spawnSpray(
     x: number,
     y: number,
@@ -1942,10 +1948,36 @@ export class SpellVFX {
     const count = this.scaleCount(Math.round((isNova ? 76 : 36) * sizeScale));
     const sprayEls = elements.filter((e) => e !== 'BARRIER');
 
+    let raySamples: number[] | null = null;
+    if (this.lastBlockedScene) {
+      const sampleCount = isNova ? 16 : 9;
+      raySamples = [];
+      for (let si = 0; si < sampleCount; si++) {
+        const sa = isNova
+          ? (si / sampleCount) * Math.PI * 2
+          : angle + (si / (sampleCount - 1) - 0.5) * spread;
+        raySamples.push(computeBlockedRayLength(x, y, sa, range, this.lastBlockedScene, false, 1));
+      }
+    }
+    const lookupBlocked = (a: number): number => {
+      if (!raySamples) return range;
+      if (isNova) {
+        const twoPi = Math.PI * 2;
+        const norm = ((a % twoPi) + twoPi) % twoPi;
+        const idx = Math.round((norm / twoPi) * raySamples.length) % raySamples.length;
+        return raySamples[idx] ?? range;
+      }
+      const diff = Math.atan2(Math.sin(a - angle), Math.cos(a - angle));
+      const t = Math.max(0, Math.min(1, diff / Math.max(0.01, spread) + 0.5));
+      const idx = Math.round(t * (raySamples.length - 1));
+      return raySamples[idx] ?? range;
+    };
+
     for (let i = 0; i < count; i++) {
       const a = isNova ? Math.random() * Math.PI * 2 : angle + (Math.random() - 0.5) * spread;
       const spd = range * (1.8 + Math.random() * 1.55);
-      const maxLife = 0.28 + Math.random() * 0.24;
+      const blockedLen = lookupBlocked(a);
+      const maxLife = Math.min(0.28 + Math.random() * 0.24, Math.max(0.025, blockedLen / Math.max(1, spd)));
       const pos = {
         x,
         y,
@@ -1991,8 +2023,11 @@ export class SpellVFX {
         g.position.set(x, y, 0);
         g.rotation.z = a;
         this.scene.add(g);
-        const maxLife = 0.34;
         const spd = range * (i === 0 ? 2.35 : 2.05);
+        const arcBlocked = this.lastBlockedScene
+          ? computeBlockedRayLength(x, y, a, range, this.lastBlockedScene, false, 1)
+          : range;
+        const maxLife = Math.min(0.34, Math.max(0.03, arcBlocked / Math.max(1, spd)));
         this.waveArcs.push({
           mesh: g as unknown as THREE.Mesh,
           x,
@@ -2007,8 +2042,11 @@ export class SpellVFX {
       mesh.position.set(x, y, 0);
       mesh.rotation.z = a;
       this.scene.add(mesh);
-      const maxLife = 0.34;
       const spd = range * (i === 0 ? 2.35 : 2.05);
+      const arcBlocked = this.lastBlockedScene
+        ? computeBlockedRayLength(x, y, a, range, this.lastBlockedScene, false, 1)
+        : range;
+      const maxLife = Math.min(0.34, Math.max(0.03, arcBlocked / Math.max(1, spd)));
       this.waveArcs.push({
         mesh,
         x,
@@ -2134,6 +2172,7 @@ export class SpellVFX {
   }
 
   public update(snapshot: SimSnapshot, dt: number, timeSec: number): void {
+    this.lastBlockedScene = snapshot;
     this.currentThemeIdx = Math.max(0, snapshot.wave - 1) % SECTOR_PILLAR_COLORS.length;
     this.syncSprayCone(snapshot, timeSec);
     this.syncProjectiles(snapshot.projectiles, timeSec);
@@ -2357,9 +2396,14 @@ export class SpellVFX {
     }
 
     const p = snapshot.player;
+    const blockedLen = computeBlockedRayLength(p.x, p.y, p.aimAngle, range + 20, snapshot, false, 1);
+    const muzzle = Math.min(20, Math.max(2, blockedLen - 6));
+    const effRange = Math.max(8, Math.min(range, blockedLen - muzzle));
+    const scaleRatio = Math.max(0.03, Math.min(1, effRange / Math.max(1, range)));
     this.sprayConeMesh.visible = true;
-    this.sprayConeMesh.position.set(p.x + Math.cos(p.aimAngle) * 20, p.y + Math.sin(p.aimAngle) * 20, 0);
+    this.sprayConeMesh.position.set(p.x + Math.cos(p.aimAngle) * muzzle, p.y + Math.sin(p.aimAngle) * muzzle, 0);
     this.sprayConeMesh.rotation.z = p.aimAngle;
+    this.sprayConeMesh.scale.set(scaleRatio, scaleRatio, 1);
     setShaderUniform(this.sprayConeMesh.material, 'uTime', timeSec);
     setShaderUniform(this.sprayConeMesh.material, 'uOpacity', Math.min(1, ch.remaining * 2.5));
   }
@@ -2446,6 +2490,61 @@ export class SpellVFX {
               createNeonRibbonMaterial(ELEMENT_META.NANO.colorHex, 1.35, 0.96)
             ),
             createGlowSprite(ELEMENT_META.NANO.colorHex, p.radius * 2.8, 0.28)
+          );
+        } else if (p.kind === 'CRYO_LANCE') {
+          const r = p.radius;
+          const lancePts = [
+            { x: r * 3.8, y: 0 },
+            { x: -r * 0.2, y: r * 0.62 },
+            { x: -r * 1.4, y: 0 },
+            { x: -r * 0.2, y: -r * 0.62 },
+          ];
+          g.add(
+            new THREE.Mesh(
+              buildRibbonGeometry(lancePts, 2.6, true, 13.4),
+              createNeonRibbonMaterial(0x80ffff, 1.35, 0.98)
+            ),
+            new THREE.Mesh(
+              buildRibbonGeometry([{ x: r * 3.0, y: 0 }, { x: -r * 4.2, y: 0 }], r * 0.45, false, 13.0),
+              createNeonRibbonMaterial(0xffffff, 1.3, 0.82)
+            ),
+            createGlowSprite(0x00f5ff, r * 3.2, 0.28)
+          );
+        } else if (p.kind === 'PLASMA_ORB') {
+          const r = p.radius;
+          g.add(
+            new THREE.Mesh(
+              new THREE.CircleGeometry(r * 0.78, 14),
+              new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending })
+            ),
+            new THREE.Mesh(
+              buildRibbonGeometry(createPolygonPoints(14, r * 1.15), 2.5, true, 13.2),
+              createNeonRibbonMaterial(p.colorHex, 1.3, 0.95)
+            ),
+            createGlowSprite(p.colorHex, r * 3.2, 0.3)
+          );
+        } else if (p.kind === 'VOLT_ORB') {
+          const r = p.radius;
+          const starPts = [
+            { x: r * 1.75, y: 0 },
+            { x: r * 0.4, y: r * 0.4 },
+            { x: 0, y: r * 1.35 },
+            { x: -r * 0.4, y: r * 0.4 },
+            { x: -r * 1.55, y: 0 },
+            { x: -r * 0.4, y: -r * 0.4 },
+            { x: 0, y: -r * 1.35 },
+            { x: r * 0.4, y: -r * 0.4 },
+          ];
+          g.add(
+            new THREE.Mesh(
+              buildRibbonGeometry(starPts, 2.4, true, 13.4),
+              createNeonRibbonMaterial(0xfff733, 1.35, 0.98)
+            ),
+            new THREE.Mesh(
+              new THREE.CircleGeometry(r * 0.48, 10),
+              new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 })
+            ),
+            createGlowSprite(0xfff733, r * 3.0, 0.3)
           );
         } else {
           const vp = this.getVoidPalette(p.elements, p.colors);
@@ -2678,6 +2777,78 @@ export class SpellVFX {
       );
       ink.renderOrder = 15;
       g.add(shadow, createGlowSprite(0x5cff3b, p.radius * 3.0, 0.3), wash, ink);
+    } else if (p.kind === 'CRYO_LANCE') {
+      const r = p.radius;
+      const lancePts = [
+        { x: r * 3.8, y: 0 },
+        { x: -r * 0.2, y: r * 0.64 },
+        { x: -r * 1.4, y: 0 },
+        { x: -r * 0.2, y: -r * 0.64 },
+      ];
+      const stamp = getPolygonWashTexture(`wc-lance-${Math.round(r)}`, lancePts, 0.34);
+      const shadowGeo = new THREE.PlaneGeometry(stamp.size * 0.9, stamp.size * 0.9);
+      shadowGeo.translate(stamp.centerX, stamp.centerY, 0);
+      const shadow = new THREE.Mesh(shadowGeo, createDropShadowMaterial(stamp.texture, 0.55));
+      shadow.position.set(7, -9, 1.5);
+      shadow.renderOrder = 5;
+
+      const washGeo = new THREE.PlaneGeometry(stamp.size, stamp.size);
+      washGeo.translate(stamp.centerX, stamp.centerY, 0);
+      const wash = new THREE.Mesh(
+        washGeo,
+        createWatercolorWashMaterial(stamp.texture, 0x5ef2ff, 0xffffff, 0x0d7c9e, 0.96)
+      );
+      wash.position.set(2.0, -1.6, 13.2);
+      wash.renderOrder = 10;
+
+      const ink = new THREE.Mesh(
+        buildInkOutlineGeometry(lancePts, 2.8, true, 14.0, 1.6, 0.35),
+        createSumiInkMaterial(0.97, 0.45)
+      );
+      ink.renderOrder = 15;
+      const contrail = new THREE.Mesh(
+        buildRibbonGeometry([{ x: -r * 1.0, y: 0 }, { x: -r * 5.0, y: 0 }], r * 0.65, false, 12.6),
+        createWatercolorRibbonMaterial(0x80ffff, 0.85, 0.25)
+      );
+      contrail.renderOrder = 9;
+      g.add(shadow, createGlowSprite(0x00f5ff, r * 3.0, 0.28), wash, ink, contrail);
+    } else if (p.kind === 'PLASMA_ORB' || p.kind === 'VOLT_ORB') {
+      const r = p.radius;
+      const isVolt = p.kind === 'VOLT_ORB';
+      const pts = isVolt
+        ? [
+            { x: r * 1.75, y: 0 },
+            { x: r * 0.4, y: r * 0.4 },
+            { x: 0, y: r * 1.35 },
+            { x: -r * 0.4, y: r * 0.4 },
+            { x: -r * 1.55, y: 0 },
+            { x: -r * 0.4, y: -r * 0.4 },
+            { x: 0, y: -r * 1.35 },
+            { x: r * 0.4, y: -r * 0.4 },
+          ]
+        : createPolygonPoints(10, r * 1.08);
+      const stamp = getPolygonWashTexture(`wc-orb-${p.kind}-${Math.round(r)}`, pts, 0.34);
+      const shadow = new THREE.Mesh(
+        new THREE.PlaneGeometry(stamp.size * 0.9, stamp.size * 0.9),
+        createDropShadowMaterial(stamp.texture, 0.54)
+      );
+      shadow.position.set(7, -9, 1.5);
+      shadow.renderOrder = 5;
+
+      const col = isVolt ? 0xffe600 : p.colorHex;
+      const wash = new THREE.Mesh(
+        new THREE.PlaneGeometry(stamp.size, stamp.size),
+        createWatercolorWashMaterial(stamp.texture, col, 0xffffff, undefined, 0.95)
+      );
+      wash.position.set(2.0, -1.6, 13.2);
+      wash.renderOrder = 10;
+
+      const ink = new THREE.Mesh(
+        buildInkOutlineGeometry(pts, 2.8, true, 14.0, 1.5, 0.35),
+        createSumiInkMaterial(0.97, 0.45)
+      );
+      ink.renderOrder = 15;
+      g.add(shadow, createGlowSprite(col, r * 3.0, 0.3), wash, ink);
     } else {
       const mixedColor = vp.isVoid
         ? vp.outlineA

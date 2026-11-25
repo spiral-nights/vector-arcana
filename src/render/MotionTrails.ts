@@ -335,14 +335,28 @@ export class MotionTrails {
       );
     }
 
-    // 3. Stalker & Swarmer enemy ribbons + teleport streak detection
+    // 3. Stalker, Swarmer, Lancer & Volt Sprinter ribbons + teleport streak detection
     const stalkersAlive = new Set<number>();
     if (allowFullTrails) {
       for (const e of snapshot.enemies) {
-        if (e.archetype !== 'STALKER' && e.archetype !== 'SWARMER') continue;
+        if (
+          e.archetype !== 'STALKER' &&
+          e.archetype !== 'SWARMER' &&
+          e.archetype !== 'LANCER' &&
+          e.archetype !== 'VOLT_SPRINTER'
+        ) {
+          continue;
+        }
         const key = `e:${e.id}`;
         alive.add(key);
-        const col = e.archetype === 'STALKER' ? 0x00f5ff : 0xff2e97;
+        const col =
+          e.archetype === 'STALKER'
+            ? 0x00f5ff
+            : e.archetype === 'LANCER'
+            ? 0xff4518
+            : e.archetype === 'VOLT_SPRINTER'
+            ? 0xfff733
+            : 0xff2e97;
         const eSpd = Math.hypot(e.vx, e.vy);
         if (e.archetype === 'STALKER') {
           stalkersAlive.add(e.id);
@@ -383,7 +397,13 @@ export class MotionTrails {
           eSpd > 22,
           9,
           0.18,
-          e.archetype === 'STALKER' ? 5.0 : 3.2,
+          e.archetype === 'LANCER' && e.aiState === 'FIRE'
+            ? 6.4
+            : e.archetype === 'STALKER'
+            ? 5.0
+            : e.archetype === 'VOLT_SPRINTER' || e.archetype === 'LANCER'
+            ? 4.2
+            : 3.2,
           col
         );
       }

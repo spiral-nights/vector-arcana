@@ -69,6 +69,12 @@ export class GameSim {
     this.phase = initialPhase;
     this.combat.setRunConfig(getShipDef(this.shipId), getDifficultyConfig(this.difficulty));
     this.waveDirector.startWave(1, this.events);
+    this.combat.setArenaGeometry(
+      this.waveDirector.arenaBoundary,
+      this.waveDirector.pillars,
+      this.waveDirector.blocks,
+      this.waveDirector.obstacles
+    );
     const span = getArenaHorizontalSpanAtY0(this.waveDirector.arenaBoundary);
     this.player.x = span.minX + 145;
   }
@@ -111,7 +117,12 @@ export class GameSim {
     this.waveDirector.reset();
     this.events.length = 0;
     this.waveDirector.startWave(1, this.events);
-    this.combat.setArenaBoundary(this.waveDirector.arenaBoundary);
+    this.combat.setArenaGeometry(
+      this.waveDirector.arenaBoundary,
+      this.waveDirector.pillars,
+      this.waveDirector.blocks,
+      this.waveDirector.obstacles
+    );
     const span = getArenaHorizontalSpanAtY0(this.waveDirector.arenaBoundary);
     this.player = createInitialPlayer(shipDef, span.minX + 145);
   }
@@ -151,7 +162,12 @@ export class GameSim {
     const diffCfg = getDifficultyConfig(this.difficulty);
     this.combat.setAugments(this.augments);
     this.combat.setRunConfig(shipDef, diffCfg);
-    this.combat.setArenaBoundary(this.waveDirector.arenaBoundary);
+    this.combat.setArenaGeometry(
+      this.waveDirector.arenaBoundary,
+      this.waveDirector.pillars,
+      this.waveDirector.blocks,
+      this.waveDirector.obstacles
+    );
 
     const p = this.player;
     const dxAim = input.aimX - p.x;
@@ -360,7 +376,7 @@ export class GameSim {
       FIXED_DT,
       this.combat.enemies.length,
       p,
-      (arch, x, y) => this.combat.spawnEnemy(arch, x, y, this.waveDirector.wave),
+      (arch, x, y, isElite) => this.combat.spawnEnemy(arch, x, y, this.waveDirector.wave, isElite),
       this.events
     );
 
@@ -371,7 +387,7 @@ export class GameSim {
       input.selfHeld,
       this.waveDirector.wave,
       this.waveDirector.pillars,
-      (arch) => this.waveDirector.onEnemyKilled(arch, diffCfg.scoreMult),
+      (arch, isElite) => this.waveDirector.onEnemyKilled(arch, diffCfg.scoreMult, isElite),
       () => this.waveDirector.onPlayerDamaged(),
       this.events,
       this.waveDirector.blocks,
@@ -392,7 +408,12 @@ export class GameSim {
       }
       this.combat.clearTransientForSector();
       this.waveDirector.startWave(nextSector, this.events);
-      this.combat.setArenaBoundary(this.waveDirector.arenaBoundary);
+      this.combat.setArenaGeometry(
+        this.waveDirector.arenaBoundary,
+        this.waveDirector.pillars,
+        this.waveDirector.blocks,
+        this.waveDirector.obstacles
+      );
       p.x = getArenaHorizontalSpanAtY0(this.waveDirector.arenaBoundary).minX + 145;
       p.y = 0;
 
@@ -401,6 +422,8 @@ export class GameSim {
       this.phase = 'AUGMENT_CHOICE';
       this.events.push({ type: 'augment_offer', choices: this.pendingAugments });
     }
+
+    p.hp = Math.max(0, Math.min(p.maxHp, p.hp));
 
     if (p.hp <= 0) {
       this.phase = 'GAME_OVER';

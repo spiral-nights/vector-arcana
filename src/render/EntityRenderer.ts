@@ -63,6 +63,20 @@ function getEnemyWatercolorPalette(archetype: EnemyEntity['archetype']): {
       return { base: 0xc44dff, highlight: 0xf5a6ff, pool: 0x621299 };
     case 'SPLITTER':
       return { base: 0xffe600, highlight: 0xfff899, pool: 0xb87600 };
+    case 'LANCER':
+      return { base: 0xff4518, highlight: 0xffc266, pool: 0x991200 };
+    case 'VOLT_SPRINTER':
+      return { base: 0xfff222, highlight: 0xffffb0, pool: 0xb88600 };
+    case 'CRYO_SNIPER':
+      return { base: 0x5ef2ff, highlight: 0xe0ffff, pool: 0x0d7c9e };
+    case 'MENDER':
+      return { base: 0x39ff66, highlight: 0xc4ffcf, pool: 0x0a7a30 };
+    case 'VORTEX_DRONE':
+      return { base: 0x2e86ff, highlight: 0x99d6ff, pool: 0x0e2a8c };
+    case 'MINELAYER':
+      return { base: 0xff4791, highlight: 0xffb8d9, pool: 0x8c0c42 };
+    case 'OBELISK':
+      return { base: 0xe055ff, highlight: 0xffccff, pool: 0x630d8a };
     case 'WARDEN':
       return { base: 0xff2a85, highlight: 0xffad66, pool: 0x8f0d47 };
   }
@@ -1146,18 +1160,21 @@ export class EntityRenderer {
         }
       }
 
-      if (e.archetype === 'WARDEN') {
-        const plates = bodyGroup.userData.bossPlates as THREE.Object3D[] | undefined;
-        if (plates) {
-          for (let i = 0; i < plates.length; i++) {
-            const plate = plates[i];
-            if (!plate) continue;
-            plate.visible = i < e.bossShieldAngles.length;
-            if (plate.visible) {
-              plate.rotation.z = e.bossShieldAngles[i]! - e.angle;
-            }
+      const plates = bodyGroup.userData.bossPlates as THREE.Object3D[] | undefined;
+      if (plates) {
+        for (let i = 0; i < plates.length; i++) {
+          const plate = plates[i];
+          if (!plate) continue;
+          plate.visible = i < e.bossShieldAngles.length;
+          if (plate.visible) {
+            plate.rotation.z = e.bossShieldAngles[i]! - e.angle;
           }
         }
+      }
+
+      const spinChild = bodyGroup.userData.spinChild as THREE.Object3D | undefined;
+      if (spinChild) {
+        spinChild.rotation.z = e.spinPhase ?? timeSec * 2.5;
       }
 
       const telegraphs = bodyGroup.userData.telegraphs as THREE.Group[] | undefined;
@@ -1171,7 +1188,7 @@ export class EntityRenderer {
               ? [-0.26, 0.26]
               : [0]
             : [0];
-        const maxLen = e.archetype === 'WARDEN' ? 1900 : 1850;
+        const maxLen = e.archetype === 'WARDEN' ? 1900 : e.archetype === 'LANCER' ? 340 : 1850;
         const pulseOp = 0.55 + Math.sin(timeSec * 28) * 0.25;
         for (let ti = 0; ti < telegraphs.length; ti++) {
           const tg = telegraphs[ti]!;
@@ -1197,7 +1214,7 @@ export class EntityRenderer {
       }
 
       const hpBar = group.userData.hpBar as THREE.Group;
-      const showHp = e.hp < e.maxHp || e.archetype === 'WARDEN' || e.archetype === 'BASTION';
+      const showHp = e.hp < e.maxHp || e.archetype === 'WARDEN' || e.archetype === 'BASTION' || Boolean(e.isElite);
       hpBar.visible = showHp;
       if (showHp) {
         const ratio = Math.max(0.01, e.hp / Math.max(1, e.maxHp));
@@ -1517,6 +1534,189 @@ export class EntityRenderer {
       ];
       trimObj = new THREE.Mesh(buildRibbonGeometry(shipPts, 2.5, true, 8), createNeonRibbonMaterial(baseColor, 1.2, 0.95));
       bodyGroup.add(gem, trimObj, createGlowSprite(baseColor, r * 2.2, 0.2));
+    } else if (e.archetype === 'LANCER') {
+      // Needle-spearhead Thermal rammer with swept rear stabilizers
+      baseColor = 0xff4518;
+      hullMat = new THREE.MeshStandardMaterial({
+        color: 0x5c1806,
+        emissive: baseColor,
+        emissiveIntensity: 0.42,
+        roughness: 0.35,
+        metalness: 0.45,
+      });
+      const spear = new THREE.Mesh(new THREE.ConeGeometry(r * 0.48, r * 2.8, 4), hullMat);
+      spear.rotation.z = -Math.PI / 2;
+      spear.position.x = r * 0.25;
+      bodyGroup.add(spear);
+      const shipPts = [
+        { x: r * 1.65, y: 0 },
+        { x: -r * 0.2, y: r * 0.52 },
+        { x: -r * 1.0, y: r * 0.92 },
+        { x: -r * 0.55, y: 0 },
+        { x: -r * 1.0, y: -r * 0.92 },
+        { x: -r * 0.2, y: -r * 0.52 },
+      ];
+      trimObj = new THREE.Mesh(buildRibbonGeometry(shipPts, 2.6, true, 6), createNeonRibbonMaterial(baseColor, 1.28, 0.96));
+      bodyGroup.add(trimObj, createGlowSprite(baseColor, r * 2.2, 0.22));
+      const tele = this.makeTelegraphGroup(0xff4518, 2.6);
+      bodyGroup.add(tele);
+      bodyGroup.userData.telegraphs = [tele];
+    } else if (e.archetype === 'VOLT_SPRINTER') {
+      // Jagged electric yellow twin-prong zig-zag dart
+      baseColor = 0xfff733;
+      hullMat = new THREE.MeshStandardMaterial({
+        color: 0x4f4806,
+        emissive: baseColor,
+        emissiveIntensity: 0.4,
+        roughness: 0.3,
+        metalness: 0.4,
+      });
+      const core = new THREE.Mesh(new THREE.OctahedronGeometry(r * 0.56, 0), hullMat);
+      bodyGroup.add(core);
+      const shipPts = [
+        { x: r * 1.35, y: r * 0.25 },
+        { x: r * 0.3, y: r * 0.2 },
+        { x: -r * 0.5, y: r * 0.98 },
+        { x: -r * 0.95, y: 0 },
+        { x: -r * 0.5, y: -r * 0.98 },
+        { x: r * 0.3, y: -r * 0.2 },
+        { x: r * 1.35, y: -r * 0.25 },
+      ];
+      trimObj = new THREE.Mesh(buildRibbonGeometry(shipPts, 2.5, true, 6), createNeonRibbonMaterial(baseColor, 1.3, 0.96));
+      bodyGroup.add(trimObj, createGlowSprite(baseColor, r * 2.1, 0.22));
+    } else if (e.archetype === 'CRYO_SNIPER') {
+      // Long diamond-trident sniper frame with forward cryo rail
+      baseColor = 0x5ef2ff;
+      hullMat = new THREE.MeshStandardMaterial({
+        color: 0x0b3c4d,
+        emissive: baseColor,
+        emissiveIntensity: 0.38,
+        roughness: 0.35,
+        metalness: 0.5,
+      });
+      const barrel = new THREE.Mesh(new THREE.BoxGeometry(r * 2.2, r * 0.32, 8), hullMat);
+      barrel.position.x = r * 0.35;
+      const body = new THREE.Mesh(new THREE.BoxGeometry(r * 1.1, r * 1.05, 11), hullMat);
+      body.position.x = -r * 0.35;
+      bodyGroup.add(barrel, body);
+      const shipPts = [
+        { x: r * 1.65, y: 0 },
+        { x: r * 0.2, y: r * 0.3 },
+        { x: -r * 0.3, y: r * 0.96 },
+        { x: -r * 1.05, y: r * 0.45 },
+        { x: -r * 1.05, y: -r * 0.45 },
+        { x: -r * 0.3, y: -r * 0.96 },
+        { x: r * 0.2, y: -r * 0.3 },
+      ];
+      trimObj = new THREE.Mesh(buildRibbonGeometry(shipPts, 2.6, true, 7), createNeonRibbonMaterial(baseColor, 1.25, 0.96));
+      bodyGroup.add(trimObj, createGlowSprite(baseColor, r * 2.3, 0.22));
+      const tele = this.makeTelegraphGroup(0x00f5ff, 2.0);
+      bodyGroup.add(tele);
+      bodyGroup.userData.telegraphs = [tele];
+    } else if (e.archetype === 'MENDER') {
+      // Emerald support construct with rotating cross halo
+      baseColor = 0x39ff14;
+      hullMat = new THREE.MeshStandardMaterial({
+        color: 0x0c4218,
+        emissive: baseColor,
+        emissiveIntensity: 0.38,
+        roughness: 0.38,
+        metalness: 0.35,
+      });
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.65, r * 0.65, 10, 6), hullMat);
+      hub.rotation.x = Math.PI / 2;
+      bodyGroup.add(hub);
+      trimObj = new THREE.Mesh(buildRibbonGeometry(createPolygonPts(6, r * 0.95), 2.5, true, 7), createNeonRibbonMaterial(baseColor, 1.25, 0.95));
+      const spinCross = new THREE.Group();
+      spinCross.add(
+        new THREE.Mesh(buildRibbonGeometry([{ x: -r * 0.65, y: 0 }, { x: r * 0.65, y: 0 }], 2.4, false, 9), createNeonRibbonMaterial(0xc4ffcf, 1.3, 0.95)),
+        new THREE.Mesh(buildRibbonGeometry([{ x: 0, y: -r * 0.65 }, { x: 0, y: r * 0.65 }], 2.4, false, 9), createNeonRibbonMaterial(0xc4ffcf, 1.3, 0.95))
+      );
+      bodyGroup.add(trimObj, spinCross, createGlowSprite(baseColor, r * 2.3, 0.24));
+      bodyGroup.userData.spinChild = spinCross;
+    } else if (e.archetype === 'VORTEX_DRONE') {
+      // 6-blade gyroscope gravity-well disc
+      baseColor = 0x2e86ff;
+      hullMat = new THREE.MeshStandardMaterial({
+        color: 0x0e245c,
+        emissive: baseColor,
+        emissiveIntensity: 0.4,
+        roughness: 0.35,
+        metalness: 0.5,
+      });
+      const disc = new THREE.Mesh(new THREE.TorusGeometry(r * 0.72, r * 0.18, 6, 14), hullMat);
+      const core = new THREE.Mesh(
+        new THREE.OctahedronGeometry(r * 0.4, 0),
+        new THREE.MeshStandardMaterial({ color: 0x80ffff, emissive: 0x1a88ff, emissiveIntensity: 0.8 })
+      );
+      bodyGroup.add(disc, core);
+      const bladeGroup = new THREE.Group();
+      for (let b = 0; b < 6; b++) {
+        const a = (b / 6) * Math.PI * 2;
+        bladeGroup.add(
+          new THREE.Mesh(
+            buildRibbonGeometry(
+              [
+                { x: Math.cos(a) * r * 0.4, y: Math.sin(a) * r * 0.4 },
+                { x: Math.cos(a + 0.38) * r * 1.05, y: Math.sin(a + 0.38) * r * 1.05 },
+              ],
+              2.6,
+              false,
+              7
+            ),
+            createNeonRibbonMaterial(0x80ffff, 1.25, 0.92)
+          )
+        );
+      }
+      trimObj = new THREE.Mesh(buildRibbonGeometry(createPolygonPts(12, r * 0.95), 2.5, true, 6), createNeonRibbonMaterial(baseColor, 1.2, 0.95));
+      bodyGroup.add(trimObj, bladeGroup, createGlowSprite(baseColor, r * 2.4, 0.24));
+      bodyGroup.userData.spinChild = bladeGroup;
+    } else if (e.archetype === 'MINELAYER') {
+      // Armored wide hexagonal bomber with twin plasma pods
+      baseColor = 0xff4791;
+      hullMat = new THREE.MeshStandardMaterial({
+        color: 0x4d102a,
+        emissive: baseColor,
+        emissiveIntensity: 0.38,
+        roughness: 0.45,
+        metalness: 0.45,
+      });
+      const hull = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.92, r * 0.92, 13, 6), hullMat);
+      hull.rotation.x = Math.PI / 2;
+      bodyGroup.add(hull);
+      for (const side of [-1, 1]) {
+        const pod = new THREE.Mesh(
+          new THREE.SphereGeometry(r * 0.3, 8, 6),
+          new THREE.MeshStandardMaterial({ color: 0xff5e99, emissive: 0xff2e97, emissiveIntensity: 0.7 })
+        );
+        pod.position.set(-r * 0.2, side * r * 0.62, 6);
+        bodyGroup.add(pod);
+      }
+      trimObj = new THREE.Mesh(buildRibbonGeometry(createPolygonPts(6, r * 1.02), 2.8, true, 8), createNeonRibbonMaterial(baseColor, 1.2, 0.95));
+      bodyGroup.add(trimObj, createGlowSprite(baseColor, r * 2.4, 0.22));
+    } else if (e.archetype === 'OBELISK') {
+      // Heavy octagonal monolith with 1 rotating shield plate
+      baseColor = 0xe055ff;
+      hullMat = new THREE.MeshStandardMaterial({
+        color: 0x3b0c4f,
+        emissive: baseColor,
+        emissiveIntensity: 0.4,
+        roughness: 0.38,
+        metalness: 0.5,
+      });
+      const tower = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.72, r * 0.95, 18, 8), hullMat);
+      tower.rotation.x = Math.PI / 2;
+      bodyGroup.add(tower);
+      trimObj = new THREE.Mesh(buildRibbonGeometry(createPolygonPts(8, r * 1.02), 3.0, true, 10), createNeonRibbonMaterial(baseColor, 1.25, 0.96));
+      bodyGroup.add(trimObj);
+      const platePts: Array<{ x: number; y: number }> = [];
+      for (let i = 0; i <= 10; i++) {
+        const a = -0.45 + (i / 10) * 0.9;
+        platePts.push({ x: Math.cos(a) * (r + 12), y: Math.sin(a) * (r + 12) });
+      }
+      const plate = new THREE.Mesh(buildRibbonGeometry(platePts, 4.0, false, 6), createNeonRibbonMaterial(0xe6f0ff, 1.25, 0.98));
+      bodyGroup.add(plate, createGlowSprite(baseColor, r * 2.5, 0.24));
+      bodyGroup.userData.bossPlates = [plate];
     } else {
       // WARDEN Boss — Massive Multi-Winged Dreadnought Command Carrier with 4 rotating armor plates
       baseColor = 0xff2e97;
@@ -1699,6 +1899,60 @@ export class EntityRenderer {
       innerStrokes = [
         { pts: createPolygonPts(4, r * 0.38), closed: true, w: 2.2 },
       ];
+    } else if (e.archetype === 'LANCER') {
+      outerPts = [
+        { x: r * 1.65, y: 0 },
+        { x: -r * 0.2, y: r * 0.52 },
+        { x: -r * 1.0, y: r * 0.92 },
+        { x: -r * 0.55, y: 0 },
+        { x: -r * 1.0, y: -r * 0.92 },
+        { x: -r * 0.2, y: -r * 0.52 },
+      ];
+      innerStrokes = [{ pts: [{ x: r * 1.2, y: 0 }, { x: -r * 0.4, y: 0 }], w: 2.4 }];
+    } else if (e.archetype === 'VOLT_SPRINTER') {
+      outerPts = [
+        { x: r * 1.35, y: r * 0.25 },
+        { x: r * 0.3, y: r * 0.2 },
+        { x: -r * 0.5, y: r * 0.98 },
+        { x: -r * 0.95, y: 0 },
+        { x: -r * 0.5, y: -r * 0.98 },
+        { x: r * 0.3, y: -r * 0.2 },
+        { x: r * 1.35, y: -r * 0.25 },
+      ];
+      innerStrokes = [{ pts: createPolygonPts(4, r * 0.32), closed: true, w: 2.0 }];
+    } else if (e.archetype === 'CRYO_SNIPER') {
+      outerPts = [
+        { x: r * 1.65, y: 0 },
+        { x: r * 0.2, y: r * 0.3 },
+        { x: -r * 0.3, y: r * 0.96 },
+        { x: -r * 1.05, y: r * 0.45 },
+        { x: -r * 1.05, y: -r * 0.45 },
+        { x: -r * 0.3, y: -r * 0.96 },
+        { x: r * 0.2, y: -r * 0.3 },
+      ];
+      innerStrokes = [
+        { pts: [{ x: r * 1.35, y: 0 }, { x: -r * 0.6, y: 0 }], w: 2.2 },
+        { pts: createPolygonPts(6, r * 0.35), closed: true, w: 2.0 },
+      ];
+    } else if (e.archetype === 'MENDER') {
+      outerPts = createPolygonPts(6, r * 0.98);
+      innerStrokes = [{ pts: createPolygonPts(6, r * 0.52), closed: true, w: 2.0 }];
+    } else if (e.archetype === 'VORTEX_DRONE') {
+      outerPts = createPolygonPts(12, r * 0.96);
+      innerStrokes = [{ pts: createPolygonPts(6, r * 0.42), closed: true, w: 2.2 }];
+    } else if (e.archetype === 'MINELAYER') {
+      outerPts = createPolygonPts(6, r * 1.04);
+      innerStrokes = [
+        { pts: createPolygonPts(6, r * 0.46), closed: true, w: 2.2 },
+        { pts: [{ x: -r * 0.3, y: r * 0.5 }, { x: r * 0.3, y: r * 0.5 }], w: 2.4 },
+        { pts: [{ x: -r * 0.3, y: -r * 0.5 }, { x: r * 0.3, y: -r * 0.5 }], w: 2.4 },
+      ];
+    } else if (e.archetype === 'OBELISK') {
+      outerPts = createPolygonPts(8, r * 1.04);
+      innerStrokes = [
+        { pts: createPolygonPts(4, r * 0.54, Math.PI / 4), closed: true, w: 2.4 },
+        { pts: createPolygonPts(8, r * 0.72), closed: true, w: 2.0 },
+      ];
     } else {
       outerPts = [
         { x: r * 1.35, y: r * 0.36 },
@@ -1759,6 +2013,72 @@ export class EntityRenderer {
       const tele = this.makeTelegraphGroup(0xff2a85, 3.0);
       bodyGroup.add(tele);
       bodyGroup.userData.telegraphs = [tele];
+    } else if (e.archetype === 'LANCER') {
+      const tele = this.makeTelegraphGroup(0xff4518, 2.8);
+      bodyGroup.add(tele);
+      bodyGroup.userData.telegraphs = [tele];
+    } else if (e.archetype === 'CRYO_SNIPER') {
+      const tele = this.makeTelegraphGroup(0x00f5ff, 2.2);
+      bodyGroup.add(tele);
+      bodyGroup.userData.telegraphs = [tele];
+    } else if (e.archetype === 'MENDER') {
+      const spinCross = new THREE.Group();
+      for (const pts of [
+        [{ x: -r * 0.65, y: 0 }, { x: r * 0.65, y: 0 }],
+        [{ x: 0, y: -r * 0.65 }, { x: 0, y: r * 0.65 }],
+      ]) {
+        const m = new THREE.Mesh(
+          buildInkOutlineGeometry(pts, 2.8, false, 4.0, 1.2, 0.3),
+          createSumiInkMaterial(0.95, 0.4)
+        );
+        m.renderOrder = 16;
+        spinCross.add(m);
+      }
+      bodyGroup.add(spinCross);
+      bodyGroup.userData.spinChild = spinCross;
+    } else if (e.archetype === 'VORTEX_DRONE') {
+      const bladeGroup = new THREE.Group();
+      for (let b = 0; b < 6; b++) {
+        const a = (b / 6) * Math.PI * 2;
+        const m = new THREE.Mesh(
+          buildInkOutlineGeometry(
+            [
+              { x: Math.cos(a) * r * 0.4, y: Math.sin(a) * r * 0.4 },
+              { x: Math.cos(a + 0.38) * r * 1.08, y: Math.sin(a + 0.38) * r * 1.08 },
+            ],
+            2.8,
+            false,
+            4.0,
+            1.4,
+            0.35
+          ),
+          createSumiInkMaterial(0.95, 0.45)
+        );
+        m.renderOrder = 16;
+        bladeGroup.add(m);
+      }
+      bodyGroup.add(bladeGroup);
+      bodyGroup.userData.spinChild = bladeGroup;
+    } else if (e.archetype === 'OBELISK') {
+      const platePts: Array<{ x: number; y: number }> = [];
+      for (let i = 0; i <= 10; i++) {
+        const a = -0.45 + (i / 10) * 0.9;
+        platePts.push({ x: Math.cos(a) * (r + 12), y: Math.sin(a) * (r + 12) });
+      }
+      const plate = new THREE.Group();
+      const pWash = new THREE.Mesh(
+        buildRibbonGeometry(platePts, 6.8, false, 4.5),
+        createWatercolorRibbonMaterial(0x70e4ff, 0.92, 0.35)
+      );
+      pWash.renderOrder = 11;
+      const pInk = new THREE.Mesh(
+        buildInkOutlineGeometry(platePts, 3.0, false, 5.2, 1.6, 0.4),
+        createSumiInkMaterial(0.97, 0.5)
+      );
+      pInk.renderOrder = 15;
+      plate.add(pWash, pInk);
+      bodyGroup.add(plate);
+      bodyGroup.userData.bossPlates = [plate];
     } else if (e.archetype === 'WARDEN') {
       const bossPlates: THREE.Object3D[] = [];
       for (let p = 0; p < 4; p++) {
@@ -1831,10 +2151,19 @@ export class EntityRenderer {
       root.userData.shieldFill = shieldFill;
     }
 
-    hpBar.visible = e.archetype === 'WARDEN' || e.archetype === 'BASTION';
+    hpBar.visible = e.archetype === 'WARDEN' || e.archetype === 'BASTION' || Boolean(e.isElite);
     root.add(hpBar);
     root.userData.hpBar = hpBar;
     root.userData.hpFill = hpFill;
+
+    if (e.isElite) {
+      const eliteRing = new THREE.Mesh(
+        buildRibbonGeometry(createPolygonPts(8, r * 1.48), isWc ? 3.2 : 2.6, true, -zHeight + 0.8),
+        isWc ? createWatercolorRibbonMaterial(0xffd700, 0.92, 0.4) : createNeonRibbonMaterial(0xffd700, 1.3, 0.92)
+      );
+      if (isWc) eliteRing.renderOrder = 11;
+      root.add(eliteRing);
+    }
 
     // Diegetic Status Indicator Meshes
     const iceGeo = new THREE.OctahedronGeometry(r * 1.38, 0);

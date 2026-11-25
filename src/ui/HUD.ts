@@ -30,44 +30,44 @@ export interface HUDCallbacks {
 function getElementSvg(id: QueueElement, color: string): string {
   switch (id) {
     case 'FLUX':
-      return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.8">
+      return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.8">
         <circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7" opacity="0.8"/><circle cx="12" cy="12" r="10" opacity="0.45"/>
       </svg>`;
     case 'NANO':
-      return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="square">
+      return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="square">
         <line x1="12" y1="4" x2="12" y2="20"/><line x1="4" y1="12" x2="20" y2="12"/>
       </svg>`;
     case 'BARRIER':
-      return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2">
+      return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2">
         <polygon points="8,3 16,3 21,8 21,16 16,21 8,21 3,16 3,8"/>
       </svg>`;
     case 'CRYO':
-      return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.8">
+      return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.8">
         <polygon points="12,2 20,7 20,17 12,22 4,17 4,7"/>
         <line x1="12" y1="2" x2="12" y2="22" opacity="0.65"/>
         <line x1="4" y1="7" x2="20" y2="17" opacity="0.65"/>
         <line x1="20" y1="7" x2="4" y2="17" opacity="0.65"/>
       </svg>`;
     case 'VOLT':
-      return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round">
+      return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round">
         <polyline points="14,2 7,12 13,12 10,22"/>
       </svg>`;
     case 'VOID':
-      return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.9" stroke-linecap="round">
+      return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.9" stroke-linecap="round">
         <circle cx="12" cy="12" r="8.5" fill="#07050a" stroke="${color}" stroke-width="1.3"/>
         <path d="M12 12a2 2 0 1 0 2-2 4 4 0 1 0-4 4 6 6 0 1 0 6-6 8 8 0 1 0-8 8"/>
       </svg>`;
     case 'KINETIC':
-      return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.8">
+      return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.8">
         <rect x="4" y="7" width="11" height="11"/><rect x="9" y="3" width="11" height="11" opacity="0.7"/>
         <line x1="4" y1="7" x2="9" y2="3"/><line x1="15" y1="7" x2="20" y2="3"/><line x1="15" y1="18" x2="20" y2="14"/>
       </svg>`;
     case 'THERMAL':
-      return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.1" stroke-linejoin="round">
+      return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.1" stroke-linejoin="round">
         <polygon points="12,3 21,20 3,20"/>
       </svg>`;
     default:
-      return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2"><circle cx="12" cy="12" r="8"/></svg>`;
+      return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2"><circle cx="12" cy="12" r="8"/></svg>`;
   }
 }
 
@@ -91,6 +91,9 @@ export class HUD {
   private readonly multEl: HTMLElement;
   private readonly hullFill: HTMLElement;
   private readonly hullText: HTMLElement;
+  private readonly armorRow: HTMLElement;
+  private readonly armorFill: HTMLElement;
+  private readonly armorText: HTMLElement;
   private readonly overdriveFill: HTMLElement;
   private readonly bossWrap: HTMLElement;
   private readonly bossFill: HTMLElement;
@@ -168,6 +171,10 @@ export class HUD {
                 <div class="bar-header"><span>HULL</span><span id="hud-hull-txt">100/100</span></div>
                 <div class="bar-track"><div class="bar-fill hull" id="hud-hull-fill" style="width:100%"></div></div>
               </div>
+              <div class="bar-row" id="hud-armor-row" style="display:none;">
+                <div class="bar-header"><span>ARMOR</span><span id="hud-armor-txt">0/140</span></div>
+                <div class="bar-track"><div class="bar-fill armor" id="hud-armor-fill" style="width:0%"></div></div>
+              </div>
               <div class="bar-row">
                 <div class="bar-header"><span>OVERDRIVE</span></div>
                 <div class="bar-track"><div class="bar-fill overdrive" id="hud-od-fill" style="width:0%"></div></div>
@@ -197,14 +204,15 @@ export class HUD {
       <div id="wave-banner" style="position:fixed;top:24%;left:50%;transform:translateX(-50%);font-size:28px;font-weight:800;letter-spacing:0.2em;color:#00f5ff;text-shadow:0 0 18px rgba(0,245,255,0.7);opacity:0;transition:opacity 0.25s;pointer-events:none;"></div>
 
       <div class="hud-bottom">
-        <div class="channel-wrap" id="hud-channel-wrap" style="display:none;width:240px;">
+        <div class="channel-wrap" id="hud-channel-wrap" style="display:none;width:210px;">
           <div class="bar-header"><span id="hud-channel-label">CHANNELING</span></div>
           <div class="bar-track"><div class="bar-fill" id="hud-channel-fill" style="width:100%;background:#00f5ff;"></div></div>
         </div>
         <div class="queue-preview" id="hud-queue">QUEUE: EMPTY</div>
         <div class="hotbar" id="hud-hotbar"></div>
-        <div class="controls-hint" id="hud-hint"></div>
       </div>
+
+      <div class="controls-hint" id="hud-hint"></div>
 
       <div class="minimap-panel">
         <span class="minimap-label">SECTOR RADAR</span>
@@ -358,6 +366,9 @@ export class HUD {
     this.multEl = this.root.querySelector('#hud-mult')!;
     this.hullFill = this.root.querySelector('#hud-hull-fill')!;
     this.hullText = this.root.querySelector('#hud-hull-txt')!;
+    this.armorRow = this.root.querySelector('#hud-armor-row')!;
+    this.armorFill = this.root.querySelector('#hud-armor-fill')!;
+    this.armorText = this.root.querySelector('#hud-armor-txt')!;
     this.overdriveFill = this.root.querySelector('#hud-od-fill')!;
     this.bossWrap = this.root.querySelector('#boss-wrap')!;
     this.bossFill = this.root.querySelector('#boss-fill')!;
@@ -404,19 +415,28 @@ export class HUD {
     this.camTiltBtn = this.root.querySelector('#set-cam-tilt')!;
 
     const hotbar = this.root.querySelector('#hud-hotbar')!;
-    for (const el of BASE_ELEMENTS) {
-      const meta = ELEMENT_META[el];
-      const slot = document.createElement('div');
-      slot.className = 'hotbar-slot';
-      slot.style.borderColor = `${meta.color}66`;
-      slot.innerHTML = `
-        <span class="hotbar-key" style="color:${meta.color}">${meta.hotkey}</span>
-        ${getElementSvg(el, meta.color)}
-        <span class="hotbar-name" style="color:${meta.color}">${meta.name}</span>
-      `;
-      hotbar.appendChild(slot);
-      this.slotEls.set(el, slot);
-    }
+    const topRowEls: QueueElement[] = ['FLUX', 'NANO', 'BARRIER', 'CRYO'];
+    const botRowEls: QueueElement[] = ['VOLT', 'VOID', 'KINETIC', 'THERMAL'];
+    const appendRow = (els: readonly QueueElement[], rowClass: string): void => {
+      const row = document.createElement('div');
+      row.className = `hotbar-row ${rowClass}`;
+      for (const el of els) {
+        const meta = ELEMENT_META[el];
+        const slot = document.createElement('div');
+        slot.className = 'hotbar-slot';
+        slot.style.borderColor = `${meta.color}66`;
+        slot.innerHTML = `
+          <span class="hotbar-key" style="color:${meta.color}">${meta.hotkey}</span>
+          ${getElementSvg(el, meta.color)}
+          <span class="hotbar-name" style="color:${meta.color}">${meta.name}</span>
+        `;
+        row.appendChild(slot);
+        this.slotEls.set(el, slot);
+      }
+      hotbar.appendChild(row);
+    };
+    appendRow(topRowEls, 'hotbar-row-top');
+    appendRow(botRowEls, 'hotbar-row-bottom');
 
     this.styleBtn.addEventListener('click', () => {
       callbacks.onSettingsChange({
@@ -833,15 +853,23 @@ export class HUD {
       ctx.fillStyle =
         e.archetype === 'WARDEN' ? '#ff2e97' :
         e.archetype === 'BASTION' ? '#e6f0ff' :
-        e.archetype === 'STALKER' ? '#00f5ff' :
-        e.archetype === 'PYRO_SPRAYER' ? '#ff6a00' :
+        e.archetype === 'STALKER' || e.archetype === 'CRYO_SNIPER' ? '#00f5ff' :
+        e.archetype === 'PYRO_SPRAYER' || e.archetype === 'LANCER' ? '#ff6a00' :
         e.archetype === 'GEO_BOMBER' ? '#a86b3e' :
-        e.archetype === 'WEAVER' ? '#b429ff' :
-        e.archetype === 'SPLITTER' ? '#fff733' : '#ff2e97';
-      const r = e.archetype === 'WARDEN' ? 5 : 2.3;
+        e.archetype === 'WEAVER' || e.archetype === 'OBELISK' ? '#b429ff' :
+        e.archetype === 'SPLITTER' || e.archetype === 'VOLT_SPRINTER' ? '#fff733' :
+        e.archetype === 'MENDER' ? '#39ff14' :
+        e.archetype === 'VORTEX_DRONE' ? '#1a88ff' :
+        e.archetype === 'MINELAYER' ? '#ff5e99' : '#ff2e97';
+      const r = e.archetype === 'WARDEN' ? 5 : e.isElite ? 3.2 : 2.3;
       ctx.beginPath();
       ctx.arc(toX(e.x), toY(e.y), r, 0, Math.PI * 2);
       ctx.fill();
+      if (e.isElite) {
+        ctx.strokeStyle = '#ffd700';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
     }
 
     // East Gate
@@ -887,8 +915,17 @@ export class HUD {
     const hpPct = Math.max(0, Math.min(100, (snapshot.player.hp / snapshot.player.maxHp) * 100));
     this.hullFill.style.width = `${hpPct}%`;
     this.hullFill.classList.toggle('low', hpPct <= 35);
-    const armorTxt = snapshot.player.armorHp > 0 ? ` +${Math.ceil(snapshot.player.armorHp)}` : '';
-    this.hullText.textContent = `${Math.ceil(snapshot.player.hp)}/${snapshot.player.maxHp}${armorTxt}`;
+    const clampedHp = Math.max(0, Math.min(snapshot.player.maxHp, Math.ceil(snapshot.player.hp)));
+    this.hullText.textContent = `${clampedHp}/${snapshot.player.maxHp}`;
+
+    if (snapshot.player.armorHp > 0) {
+      this.armorRow.style.display = 'flex';
+      const armorPct = Math.max(0, Math.min(100, (snapshot.player.armorHp / Math.max(1, snapshot.player.maxArmorHp)) * 100));
+      this.armorFill.style.width = `${armorPct}%`;
+      this.armorText.textContent = `${Math.ceil(snapshot.player.armorHp)}/${snapshot.player.maxArmorHp}`;
+    } else {
+      this.armorRow.style.display = 'none';
+    }
 
     const odPct = Math.max(0, Math.min(100, (snapshot.player.overclockTimer / snapshot.player.overclockMax) * 100));
     this.overdriveFill.style.width = `${odPct}%`;

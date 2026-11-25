@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { createConvexObstacle, makeRotatedRectVerts } from './ArenaGeometry';
+import { getWaveScaling } from './EnemyAI';
 import { GameSim } from './GameSim';
 import { BaseElement, ELEMENT_META, FIXED_DT, SimInput } from './types';
 
@@ -1253,5 +1255,207 @@ describe('CombatEngine — Balance, Blocking, Overlap & Combo Rules', () => {
     expect(e.statuses.FROZEN).toBeDefined();
     expect(e.statuses.CHILLED).toBeUndefined();
     expect(ev.some((x) => x.type === 'damage_number' && x.text === 'FROZEN!')).toBe(true);
+  });
+});
+
+describe('CombatEngine — Max Health Cap, Spray Wall Blocking, Endless Scaling & New Enemies', () => {
+  it('never exceeds maxHp from Nano kill heals, Nano wall pulses, or sector gate heals', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    const p = sim.getSnapshot().player;
+    p.x = 0;
+    p.y = 0;
+    p.hp = p.maxHp - 2;
+
+    // 1. Nano kill heal clamps strictly to maxHp and reports actual healed HP (+2 HP)
+    const marked = sim.combat.spawnEnemy('SWARMER', 180, 0, 1);
+    marked.nanoMarkTimer = 3.0;
+    marked.hp = 0;
+    sim.drainEvents();
+    sim.step(makeInput());
+    expect(sim.getSnapshot().player.hp).toBe(p.maxHp);
+    const evs = sim.drainEvents();
+    expect(evs.some((ev) => ev.type === 'damage_number' && ev.text === '+2 HP')).toBe(true);
+
+    // 2. Nano wall pulse at full HP does not exceed maxHp or emit heal burst
+    queueAndStep(sim, ['BARRIER', 'KINETIC', 'NANO']);
+    sim.step(makeInput({ castAction: 'FORWARD', aimX: 200, aimY: 0 }));
+    for (const w of sim.getSnapshot().walls) {
+      w.x = p.x + 20;
+      w.y = p.y;
+      w.pulseTimer = 0.01;
+    }
+    sim.drainEvents();
+    sim.step(makeInput());
+    expect(sim.getSnapshot().player.hp).toBe(p.maxHp);
+  });
+
+  it('blocks player Forward & Nova sprays and enemy Pyro sprays through walls & obstacles', () => {
+    // 1. Player forward THERMAL / FLUX spray blocked by ArenaObstacle, ArenaPillar, and WallPylon
+    const simObs = new GameSim();
+    simObs.combat.enemies = [];
+    simObs.waveDirector.rifts = [];
+    simObs.waveDirector.pillars = [];
+    simObs.waveDirector.blocks = [];
+    simObs.waveDirector.obstacles = [createConvexObstacle(1, makeRotatedRectVerts(120, 0, 30, 140, 0), 80, 'BUNKER')];
+    const p = simObs.getSnapshot().player;
+    p.x = 0;
+    p.y = 0;
+    const behindObs = simObs.combat.spawnEnemy('BASTION', 240, 0, 1);
+    behindObs.hasFrontShield = false;
+
+    queueAndStep(simObs, ['THERMAL']);
+    simObs.step(makeInput({ castAction: 'FORWARD', castHeld: true, aimX: 300, aimY: 0 }));
+    for (let i = 0; i < 6; i++) simObs.step(makeInput({ castHeld: true, aimX: 300, aimY: 0 }));
+    expect(behindObs.hp).toBe(behindObs.maxHp);
+
+    // Nova spray also blocked by obstacle
+    queueAndStep(simObs, ['FLUX']);
+    simObs.step(makeInput({ castAction: 'NOVA', aimX: 300, aimY: 0 }));
+    expect(behindObs.statuses.PRIMED).toBeUndefined();
+
+    // Pillar blocks forward spray
+    simObs.waveDirector.obstacles = [];
+    simObs.waveDirector.pillars = [{ id: 1, x: 110, y: 0, radius: 42, sides: 6 }];
+    queueAndStep(simObs, ['THERMAL']);
+    simObs.step(makeInput({ castAction: 'FORWARD', castHeld: true, aimX: 300, aimY: 0 }));
+    for (let i = 0; i < 6; i++) simObs.step(makeInput({ castHeld: true, aimX: 300, aimY: 0 }));
+    expect(behindObs.hp).toBe(behindObs.maxHp);
+
+    // Player-deployed wall blocks spray
+    simObs.waveDirector.pillars = [];
+    queueAndStep(simObs, ['BARRIER', 'KINETIC']);
+    simObs.step(makeInput({ castAction: 'FORWARD', aimX: 300, aimY: 0 }));
+    for (let i = 0; i < 12; i++) simObs.step(makeInput());
+    queueAndStep(simObs, ['THERMAL']);
+    simObs.step(makeInput({ castAction: 'FORWARD', castHeld: true, aimX: 300, aimY: 0 }));
+    for (let i = 0; i < 6; i++) simObs.step(makeInput({ castHeld: true, aimX: 300, aimY: 0 }));
+    expect(behindObs.hp).toBe(behindObs.maxHp);
+
+    // 2. Enemy PYRO_SPRAYER spray blocked by ArenaObstacle
+    const simPyro = new GameSim();
+    simPyro.combat.enemies = [];
+    simPyro.waveDirector.rifts = [];
+    simPyro.waveDirector.pillars = [];
+    simPyro.waveDirector.blocks = [];
+    simPyro.waveDirector.obstacles = [createConvexObstacle(1, makeRotatedRectVerts(100, 0, 28, 130, 0), 80, 'BUNKER')];
+    const pp = simPyro.getSnapshot().player;
+    pp.x = 0;
+    pp.y = 0;
+    const pyro = simPyro.combat.spawnEnemy('PYRO_SPRAYER', 200, 0, 1);
+    pyro.aiState = 'FIRE';
+    pyro.aiTimer = 1.0;
+    pyro.beamAngle = 0;
+    pyro.angle = Math.PI;
+    const hpBefore = pp.hp;
+    for (let i = 0; i < 4; i++) simPyro.step(makeInput());
+    expect(pp.hp).toBe(hpBefore);
+  });
+
+  it('scales enemy stats, wave size, elites, and wave difficulty continuously across higher waves', () => {
+    const s1 = getWaveScaling(1);
+    const s5 = getWaveScaling(5);
+    const s10 = getWaveScaling(10);
+    const s15 = getWaveScaling(15);
+    expect(s1.hpScale).toBe(1);
+    expect(s5.hpScale).toBeGreaterThan(s1.hpScale * 2);
+    expect(s10.hpScale).toBeGreaterThan(s5.hpScale * 2);
+    expect(s15.hpScale).toBeGreaterThan(s10.hpScale * 1.8);
+    expect(s15.dmgScale).toBeGreaterThan(s10.dmgScale);
+    expect(s15.speedScale).toBeGreaterThan(s10.speedScale);
+
+    const sim = new GameSim();
+    const b1 = sim.combat.spawnEnemy('BASTION', 0, 0, 1);
+    const b10 = sim.combat.spawnEnemy('BASTION', 0, 0, 10);
+    const b10Elite = sim.combat.spawnEnemy('BASTION', 0, 0, 10, true);
+    expect(b10.maxHp).toBeGreaterThan(b1.maxHp * 4);
+    expect(b10Elite.maxHp).toBeGreaterThan(b10.maxHp * 1.5);
+    expect(b10Elite.radius).toBeGreaterThan(b10.radius);
+    expect(b10Elite.baseArmor).toBeGreaterThan(b10.baseArmor);
+
+    // Sector squads continue growing past Wave 14
+    sim.waveDirector.startWave(8, []);
+    const w8Count = sim.waveDirector.rifts.reduce((sum, r) => sum + r.archetypes.length, 0);
+    sim.waveDirector.startWave(16, []);
+    const w16Count = sim.waveDirector.rifts.reduce((sum, r) => sum + r.archetypes.length, 0);
+    expect(w16Count).toBeGreaterThan(w8Count);
+    expect(sim.waveDirector.rifts.some((r) => (r.eliteIndices?.length ?? 0) > 0)).toBe(true);
+  });
+
+  it('executes distinct behaviors for all 7 new enemy archetypes', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    sim.waveDirector.pillars = [];
+    sim.waveDirector.blocks = [];
+    sim.waveDirector.obstacles = [];
+    const p = sim.getSnapshot().player;
+    p.x = 0;
+    p.y = 0;
+
+    // 1. LANCER lunges on CHARGE -> FIRE
+    const lancer = sim.combat.spawnEnemy('LANCER', 260, 0, 1);
+    lancer.aiState = 'CHARGE';
+    lancer.aiTimer = 0.01;
+    lancer.beamAngle = Math.PI;
+    sim.step(makeInput());
+    expect(lancer.aiState).toBe('FIRE');
+    expect(Math.hypot(lancer.vx, lancer.vy)).toBeGreaterThan(400);
+
+    // 2. VOLT_SPRINTER fires VOLT_ORB
+    sim.combat.enemies = [];
+    sim.combat.projectiles = [];
+    const sprinter = sim.combat.spawnEnemy('VOLT_SPRINTER', 220, 0, 1);
+    sprinter.aiState = 'CHARGE';
+    sprinter.aiTimer = 0.01;
+    sim.step(makeInput());
+    expect(sim.getSnapshot().projectiles.some((pr) => pr.kind === 'VOLT_ORB')).toBe(true);
+
+    // 3. CRYO_SNIPER fires fast CRYO_LANCE
+    sim.combat.enemies = [];
+    sim.combat.projectiles = [];
+    const sniper = sim.combat.spawnEnemy('CRYO_SNIPER', 400, 0, 1);
+    sniper.aiState = 'CHARGE';
+    sniper.aiTimer = 0.01;
+    sniper.beamAngle = Math.PI;
+    sim.step(makeInput());
+    expect(sim.getSnapshot().projectiles.some((pr) => pr.kind === 'CRYO_LANCE')).toBe(true);
+
+    // 4. MENDER heals injured ally up to maxHp (never above)
+    sim.combat.enemies = [];
+    const mender = sim.combat.spawnEnemy('MENDER', 240, 0, 1);
+    const ally = sim.combat.spawnEnemy('BASTION', 290, 0, 1);
+    ally.hp = ally.maxHp - 5;
+    mender.aiTimer = 0.01;
+    sim.step(makeInput());
+    expect(ally.hp).toBe(ally.maxHp);
+
+    // 5. VORTEX_DRONE fires radial PLASMA_ORB ring
+    sim.combat.enemies = [];
+    sim.combat.projectiles = [];
+    const vortex = sim.combat.spawnEnemy('VORTEX_DRONE', 230, 0, 1);
+    vortex.aiTimer = 0.01;
+    sim.step(makeInput());
+    expect(sim.getSnapshot().projectiles.filter((pr) => pr.kind === 'PLASMA_ORB').length).toBe(6);
+
+    // 6. MINELAYER spawns plasma hazards
+    sim.combat.enemies = [];
+    sim.combat.hazards = [];
+    const minelayer = sim.combat.spawnEnemy('MINELAYER', 320, 0, 1);
+    minelayer.aiTimer = 0.01;
+    sim.step(makeInput());
+    expect(sim.getSnapshot().hazards.length).toBeGreaterThanOrEqual(2);
+
+    // 7. OBELISK rotating shield plate blocks non-Kinetic hits and fires 4-way PLASMA_ORB burst
+    sim.combat.enemies = [];
+    sim.combat.projectiles = [];
+    const obelisk = sim.combat.spawnEnemy('OBELISK', 280, 0, 1);
+    obelisk.bossShieldAngles = [Math.PI]; // facing West (-X) toward player at (0,0)
+    sim.combat.applyElementalHit(obelisk, 40, ['CRYO'], 1, 0, []);
+    expect(obelisk.hp).toBe(obelisk.maxHp);
+    obelisk.aiTimer = 0.01;
+    sim.step(makeInput());
+    expect(sim.getSnapshot().projectiles.filter((pr) => pr.kind === 'PLASMA_ORB').length).toBe(4);
   });
 });

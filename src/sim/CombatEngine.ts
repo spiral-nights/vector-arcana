@@ -1,13 +1,16 @@
 import {
+  BlockedRayScene,
   circleVsConvexPoly,
   clampPointToConvexPoly,
+  computeBlockedRayLength,
   DEFAULT_RECT_BOUNDARY,
+  isSegmentBlockedByGeometry,
   pointInConvexPoly,
   rayVsArenaBoundary,
   rayVsConvexPoly,
 } from './ArenaGeometry';
 import { getAugmentStacks } from './Augments';
-import { createEnemy, normalizeAngle, stepEnemyAI } from './EnemyAI';
+import { createEnemy, getWaveScaling, normalizeAngle, stepEnemyAI } from './EnemyAI';
 import { getDifficultyConfig, getShipDef } from './Ships';
 import { computeComposition, ResolvedSelfCast, ResolvedSpell } from './SpellResolver';
 import {
@@ -217,6 +220,9 @@ export class CombatEngine {
   private shipDef: ShipDef = getShipDef('VANGUARD');
   private difficulty: DifficultyConfig = getDifficultyConfig('VETERAN');
   private currentBoundary: readonly Vec2[] = DEFAULT_RECT_BOUNDARY;
+  private currentPillars: readonly ArenaPillar[] = [];
+  private currentBlocks: readonly ArenaBlock[] = [];
+  private currentObstacles: readonly ArenaObstacle[] = [];
 
   public setAugments(augments: Partial<Record<AugmentId, number>>): void {
     this.augments = augments;
@@ -229,6 +235,29 @@ export class CombatEngine {
 
   public setArenaBoundary(boundary: readonly Vec2[]): void {
     this.currentBoundary = boundary;
+  }
+
+  public setArenaGeometry(
+    boundary: readonly Vec2[],
+    pillars: readonly ArenaPillar[],
+    blocks: readonly ArenaBlock[],
+    obstacles: readonly ArenaObstacle[]
+  ): void {
+    this.currentBoundary = boundary;
+    this.currentPillars = pillars;
+    this.currentBlocks = blocks;
+    this.currentObstacles = obstacles;
+  }
+
+  private getBlockedScene(): BlockedRayScene {
+    return {
+      arenaBoundary: this.currentBoundary,
+      pillars: this.currentPillars,
+      blocks: this.currentBlocks,
+      obstacles: this.currentObstacles,
+      walls: this.walls,
+      shields: this.shields,
+    };
   }
 
   private getSpellAccentColor(elements: readonly QueueElement[], comp: ElementComposition): number {
@@ -375,8 +404,14 @@ export class CombatEngine {
     this.refractedBeamIds.clear();
   }
 
-  public spawnEnemy(archetype: EnemyArchetype, x: number, y: number, wave: number): EnemyEntity {
-    const enemy = createEnemy(this.nextId++, archetype, x, y, wave, this.difficulty);
+  public spawnEnemy(
+    archetype: EnemyArchetype,
+    x: number,
+    y: number,
+    wave: number,
+    isElite = false
+  ): EnemyEntity {
+    const enemy = createEnemy(this.nextId++, archetype, x, y, wave, this.difficulty, isElite);
     this.enemies.push(enemy);
     return enemy;
   }
@@ -511,7 +546,7 @@ export class CombatEngine {
         const radius = Math.round((135 + comp.totalPower * 45) * rangeMult);
         const fluxStacks = getAugmentStacks(this.augments, 'FLUX_TIDAL_SURGE');
         const knockback = selfCast.elements.includes('FLUX') ? 185 * (1 + 0.4 * fluxStacks) : 0;
-        this.applyAoEDamage(player.x, player.y, radius, 28 * comp.totalPower, selfCast.elements, knockback, events);
+        this.applyAoEDamage(player.x, player.y, radius, 28 * comp.totalPower, selfCast.elements, knockback, events, true);
         events.push({
           type: 'vfx_spray',
           x: player.x,
@@ -699,11 +734,13 @@ export class CombatEngine {
       ch.spread = spread;
       const fluxStacks = getAugmentStacks(this.augments, 'FLUX_TIDAL_SURGE');
       const knockback = ch.elements.includes('FLUX') ? 95 * (1 + 0.4 * fluxStacks) : 0;
-      this.applyConeDamage(player.x, player.y, angle, spread, range, 11 + comp.totalPower * 4, ch.elements, events, knockback);
+      this.applyConeDamage(player.x, player.y, angle, spread, range, 11 + comp.totalPower * 4, ch.elements, events, knockback, true);
+      const centerBlocked = computeBlockedRayLength(player.x, player.y, angle, range, this.getBlockedScene(), false, 1);
+      const muzzle = Math.min(20, Math.max(2, centerBlocked - 4));
       events.push({
         type: 'vfx_spray',
-        x: player.x + Math.cos(angle) * 20,
-        y: player.y + Math.sin(angle) * 20,
+        x: player.x + Math.cos(angle) * muzzle,
+        y: player.y + Math.sin(angle) * muzzle,
         angle,
         spread,
         range,
@@ -1143,7 +1180,7 @@ export class CombatEngine {
         const range = Math.round((165 + (comp.totalPower - 1) * 90) * rangeMult);
         const fluxStacks = getAugmentStacks(this.augments, 'FLUX_TIDAL_SURGE');
         const knockback = spell.elements.includes('FLUX') ? 200 * (1 + 0.4 * fluxStacks) : 0;
-        this.applyAoEDamage(player.x, player.y, range, 32 * comp.totalPower, spell.elements, knockback, events);
+        this.applyAoEDamage(player.x, player.y, range, 32 * comp.totalPower, spell.elements, knockback, events, true);
         events.push({
           type: 'vfx_spray',
           x: player.x,
@@ -1469,8 +1506,8 @@ export class CombatEngine {
       }
     }
 
-    // Boss rotating shield plates
-    if (!isAoE && e.archetype === 'WARDEN' && e.bossShieldAngles.length > 0) {
+    // Boss & Obelisk rotating shield plates
+    if (!isAoE && e.bossShieldAngles.length > 0) {
       const incomingAngle = Math.atan2(-dirY, -dirX);
       const hitPlate = e.bossShieldAngles.some((pa) => Math.abs(normalizeAngle(incomingAngle - pa)) < 0.4);
       if (hitPlate && !elements.includes('KINETIC')) {
@@ -1730,14 +1767,19 @@ export class CombatEngine {
     damage: number,
     elements: readonly QueueElement[],
     knockback: number,
-    events: SimEvent[]
+    events: SimEvent[],
+    checkWalls = false
   ): Array<{ x: number; y: number }> {
     const hits: Array<{ x: number; y: number }> = [];
+    const scene = checkWalls ? this.getBlockedScene() : null;
     for (const e of this.enemies) {
       const dx = e.x - x;
       const dy = e.y - y;
       const dist = Math.hypot(dx, dy);
       if (dist <= radius + e.radius) {
+        if (scene && isSegmentBlockedByGeometry(x, y, e.x, e.y, scene, true, false)) {
+          continue;
+        }
         hits.push({ x: e.x, y: e.y });
         this.applyElementalHit(e, damage, elements, dx, dy, events, true, knockback !== 0);
         if (dist > 0.1 && knockback !== 0) {
@@ -1758,10 +1800,12 @@ export class CombatEngine {
     damage: number,
     elements: readonly QueueElement[],
     events: SimEvent[],
-    knockback = 120
+    knockback = 120,
+    checkWalls = false
   ): Array<{ x: number; y: number }> {
     const hits: Array<{ x: number; y: number }> = [];
     const halfSpread = spread * 0.5;
+    const scene = checkWalls ? this.getBlockedScene() : null;
     for (const e of this.enemies) {
       const dx = e.x - ox;
       const dy = e.y - oy;
@@ -1769,6 +1813,9 @@ export class CombatEngine {
       if (dist > range + e.radius) continue;
       const diff = Math.abs(normalizeAngle(Math.atan2(dy, dx) - angle));
       if (diff <= halfSpread) {
+        if (scene && isSegmentBlockedByGeometry(ox, oy, e.x, e.y, scene, true, false)) {
+          continue;
+        }
         hits.push({ x: e.x, y: e.y });
         this.applyElementalHit(e, damage, elements, dx, dy, events, false, knockback !== 0);
         if (dist > 0.1 && knockback !== 0) {
@@ -1871,14 +1918,14 @@ export class CombatEngine {
     _selfHeld: boolean,
     wave: number,
     pillars: readonly ArenaPillar[],
-    onKill: (archetype: EnemyArchetype) => void,
+    onKill: (archetype: EnemyArchetype, isElite: boolean) => void,
     onPlayerDamaged: () => void,
     events: SimEvent[],
     blocks: readonly ArenaBlock[] = [],
     obstacles: readonly ArenaObstacle[] = [],
     arenaBoundary: readonly Vec2[] = DEFAULT_RECT_BOUNDARY
   ): void {
-    this.currentBoundary = arenaBoundary;
+    this.setArenaGeometry(arenaBoundary, pillars, blocks, obstacles);
     // Update active charge
     for (const [eid, cd] of this.comboTextCooldown.entries()) {
       const next = cd - dt;
@@ -2510,7 +2557,7 @@ export class CombatEngine {
           events.push({ type: 'grid_well', x: w.x, y: w.y, strength: 135, radius: 135 });
         }
         if (w.elements.includes('NANO')) {
-          if (Math.hypot(player.x - w.x, player.y - w.y) <= 115) {
+          if (player.hp < player.maxHp && Math.hypot(player.x - w.x, player.y - w.y) <= 115) {
             player.hp = Math.min(player.maxHp, player.hp + 5);
             events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: ELEMENT_META.NANO.colorHex, count: 4, radius: 24 });
           }
@@ -2753,6 +2800,7 @@ export class CombatEngine {
     }
 
     // Step enemy statuses & AI
+    const waveScaling = getWaveScaling(wave);
     const spawnedMinions: Array<{ archetype: EnemyArchetype; x: number; y: number }> = [];
     for (const e of this.enemies) {
       if (e.hp <= 0) continue;
@@ -2803,6 +2851,29 @@ export class CombatEngine {
               spin: 0,
             });
           },
+          spawnTypedProjectile: (kind, x, y, vx, vy, radius, damage, colorHex) => {
+            const el = kind === 'CRYO_LANCE' ? 'CRYO' : kind === 'VOLT_ORB' ? 'VOLT' : 'PLASMA';
+            this.projectiles.push({
+              id: this.nextId++,
+              owner: 'ENEMY',
+              kind,
+              x,
+              y,
+              vx,
+              vy,
+              radius,
+              damage,
+              pierce: 1,
+              life: kind === 'CRYO_LANCE' ? 2.4 : 2.6,
+              maxLife: kind === 'CRYO_LANCE' ? 2.4 : 2.6,
+              colorHex,
+              colors: [colorHex, 0xffffff],
+              elements: [el],
+              composition: computeComposition([el]),
+              hitIds: [],
+              spin: 0,
+            });
+          },
           spawnEnemyRock: (x, y, vx, vy, damage) => {
             this.projectiles.push({
               id: this.nextId++,
@@ -2827,13 +2898,23 @@ export class CombatEngine {
             events.push({ type: 'sfx', sound: 'rock', elements: ['KINETIC'] });
           },
           spawnEnemySpray: (x, y, angle, range, damage) => {
+            const sprayBlockedDist = computeBlockedRayLength(
+              x,
+              y,
+              angle,
+              range,
+              this.getBlockedScene(),
+              true,
+              1
+            );
+            const muzzle = Math.min(20, Math.max(2, sprayBlockedDist - 4));
             events.push({
               type: 'vfx_spray',
-              x: x + Math.cos(angle) * 20,
-              y: y + Math.sin(angle) * 20,
+              x: x + Math.cos(angle) * muzzle,
+              y: y + Math.sin(angle) * muzzle,
               angle,
               spread: 0.72,
-              range,
+              range: Math.max(12, sprayBlockedDist - 4),
               colors: [0xff6a00, 0xffaa22],
               isNova: false,
               elements: ['THERMAL'],
@@ -2871,6 +2952,12 @@ export class CombatEngine {
                       }
                     }
                   }
+                  if (
+                    !sprayBlocked &&
+                    isSegmentBlockedByGeometry(x, y, player.x, player.y, this.getBlockedScene(), false, false)
+                  ) {
+                    sprayBlocked = true;
+                  }
                 }
                 if (!sprayBlocked) {
                   for (const s of this.shields) {
@@ -2899,7 +2986,12 @@ export class CombatEngine {
               beamOffset: offsetAngle,
               length: 1900,
               width: enemy.archetype === 'WARDEN' ? 16 : 14,
-              damagePerSec: Math.round((enemy.archetype === 'WARDEN' ? 34 : 28) * this.difficulty.enemyDamageMult),
+              damagePerSec: Math.round(
+                (enemy.archetype === 'WARDEN' ? 34 : 28) *
+                  this.difficulty.enemyDamageMult *
+                  waveScaling.dmgScale *
+                  (enemy.isElite ? 1.25 : 1)
+              ),
               life: enemy.archetype === 'WARDEN' ? 2.8 : 1.8,
               maxLife: enemy.archetype === 'WARDEN' ? 2.8 : 1.8,
               colorHex: 0xb429ff,
@@ -2931,7 +3023,8 @@ export class CombatEngine {
         },
         events,
         this.difficulty,
-        arenaBoundary
+        arenaBoundary,
+        wave
       );
 
       // Push enemy outside ArenaPillars, ArenaBlocks & ArenaObstacles, then clamp to ArenaBoundary
@@ -3001,38 +3094,55 @@ export class CombatEngine {
             ? 0xe6f0ff
             : e.archetype === 'WEAVER'
             ? 0xb429ff
-            : e.archetype === 'STALKER'
+            : e.archetype === 'STALKER' || e.archetype === 'CRYO_SNIPER'
             ? 0x00f5ff
-            : e.archetype === 'PYRO_SPRAYER'
+            : e.archetype === 'PYRO_SPRAYER' || e.archetype === 'LANCER'
             ? ELEMENT_META.THERMAL.colorHex
             : e.archetype === 'GEO_BOMBER'
             ? ELEMENT_META.KINETIC.colorHex
-            : e.archetype === 'SPLITTER'
+            : e.archetype === 'SPLITTER' || e.archetype === 'VOLT_SPRINTER'
             ? 0xfff733
+            : e.archetype === 'MENDER'
+            ? 0x39ff14
+            : e.archetype === 'VORTEX_DRONE'
+            ? 0x1a88ff
+            : e.archetype === 'MINELAYER'
+            ? 0xff5e99
+            : e.archetype === 'OBELISK'
+            ? 0xe055ff
             : 0xff2e97;
         const secColor =
           e.archetype === 'WARDEN'
             ? 0xb429ff
             : e.archetype === 'BASTION'
             ? 0x00f5ff
-            : e.archetype === 'WEAVER'
+            : e.archetype === 'WEAVER' || e.archetype === 'OBELISK'
             ? 0xff2e97
             : e.archetype === 'STALKER'
             ? 0xff2e97
-            : e.archetype === 'PYRO_SPRAYER'
+            : e.archetype === 'CRYO_SNIPER'
+            ? 0xe0ffff
+            : e.archetype === 'PYRO_SPRAYER' || e.archetype === 'LANCER'
             ? 0xffaa22
             : e.archetype === 'GEO_BOMBER'
             ? 0xffaa44
-            : e.archetype === 'SPLITTER'
+            : e.archetype === 'SPLITTER' || e.archetype === 'VOLT_SPRINTER'
             ? 0xffaa22
+            : e.archetype === 'MENDER'
+            ? 0xc4ffcf
+            : e.archetype === 'VORTEX_DRONE'
+            ? 0x80ffff
+            : e.archetype === 'MINELAYER'
+            ? 0xffb8d9
             : 0xff88cc;
         if (e.nanoMarkTimer > 0) {
           const nanoSiphonStacks = getAugmentStacks(this.augments, 'NANO_SWARM_SIPHON');
           const healAmt = (e.archetype === 'WARDEN' ? 18 + 10 * nanoSiphonStacks : 6 + 5 * nanoSiphonStacks);
-          if (player.hp < player.maxHp) {
-            player.hp = Math.min(player.maxHp, player.hp + healAmt);
+          const actualHeal = Math.min(healAmt, Math.max(0, player.maxHp - player.hp));
+          if (actualHeal > 0) {
+            player.hp = Math.min(player.maxHp, player.hp + actualHeal);
             events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: ELEMENT_META.NANO.colorHex, count: 8, radius: 34 });
-            events.push({ type: 'damage_number', x: player.x, y: player.y - 20, text: `+${healAmt} HP`, colorHex: ELEMENT_META.NANO.colorHex });
+            events.push({ type: 'damage_number', x: player.x, y: player.y - 20, text: `+${Math.round(actualHeal)} HP`, colorHex: ELEMENT_META.NANO.colorHex });
             events.push({ type: 'sfx', sound: 'heal', elements: ['NANO'] });
           }
           if (nanoSiphonStacks > 0) {
@@ -3106,7 +3216,7 @@ export class CombatEngine {
           colorHex: killColor,
         });
         events.push({ type: 'sfx', sound: 'enemy_kill' });
-        onKill(e.archetype);
+        onKill(e.archetype, Boolean(e.isElite));
         this.enemies.splice(i, 1);
       }
     }

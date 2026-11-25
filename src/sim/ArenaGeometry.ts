@@ -359,7 +359,8 @@ export function rayVsConvexPoly(
   dx: number,
   dy: number,
   maxDist: number,
-  obs: ArenaObstacle
+  obs: ArenaObstacle,
+  minT = 8
 ): number | null {
   let tEnter = 0;
   let tExit = maxDist;
@@ -391,7 +392,7 @@ export function rayVsConvexPoly(
     if (tEnter > tExit) return null;
   }
 
-  return tEnter > 8 && tEnter <= maxDist ? tEnter : null;
+  return tEnter > minT && tEnter <= maxDist ? tEnter : null;
 }
 
 export function rayVsArenaBoundary(
@@ -492,7 +493,8 @@ function rayCircleHit(
   maxDist: number,
   cx: number,
   cy: number,
-  r: number
+  r: number,
+  minT = 8
 ): number | null {
   const rx = ox - cx;
   const ry = oy - cy;
@@ -503,7 +505,7 @@ function rayCircleHit(
   const sqrtDisc = Math.sqrt(disc);
   const t1 = -bProj - sqrtDisc;
   const t2 = -bProj + sqrtDisc;
-  const t = t1 > 8 ? t1 : t2 > 8 ? t2 : null;
+  const t = t1 > minT ? t1 : t2 > minT ? t2 : null;
   return t !== null && t <= maxDist ? t : null;
 }
 
@@ -516,7 +518,8 @@ function raySegHit(
   ax: number,
   ay: number,
   bx: number,
-  by: number
+  by: number,
+  minT = 8
 ): number | null {
   const sx = bx - ax;
   const sy = by - ay;
@@ -526,7 +529,7 @@ function raySegHit(
   const qpy = ay - oy;
   const t = (qpx * sy - qpy * sx) / denom;
   const u = (qpx * dy - qpy * dx) / denom;
-  if (t > 8 && t <= maxDist && u >= -0.05 && u <= 1.05) {
+  if (t > minT && t <= maxDist && u >= -0.05 && u <= 1.05) {
     return t;
   }
   return null;
@@ -538,7 +541,8 @@ function rayAabbHit(
   dx: number,
   dy: number,
   maxDist: number,
-  b: ArenaBlock
+  b: ArenaBlock,
+  minT = 8
 ): number | null {
   const minX = b.x - b.halfW;
   const maxX = b.x + b.halfW;
@@ -566,7 +570,7 @@ function rayAabbHit(
     tmax = Math.min(tmax, t2);
     if (tmin > tmax) return null;
   }
-  return tmin > 8 && tmin <= maxDist ? tmin : null;
+  return tmin > minT && tmin <= maxDist ? tmin : null;
 }
 
 export interface BlockedRayScene {
@@ -583,24 +587,26 @@ export function computeBlockedRayLength(
   oy: number,
   angle: number,
   maxDist: number,
-  scene: BlockedRayScene
+  scene: BlockedRayScene,
+  includeShields = true,
+  minT = 8
 ): number {
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   let limit = rayVsArenaBoundary(ox, oy, cos, sin, maxDist, scene.arenaBoundary);
 
   for (const pil of scene.pillars) {
-    const t = rayCircleHit(ox, oy, cos, sin, limit, pil.x, pil.y, pil.radius + 2);
+    const t = rayCircleHit(ox, oy, cos, sin, limit, pil.x, pil.y, pil.radius + 2, minT);
     if (t !== null && t < limit) limit = t;
   }
 
   for (const blk of scene.blocks) {
-    const t = rayAabbHit(ox, oy, cos, sin, limit, blk);
+    const t = rayAabbHit(ox, oy, cos, sin, limit, blk, minT);
     if (t !== null && t < limit) limit = t;
   }
 
   for (const obs of scene.obstacles) {
-    const t = rayVsConvexPoly(ox, oy, cos, sin, limit, obs);
+    const t = rayVsConvexPoly(ox, oy, cos, sin, limit, obs, minT);
     if (t !== null && t < limit) limit = t;
   }
 
@@ -612,43 +618,77 @@ export function computeBlockedRayLength(
       wallGroups.set(w.groupId, arr);
     }
     arr.push(w);
-    const t = rayCircleHit(ox, oy, cos, sin, limit, w.x, w.y, w.radius + 4);
+    const t = rayCircleHit(ox, oy, cos, sin, limit, w.x, w.y, w.radius + 4, minT);
     if (t !== null && t < limit) limit = t;
   }
   for (const arr of wallGroups.values()) {
     for (let i = 0; i < arr.length - 1; i++) {
       const a = arr[i]!;
       const b = arr[i + 1]!;
-      const t = raySegHit(ox, oy, cos, sin, limit, a.x, a.y, b.x, b.y);
+      const t = raySegHit(ox, oy, cos, sin, limit, a.x, a.y, b.x, b.y, minT);
       if (t !== null && t < limit) limit = t;
     }
     if (arr.length >= 3 && arr[0]!.isNova) {
       const a = arr[arr.length - 1]!;
       const b = arr[0]!;
-      const t = raySegHit(ox, oy, cos, sin, limit, a.x, a.y, b.x, b.y);
+      const t = raySegHit(ox, oy, cos, sin, limit, a.x, a.y, b.x, b.y, minT);
       if (t !== null && t < limit) limit = t;
     }
   }
 
-  for (const s of scene.shields) {
-    const rx = ox - s.x;
-    const ry = oy - s.y;
-    const bProj = rx * cos + ry * sin;
-    const cDist = rx * rx + ry * ry - s.radius * s.radius;
-    const disc = bProj * bProj - cDist;
-    if (disc < 0) continue;
-    const sqrtDisc = Math.sqrt(disc);
-    for (const t of [-bProj - sqrtDisc, -bProj + sqrtDisc]) {
-      if (t > 8 && t < limit) {
-        if (!s.isNova) {
-          const hitAng = Math.atan2(oy + sin * t - s.y, ox + cos * t - s.x);
-          if (Math.abs(normAngleRad(hitAng - s.angle)) > s.arc) continue;
+  if (includeShields) {
+    for (const s of scene.shields) {
+      const rx = ox - s.x;
+      const ry = oy - s.y;
+      const bProj = rx * cos + ry * sin;
+      const cDist = rx * rx + ry * ry - s.radius * s.radius;
+      const disc = bProj * bProj - cDist;
+      if (disc < 0) continue;
+      const sqrtDisc = Math.sqrt(disc);
+      for (const t of [-bProj - sqrtDisc, -bProj + sqrtDisc]) {
+        if (t > minT && t < limit) {
+          if (!s.isNova) {
+            const hitAng = Math.atan2(oy + sin * t - s.y, ox + cos * t - s.x);
+            if (Math.abs(normAngleRad(hitAng - s.angle)) > s.arc) continue;
+          }
+          limit = t;
+          break;
         }
-        limit = t;
-        break;
       }
     }
   }
 
-  return Math.max(8, limit);
+  return Math.max(minT, limit);
+}
+
+export function isSegmentBlockedByGeometry(
+  ox: number,
+  oy: number,
+  tx: number,
+  ty: number,
+  scene: BlockedRayScene,
+  includeWalls = true,
+  includeShields = false
+): boolean {
+  const dx = tx - ox;
+  const dy = ty - oy;
+  const dist = Math.hypot(dx, dy);
+  if (dist <= 2) return false;
+  const blocked = computeBlockedRayLength(
+    ox,
+    oy,
+    Math.atan2(dy, dx),
+    dist,
+    {
+      arenaBoundary: scene.arenaBoundary,
+      pillars: scene.pillars,
+      blocks: scene.blocks,
+      obstacles: scene.obstacles,
+      walls: includeWalls ? scene.walls : [],
+      shields: includeShields ? scene.shields : [],
+    },
+    includeShields,
+    1
+  );
+  return blocked < dist - 2;
 }

@@ -23,16 +23,36 @@ export function normalizeAngle(a: number): number {
   return a;
 }
 
+export function getWaveScaling(wave: number): {
+  hpScale: number;
+  dmgScale: number;
+  speedScale: number;
+  rateScale: number;
+  bonusArmor: number;
+} {
+  const w = Math.max(0, wave - 1);
+  return {
+    hpScale: (1 + w * 0.24) * Math.pow(1.08, Math.max(0, w - 2)),
+    dmgScale: 1 + w * 0.11 + Math.max(0, w - 5) * 0.05,
+    speedScale: 1 + Math.min(0.85, w * 0.045),
+    rateScale: 1 + Math.min(1.0, w * 0.055),
+    bonusArmor: Math.min(0.45, Math.max(0, wave - 3) * 0.03),
+  };
+}
+
 export function createEnemy(
   id: number,
   archetype: EnemyArchetype,
   x: number,
   y: number,
   wave: number,
-  difficulty?: DifficultyConfig
+  difficulty?: DifficultyConfig,
+  isElite = false
 ): EnemyEntity {
+  const ws = getWaveScaling(wave);
   const hpMult = difficulty?.enemyHpMult ?? 1;
-  const hpScale = (1 + Math.max(0, wave - 1) * 0.24) * hpMult;
+  const eliteHp = isElite ? 1.65 : 1;
+  const hpScale = ws.hpScale * hpMult * eliteHp;
   const base: EnemyEntity = {
     id,
     archetype,
@@ -61,6 +81,8 @@ export function createEnemy(
     weakness: undefined,
     nanoMarkTimer: 0,
     freezeImmuneTimer: 0,
+    isElite,
+    spinPhase: 0,
   };
 
   switch (archetype) {
@@ -125,9 +147,72 @@ export function createEnemy(
       base.affinity = 'VOLT';
       base.weakness = 'KINETIC';
       break;
+    case 'LANCER':
+      base.radius = 16;
+      base.hp = Math.round(80 * hpScale);
+      base.maxHp = base.hp;
+      base.aiTimer = 1.1;
+      base.affinity = 'THERMAL';
+      base.weakness = 'FLUX';
+      break;
+    case 'VOLT_SPRINTER':
+      base.radius = 14;
+      base.hp = Math.round(72 * hpScale);
+      base.maxHp = base.hp;
+      base.aiTimer = 0.9;
+      base.affinity = 'VOLT';
+      base.weakness = 'KINETIC';
+      break;
+    case 'CRYO_SNIPER':
+      base.radius = 17;
+      base.hp = Math.round(90 * hpScale);
+      base.maxHp = base.hp;
+      base.aiTimer = 1.4;
+      base.affinity = 'CRYO';
+      base.weakness = 'THERMAL';
+      break;
+    case 'MENDER':
+      base.radius = 18;
+      base.hp = Math.round(110 * hpScale);
+      base.maxHp = base.hp;
+      base.aiTimer = 1.6;
+      base.affinity = 'NANO';
+      base.weakness = 'VOID';
+      break;
+    case 'VORTEX_DRONE':
+      base.radius = 21;
+      base.hp = Math.round(130 * hpScale);
+      base.maxHp = base.hp;
+      base.baseArmor = 0.15;
+      base.armor = 0.15;
+      base.aiTimer = 1.4;
+      base.affinity = 'FLUX';
+      base.weakness = 'VOLT';
+      break;
+    case 'MINELAYER':
+      base.radius = 23;
+      base.hp = Math.round(155 * hpScale);
+      base.maxHp = base.hp;
+      base.baseArmor = 0.2;
+      base.armor = 0.2;
+      base.aiTimer = 1.5;
+      base.affinity = 'KINETIC';
+      base.weakness = 'FLUX';
+      break;
+    case 'OBELISK':
+      base.radius = 25;
+      base.hp = Math.round(185 * hpScale);
+      base.maxHp = base.hp;
+      base.baseArmor = 0.3;
+      base.armor = 0.3;
+      base.bossShieldAngles = [0];
+      base.aiTimer = 1.3;
+      base.affinity = 'THERMAL';
+      base.weakness = 'KINETIC';
+      break;
     case 'WARDEN':
       base.radius = 48;
-      base.hp = Math.round((1450 + wave * 180) * hpMult);
+      base.hp = Math.round((1450 + wave * 180) * Math.pow(1.09, Math.max(0, wave - 5)) * hpMult * eliteHp);
       base.maxHp = base.hp;
       base.baseArmor = 0.28;
       base.armor = 0.28;
@@ -138,11 +223,29 @@ export function createEnemy(
       break;
   }
 
+  if (wave >= 4 || isElite) {
+    base.baseArmor = Math.min(0.75, base.baseArmor + ws.bonusArmor + (isElite ? 0.12 : 0));
+    base.armor = base.baseArmor;
+  }
+  if (isElite && archetype !== 'WARDEN') {
+    base.radius = Math.round(base.radius * 1.2);
+  }
+
   return base;
 }
 
 export interface EnemyAIHooks {
   spawnProjectile: (x: number, y: number, vx: number, vy: number, damage: number) => void;
+  spawnTypedProjectile: (
+    kind: 'CRYO_LANCE' | 'PLASMA_ORB' | 'VOLT_ORB',
+    x: number,
+    y: number,
+    vx: number,
+    vy: number,
+    radius: number,
+    damage: number,
+    colorHex: number
+  ) => void;
   spawnEnemyRock: (x: number, y: number, vx: number, vy: number, damage: number) => void;
   spawnEnemySpray: (x: number, y: number, angle: number, range: number, damage: number) => void;
   spawnBeam: (enemy: EnemyEntity, angle: number, offsetAngle?: number) => void;
@@ -159,13 +262,16 @@ export function stepEnemyAI(
   hooks: EnemyAIHooks,
   events: SimEvent[],
   difficulty?: DifficultyConfig,
-  arenaBoundary: readonly Vec2[] = DEFAULT_RECT_BOUNDARY
+  arenaBoundary: readonly Vec2[] = DEFAULT_RECT_BOUNDARY,
+  wave = 1
 ): void {
   e.hitFlash = Math.max(0, e.hitFlash - dt);
   e.nanoMarkTimer = Math.max(0, e.nanoMarkTimer - dt);
   e.freezeImmuneTimer = Math.max(0, e.freezeImmuneTimer - dt);
-  const dmgMult = difficulty?.enemyDamageMult ?? 1;
-  const spdDiffMult = difficulty?.enemySpeedMult ?? 1;
+  const ws = getWaveScaling(wave);
+  const dmgMult = (difficulty?.enemyDamageMult ?? 1) * ws.dmgScale * (e.isElite ? 1.25 : 1);
+  const spdDiffMult = (difficulty?.enemySpeedMult ?? 1) * ws.speedScale * (e.isElite ? 1.12 : 1);
+  const rateMult = (e.statuses.CHILLED ? 0.5 : 1.0) * ws.rateScale * (e.isElite ? 1.12 : 1);
 
   if (e.archetype === 'WARDEN') {
     const hpRatio = e.hp / Math.max(1, e.maxHp);
@@ -175,9 +281,14 @@ export function stepEnemyAI(
       e.bossShieldAngles = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5];
       events.push({ type: 'vfx_ring', x: e.x, y: e.y, radius: 130, colorHex: 0xff2e97, duration: 0.35 });
     }
-    const plateSpeed = phase === 1 ? 0.65 : phase === 2 ? 0.95 : 1.3;
+    const plateSpeed = (phase === 1 ? 0.65 : phase === 2 ? 0.95 : 1.3) * (1 + Math.min(0.5, (wave - 5) * 0.04));
     for (let i = 0; i < e.bossShieldAngles.length; i++) {
       e.bossShieldAngles[i] = normalizeAngle(e.bossShieldAngles[i]! + plateSpeed * dt);
+    }
+  } else if (e.archetype === 'OBELISK' && e.bossShieldAngles.length > 0 && !e.statuses.FROZEN) {
+    const obSpeed = 1.25 * (e.statuses.CHILLED ? 0.5 : 1.0) * spdDiffMult;
+    for (let i = 0; i < e.bossShieldAngles.length; i++) {
+      e.bossShieldAngles[i] = normalizeAngle(e.bossShieldAngles[i]! + obSpeed * dt);
     }
   }
 
@@ -229,7 +340,7 @@ export function stepEnemyAI(
       e.vx += (dirX * spd + sepX * 0.5 - e.vx) * Math.min(1, 6 * dt);
       e.vy += (dirY * spd + sepY * 0.5 - e.vy) * Math.min(1, 6 * dt);
 
-      e.aiTimer -= dt * speedMult;
+      e.aiTimer -= dt * rateMult;
       if (dist < 115 && e.aiTimer <= 0) {
         e.aiTimer = 2.2;
         hooks.spawnHazard(e.x, e.y, 108, 0.8, Math.round(22 * dmgMult), 0xe6f0ff);
@@ -239,7 +350,7 @@ export function stepEnemyAI(
 
     case 'STALKER': {
       e.angle = targetAngle;
-      e.aiTimer -= dt * speedMult;
+      e.aiTimer -= dt * rateMult;
       if (e.aiState === 'SEEK') {
         const desired = 240;
         const radial = dist > desired + 30 ? 1 : dist < desired - 30 ? -0.75 : 0;
@@ -276,7 +387,7 @@ export function stepEnemyAI(
     }
 
     case 'WEAVER': {
-      e.aiTimer -= dt * speedMult;
+      e.aiTimer -= dt * rateMult;
       if (e.aiState === 'SEEK') {
         e.angle = targetAngle;
         const desired = 310;
@@ -321,7 +432,7 @@ export function stepEnemyAI(
       e.vx += (dirX * spd + sepX - e.vx) * Math.min(1, 7 * dt);
       e.vy += (dirY * spd + sepY - e.vy) * Math.min(1, 7 * dt);
 
-      e.aiTimer -= dt * speedMult;
+      e.aiTimer -= dt * rateMult;
       if (e.aiTimer <= 0 && dist < 460) {
         e.aiTimer = 2.3;
         hooks.spawnHazard(player.x, player.y, 72, 1.0, Math.round(20 * dmgMult), 0xfff733);
@@ -330,7 +441,7 @@ export function stepEnemyAI(
     }
 
     case 'PYRO_SPRAYER': {
-      e.aiTimer -= dt * speedMult;
+      e.aiTimer -= dt * rateMult;
       if (e.aiState === 'SEEK') {
         e.angle = targetAngle;
         const desired = 190;
@@ -372,7 +483,7 @@ export function stepEnemyAI(
     }
 
     case 'GEO_BOMBER': {
-      e.aiTimer -= dt * speedMult;
+      e.aiTimer -= dt * rateMult;
       if (e.aiState === 'SEEK') {
         e.angle = targetAngle;
         const desired = 340;
@@ -398,8 +509,309 @@ export function stepEnemyAI(
       break;
     }
 
+    case 'LANCER': {
+      e.aiTimer -= dt * rateMult;
+      if (e.aiState === 'SEEK') {
+        e.angle = targetAngle;
+        const desired = 260;
+        const move = dist > desired + 25 ? 1 : dist < desired - 40 ? -0.4 : 0.2;
+        const spd = 105 * speedMult;
+        e.vx += (dirX * move * spd + sepX - e.vx) * Math.min(1, 8 * dt);
+        e.vy += (dirY * move * spd + sepY - e.vy) * Math.min(1, 8 * dt);
+        if (e.aiTimer <= 0 && dist < 380) {
+          e.aiState = 'CHARGE';
+          e.aiTimer = 0.65;
+          e.beamAngle = targetAngle;
+          events.push({ type: 'vfx_ring', x: e.x, y: e.y, radius: 32, colorHex: 0xff4518, duration: 0.45 });
+        }
+      } else if (e.aiState === 'CHARGE') {
+        e.vx *= 0.8;
+        e.vy *= 0.8;
+        const turnDiff = normalizeAngle(targetAngle - e.beamAngle);
+        e.beamAngle = normalizeAngle(e.beamAngle + Math.max(-1.1 * dt, Math.min(1.1 * dt, turnDiff)));
+        e.angle = e.beamAngle;
+        if (e.aiTimer <= 0) {
+          e.aiState = 'FIRE';
+          e.aiTimer = 0.38;
+          const lungeSpd = 520 * speedMult;
+          e.vx = Math.cos(e.beamAngle) * lungeSpd;
+          e.vy = Math.sin(e.beamAngle) * lungeSpd;
+          events.push({ type: 'vfx_burst', x: e.x, y: e.y, colorHex: 0xff4518, count: 10, radius: 28 });
+        }
+      } else if (e.aiState === 'FIRE') {
+        const lungeSpd = 520 * speedMult;
+        e.vx = Math.cos(e.beamAngle) * lungeSpd;
+        e.vy = Math.sin(e.beamAngle) * lungeSpd;
+        e.angle = e.beamAngle;
+        if (e.aiTimer <= 0) {
+          e.aiState = 'COOLDOWN';
+          e.aiTimer = 0.8;
+        }
+      } else {
+        e.vx *= 0.86;
+        e.vy *= 0.86;
+        e.angle = targetAngle;
+        if (e.aiTimer <= 0) {
+          e.aiState = 'SEEK';
+          e.aiTimer = 1.25;
+        }
+      }
+      break;
+    }
+
+    case 'VOLT_SPRINTER': {
+      e.angle = targetAngle;
+      e.aiTimer -= dt * rateMult;
+      e.spinPhase = (e.spinPhase ?? 0) + dt * 3.4;
+      if (e.aiState === 'SEEK') {
+        const zigSign = Math.sin(e.spinPhase) >= 0 ? 1 : -1;
+        const desired = 230;
+        const radial = dist > desired + 30 ? 0.9 : dist < desired - 30 ? -0.7 : 0.1;
+        const spd = 128 * speedMult;
+        e.vx += ((dirX * radial + -dirY * zigSign * 0.85) * spd + sepX - e.vx) * Math.min(1, 9 * dt);
+        e.vy += ((dirY * radial + dirX * zigSign * 0.85) * spd + sepY - e.vy) * Math.min(1, 9 * dt);
+        if (e.aiTimer <= 0 && dist < 380) {
+          e.aiState = 'CHARGE';
+          e.aiTimer = 0.38;
+          e.beamAngle = targetAngle;
+        }
+      } else {
+        e.vx *= 0.85;
+        e.vy *= 0.85;
+        if (e.aiTimer <= 0) {
+          for (const off of [-0.14, 0.14]) {
+            const fa = targetAngle + off;
+            hooks.spawnTypedProjectile(
+              'VOLT_ORB',
+              e.x + Math.cos(fa) * 16,
+              e.y + Math.sin(fa) * 16,
+              Math.cos(fa) * 440,
+              Math.sin(fa) * 440,
+              8,
+              Math.round(12 * dmgMult),
+              0xfff733
+            );
+          }
+          const juke = targetAngle + (Math.random() < 0.5 ? Math.PI * 0.5 : -Math.PI * 0.5);
+          e.vx = Math.cos(juke) * 260 * speedMult;
+          e.vy = Math.sin(juke) * 260 * speedMult;
+          e.aiState = 'SEEK';
+          e.aiTimer = 1.45;
+        }
+      }
+      break;
+    }
+
+    case 'CRYO_SNIPER': {
+      e.aiTimer -= dt * rateMult;
+      if (e.aiState === 'SEEK') {
+        e.angle = targetAngle;
+        const desired = 460;
+        const move = dist > desired + 35 ? 1 : dist < desired - 40 ? -0.85 : 0;
+        const spd = 72 * speedMult;
+        e.vx += ((dirX * move + -dirY * 0.35) * spd + sepX - e.vx) * Math.min(1, 6 * dt);
+        e.vy += ((dirY * move + dirX * 0.35) * spd + sepY - e.vy) * Math.min(1, 6 * dt);
+        if (e.aiTimer <= 0) {
+          e.aiState = 'CHARGE';
+          e.aiTimer = 1.0;
+          e.beamAngle = targetAngle;
+        }
+      } else if (e.aiState === 'CHARGE') {
+        e.vx *= 0.84;
+        e.vy *= 0.84;
+        if (e.aiTimer > 0.3) {
+          const diff = normalizeAngle(targetAngle - e.beamAngle);
+          e.beamAngle = normalizeAngle(e.beamAngle + Math.max(-0.95 * dt, Math.min(0.95 * dt, diff)));
+        }
+        e.angle = e.beamAngle;
+        if (e.aiTimer <= 0) {
+          hooks.spawnTypedProjectile(
+            'CRYO_LANCE',
+            e.x + Math.cos(e.beamAngle) * 20,
+            e.y + Math.sin(e.beamAngle) * 20,
+            Math.cos(e.beamAngle) * 760,
+            Math.sin(e.beamAngle) * 760,
+            8,
+            Math.round(19 * dmgMult),
+            0x80ffff
+          );
+          events.push({ type: 'vfx_burst', x: e.x, y: e.y, colorHex: 0x00f5ff, count: 8, radius: 22 });
+          e.aiState = 'COOLDOWN';
+          e.aiTimer = 1.5;
+        }
+      } else {
+        e.angle = targetAngle;
+        e.vx *= 0.9;
+        e.vy *= 0.9;
+        if (e.aiTimer <= 0) {
+          e.aiState = 'SEEK';
+          e.aiTimer = 1.2;
+        }
+      }
+      break;
+    }
+
+    case 'MENDER': {
+      e.aiTimer -= dt * rateMult;
+      e.spinPhase = (e.spinPhase ?? 0) + dt * 2.2;
+      let anchor: EnemyEntity | null = null;
+      let bestScore = Infinity;
+      for (const ally of allEnemies) {
+        if (ally.id === e.id || ally.hp <= 0) continue;
+        const dAlly = Math.hypot(ally.x - e.x, ally.y - e.y);
+        if (dAlly > 520) continue;
+        const ratio = ally.hp / Math.max(1, ally.maxHp);
+        const score = ratio * 350 + dAlly * 0.35;
+        if (score < bestScore) {
+          bestScore = score;
+          anchor = ally;
+        }
+      }
+      const spd = 76 * speedMult;
+      if (anchor) {
+        const adx = anchor.x - e.x;
+        const ady = anchor.y - e.y;
+        const adist = Math.max(1, Math.hypot(adx, ady));
+        const radial = adist > 130 ? 1 : adist < 85 ? -0.6 : 0;
+        e.angle = Math.atan2(ady, adx);
+        e.vx += (((adx / adist) * radial + (-ady / adist) * 0.6) * spd + sepX - e.vx) * Math.min(1, 6 * dt);
+        e.vy += (((ady / adist) * radial + (adx / adist) * 0.6) * spd + sepY - e.vy) * Math.min(1, 6 * dt);
+      } else {
+        e.angle = targetAngle;
+        const radial = dist > 320 ? 1 : dist < 240 ? -0.6 : 0;
+        e.vx += ((dirX * radial + -dirY * 0.5) * spd + sepX - e.vx) * Math.min(1, 6 * dt);
+        e.vy += ((dirY * radial + dirX * 0.5) * spd + sepY - e.vy) * Math.min(1, 6 * dt);
+      }
+      if (e.aiTimer <= 0) {
+        e.aiTimer = 2.3;
+        let healed = 0;
+        for (const ally of allEnemies) {
+          if (ally.id === e.id || ally.hp <= 0 || ally.hp >= ally.maxHp) continue;
+          if (Math.hypot(ally.x - e.x, ally.y - e.y) <= 280) {
+            const rawHeal = Math.max(8, Math.round(ally.maxHp * 0.16));
+            const applied = Math.min(rawHeal, ally.maxHp - ally.hp);
+            if (applied > 0) {
+              ally.hp = Math.min(ally.maxHp, ally.hp + applied);
+              events.push({ type: 'vfx_lightning', points: [{ x: e.x, y: e.y }, { x: ally.x, y: ally.y }], colors: [0x39ff14, 0x80ff99] });
+              events.push({ type: 'vfx_ring', x: ally.x, y: ally.y, radius: ally.radius * 1.8, colorHex: 0x39ff14, duration: 0.25 });
+              events.push({ type: 'damage_number', x: ally.x, y: ally.y - ally.radius - 10, text: `+${applied}`, colorHex: 0x39ff14 });
+              healed++;
+              if (healed >= 2) break;
+            }
+          }
+        }
+        if (healed === 0 || dist < 240) {
+          hooks.spawnTypedProjectile(
+            'PLASMA_ORB',
+            e.x + dirX * 18,
+            e.y + dirY * 18,
+            dirX * 290,
+            dirY * 290,
+            9,
+            Math.round(11 * dmgMult),
+            0x39ff14
+          );
+        }
+      }
+      break;
+    }
+
+    case 'VORTEX_DRONE': {
+      e.angle = targetAngle;
+      e.aiTimer -= dt * rateMult;
+      e.spinPhase = (e.spinPhase ?? 0) + dt * 2.4;
+      const desired = 230;
+      const move = dist > desired + 30 ? 1 : dist < desired - 30 ? -0.5 : 0;
+      const spd = 62 * speedMult;
+      e.vx += ((dirX * move + -dirY * 0.45) * spd + sepX - e.vx) * Math.min(1, 6 * dt);
+      e.vy += ((dirY * move + dirX * 0.45) * spd + sepY - e.vy) * Math.min(1, 6 * dt);
+      if (dist < 220 && player.dashTimer <= 0) {
+        player.vx -= dirX * 155 * dt;
+        player.vy -= dirY * 155 * dt;
+        if (Math.random() < 0.15) {
+          events.push({ type: 'grid_well', x: e.x, y: e.y, strength: 95, radius: 190, colorHex: 0x1a88ff });
+        }
+      }
+      if (e.aiTimer <= 0) {
+        e.aiTimer = 1.9;
+        const orbCount = e.isElite ? 8 : 6;
+        const baseA = e.spinPhase;
+        for (let k = 0; k < orbCount; k++) {
+          const a = baseA + (k / orbCount) * Math.PI * 2;
+          hooks.spawnTypedProjectile(
+            'PLASMA_ORB',
+            e.x + Math.cos(a) * 18,
+            e.y + Math.sin(a) * 18,
+            Math.cos(a) * 245,
+            Math.sin(a) * 245,
+            8,
+            Math.round(12 * dmgMult),
+            0x1a88ff
+          );
+        }
+        events.push({ type: 'vfx_ring', x: e.x, y: e.y, radius: 46, colorHex: 0x1a88ff, duration: 0.25 });
+      }
+      break;
+    }
+
+    case 'MINELAYER': {
+      e.angle = targetAngle;
+      e.aiTimer -= dt * rateMult;
+      const desired = 330;
+      const move = dist > desired + 35 ? 1 : dist < desired - 35 ? -0.6 : 0;
+      const spd = 56 * speedMult;
+      e.vx += ((dirX * move + -dirY * 0.55) * spd + sepX - e.vx) * Math.min(1, 6 * dt);
+      e.vy += ((dirY * move + dirX * 0.55) * spd + sepY - e.vy) * Math.min(1, 6 * dt);
+      if (e.aiTimer <= 0) {
+        e.aiTimer = 2.3;
+        const mineCount = e.isElite ? 3 : 2;
+        for (let k = 0; k < mineCount; k++) {
+          const lead = k * 0.45;
+          const tx = player.x + player.vx * lead + (k - (mineCount - 1) * 0.5) * 45;
+          const ty = player.y + player.vy * lead + (Math.random() - 0.5) * 40;
+          const safe = clampArena(tx, ty, 64, arenaBoundary);
+          hooks.spawnHazard(safe.x, safe.y, 68, 1.15 + k * 0.22, Math.round(18 * dmgMult), 0xff5e99);
+        }
+        events.push({ type: 'vfx_burst', x: e.x, y: e.y, colorHex: 0xff5e99, count: 8, radius: 26 });
+      }
+      break;
+    }
+
+    case 'OBELISK': {
+      e.angle = targetAngle;
+      e.aiTimer -= dt * rateMult;
+      const desired = 280;
+      const move = dist > desired + 35 ? 1 : dist < desired - 35 ? -0.45 : 0;
+      const spd = 42 * speedMult;
+      e.vx += (dirX * move * spd + sepX * 0.4 - e.vx) * Math.min(1, 5 * dt);
+      e.vy += (dirY * move * spd + sepY * 0.4 - e.vy) * Math.min(1, 5 * dt);
+      if (e.aiTimer <= 0) {
+        e.aiTimer = 1.65;
+        const phaseFlip = Math.round(e.spinPhase ?? 0) % 2 === 1;
+        e.spinPhase = (e.spinPhase ?? 0) + 1;
+        const offset = phaseFlip ? Math.PI * 0.25 : 0;
+        for (let k = 0; k < 4; k++) {
+          const a = offset + (k / 4) * Math.PI * 2;
+          hooks.spawnTypedProjectile(
+            'PLASMA_ORB',
+            e.x + Math.cos(a) * 24,
+            e.y + Math.sin(a) * 24,
+            Math.cos(a) * 295,
+            Math.sin(a) * 295,
+            9,
+            Math.round(13 * dmgMult),
+            0xff5e99
+          );
+        }
+        if (dist < 130) {
+          hooks.spawnHazard(e.x, e.y, 120, 0.75, Math.round(20 * dmgMult), 0xe6f0ff);
+        }
+      }
+      break;
+    }
+
     case 'WARDEN': {
-      e.aiTimer -= dt * speedMult;
+      e.aiTimer -= dt * rateMult;
       const phase = e.bossPhase ?? 1;
       const spd = (phase === 3 ? 60 : phase === 2 ? 48 : 38) * speedMult;
       e.vx += (dirX * spd - e.vx) * Math.min(1, 5 * dt);
@@ -437,7 +849,7 @@ export function stepEnemyAI(
               const ra = targetAngle + off;
               hooks.spawnEnemyRock(e.x, e.y, Math.cos(ra) * 360, Math.sin(ra) * 360, Math.round(22 * dmgMult));
             }
-            const escort: EnemyArchetype[] = ['SWARMER', 'PYRO_SPRAYER'];
+            const escort: EnemyArchetype[] = wave >= 8 ? ['LANCER', 'VOLT_SPRINTER'] : ['SWARMER', 'PYRO_SPRAYER'];
             for (let i = 0; i < escort.length; i++) {
               const sa = i * Math.PI + Math.random() * 0.5;
               const pos = clampArena(e.x + Math.cos(sa) * 76, e.y + Math.sin(sa) * 76, 20, arenaBoundary);
@@ -463,7 +875,8 @@ export function stepEnemyAI(
             }
             const sa = Math.random() * Math.PI * 2;
             const pos = clampArena(e.x + Math.cos(sa) * 78, e.y + Math.sin(sa) * 78, 22, arenaBoundary);
-            hooks.spawnMinion(Math.random() < 0.5 ? 'PYRO_SPRAYER' : 'GEO_BOMBER', pos.x, pos.y);
+            const latePool: EnemyArchetype[] = wave >= 8 ? ['MENDER', 'VORTEX_DRONE', 'MINELAYER'] : ['PYRO_SPRAYER', 'GEO_BOMBER'];
+            hooks.spawnMinion(latePool[Math.floor(Math.random() * latePool.length)]!, pos.x, pos.y);
           }
         }
       } else if (e.aiState === 'FIRE') {
@@ -493,7 +906,11 @@ export function stepEnemyAI(
   const pdx = player.x - e.x;
   const pdy = player.y - e.y;
   if (pdx * pdx + pdy * pdy < contactDist * contactDist) {
-    const contactDmg = Math.round((e.archetype === 'WARDEN' ? 22 : e.archetype === 'BASTION' ? 14 : 10) * dmgMult);
+    const baseContact =
+      e.archetype === 'WARDEN' ? 22 :
+      e.archetype === 'LANCER' && e.aiState === 'FIRE' ? 18 :
+      e.archetype === 'BASTION' || e.archetype === 'OBELISK' ? 14 : 10;
+    const contactDmg = Math.round(baseContact * dmgMult);
     hooks.damagePlayer(contactDmg, e);
   }
 }

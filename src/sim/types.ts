@@ -115,7 +115,14 @@ export type EnemyArchetype =
   | 'GEO_BOMBER'
   | 'WEAVER'
   | 'SPLITTER'
-  | 'WARDEN';
+  | 'WARDEN'
+  | 'LANCER'
+  | 'VOLT_SPRINTER'
+  | 'CRYO_SNIPER'
+  | 'MENDER'
+  | 'VORTEX_DRONE'
+  | 'MINELAYER'
+  | 'OBELISK';
 
 export type AugmentId =
   | 'SUPERCONDUCTOR'
@@ -259,12 +266,24 @@ export interface EnemyEntity {
   nanoMarkTimer: number;
   freezeImmuneTimer: number;
   bossPhase?: number;
+  isElite?: boolean;
+  spinPhase?: number;
 }
 
 export interface ProjectileEntity {
   id: number;
   owner: 'PLAYER' | 'ENEMY';
-  kind: 'ROCK' | 'ICICLE' | 'FROST_NEEDLE' | 'SHATTER_SHARD' | 'STORM_BOMB' | 'NANO_BOLT' | 'ENEMY_ROCK';
+  kind:
+    | 'ROCK'
+    | 'ICICLE'
+    | 'FROST_NEEDLE'
+    | 'SHATTER_SHARD'
+    | 'STORM_BOMB'
+    | 'NANO_BOLT'
+    | 'ENEMY_ROCK'
+    | 'CRYO_LANCE'
+    | 'PLASMA_ORB'
+    | 'VOLT_ORB';
   x: number;
   y: number;
   vx: number;
@@ -419,6 +438,7 @@ export interface SpawnRiftEntity {
   timer: number;
   maxTimer: number;
   archetypes: EnemyArchetype[];
+  eliteIndices?: number[];
 }
 
 export interface HazardZoneEntity {

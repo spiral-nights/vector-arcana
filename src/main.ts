@@ -365,6 +365,9 @@ function frame(now: number): void {
     accumulator -= FIXED_DT;
   }
 
+  const preDrainSnap = sim.getSnapshot();
+  spellVFX.setBlockedScene(preDrainSnap);
+
   for (const ev of sim.drainEvents()) {
     if (ev.type === 'grid_impulse') {
       warpingGrid.applyRadialImpulse(ev.x, ev.y, ev.strength, ev.radius, ev.colorHex);

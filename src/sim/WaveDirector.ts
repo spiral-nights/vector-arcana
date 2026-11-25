@@ -155,7 +155,37 @@ interface RiftWaveSpec {
   y: number;
   delay: number;
   archetypes: EnemyArchetype[];
+  eliteIndices?: number[];
 }
+
+const ARCHETYPE_POOL: readonly EnemyArchetype[] = [
+  'SWARMER',
+  'LANCER',
+  'VOLT_SPRINTER',
+  'PYRO_SPRAYER',
+  'BASTION',
+  'STALKER',
+  'GEO_BOMBER',
+  'CRYO_SNIPER',
+  'VORTEX_DRONE',
+  'WEAVER',
+  'SPLITTER',
+  'MENDER',
+  'MINELAYER',
+  'OBELISK',
+];
+
+const RIFT_COORDS: readonly Vec2[] = [
+  { x: 440, y: 270 },
+  { x: 440, y: -270 },
+  { x: 220, y: 390 },
+  { x: -180, y: -390 },
+  { x: 560, y: 0 },
+  { x: -240, y: 380 },
+  { x: 640, y: 320 },
+  { x: 640, y: -320 },
+  { x: 60, y: 0 },
+];
 
 export class WaveDirector {
   public wave = 0;
@@ -227,6 +257,7 @@ export class WaveDirector {
         timer: spec.delay,
         maxTimer: spec.delay,
         archetypes: spec.archetypes,
+        eliteIndices: spec.eliteIndices,
       });
     }
 
@@ -236,71 +267,125 @@ export class WaveDirector {
 
   private buildSectorSquads(sector: number, isBoss: boolean): RiftWaveSpec[] {
     if (isBoss) {
-      return [
-        { x: 430, y: 0, delay: 2.0, archetypes: ['WARDEN', 'BASTION', 'PYRO_SPRAYER'] },
-        { x: 300, y: 390, delay: 2.0, archetypes: ['SWARMER', 'PYRO_SPRAYER', 'STALKER', 'WEAVER'] },
-        { x: 300, y: -390, delay: 8.5, archetypes: ['GEO_BOMBER', 'SWARMER', 'WEAVER', 'SPLITTER', 'STALKER'] },
+      if (sector <= 5) {
+        return [
+          { x: 430, y: 0, delay: 2.0, archetypes: ['WARDEN', 'BASTION', 'MENDER'] },
+          { x: 300, y: 390, delay: 2.0, archetypes: ['LANCER', 'PYRO_SPRAYER', 'STALKER', 'VOLT_SPRINTER'] },
+          {
+            x: 300,
+            y: -390,
+            delay: 8.5,
+            archetypes: ['GEO_BOMBER', 'CRYO_SNIPER', 'VORTEX_DRONE', 'OBELISK'],
+            eliteIndices: [3],
+          },
+        ];
+      }
+      const specs: RiftWaveSpec[] = [
+        {
+          x: 430,
+          y: 0,
+          delay: 2.0,
+          archetypes: sector >= 15 ? ['WARDEN', 'WARDEN', 'MENDER', 'OBELISK'] : ['WARDEN', 'BASTION', 'MENDER'],
+          eliteIndices: sector >= 15 ? [3] : undefined,
+        },
       ];
+      const escortRifts = Math.min(8, 3 + Math.floor(sector / 5));
+      for (let r = 0; r < escortRifts; r++) {
+        const pt = RIFT_COORDS[(r + 1) % RIFT_COORDS.length]!;
+        const count = Math.min(7, 3 + Math.floor(sector / 5));
+        const archs: EnemyArchetype[] = [];
+        const eliteIndices: number[] = [];
+        for (let k = 0; k < count; k++) {
+          const idx = (sector * 5 + r * 3 + k * 2) % ARCHETYPE_POOL.length;
+          archs.push(ARCHETYPE_POOL[idx]!);
+          if (k === 0 && (r + k) % 2 === 0) eliteIndices.push(k);
+        }
+        specs.push({
+          x: pt.x,
+          y: pt.y,
+          delay: r < 2 ? 2.0 : 6.0 + (r - 2) * 3.5,
+          archetypes: archs,
+          eliteIndices,
+        });
+      }
+      return specs;
     }
+
     if (sector === 1) {
       return [
-        { x: 410, y: 170, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'PYRO_SPRAYER', 'BASTION'] },
-        { x: 410, y: -170, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'STALKER', 'GEO_BOMBER'] },
-        { x: 260, y: 410, delay: 7.5, archetypes: ['SWARMER', 'PYRO_SPRAYER', 'WEAVER'] },
-        { x: 260, y: -410, delay: 7.5, archetypes: ['GEO_BOMBER', 'BASTION', 'STALKER'] },
+        { x: 410, y: 170, delay: 2.0, archetypes: ['SWARMER', 'SWARMER', 'LANCER', 'BASTION'] },
+        { x: 410, y: -170, delay: 2.0, archetypes: ['SWARMER', 'VOLT_SPRINTER', 'PYRO_SPRAYER'] },
+        { x: 260, y: 410, delay: 7.5, archetypes: ['SWARMER', 'LANCER', 'PYRO_SPRAYER'] },
+        { x: 260, y: -410, delay: 7.5, archetypes: ['VOLT_SPRINTER', 'BASTION', 'SWARMER'] },
       ];
     }
     if (sector === 2) {
       return [
-        { x: 420, y: 260, delay: 2.0, archetypes: ['SWARMER', 'PYRO_SPRAYER', 'BASTION', 'STALKER', 'WEAVER'] },
-        { x: 420, y: -260, delay: 2.0, archetypes: ['SWARMER', 'GEO_BOMBER', 'SPLITTER', 'STALKER'] },
-        { x: -240, y: 380, delay: 7.5, archetypes: ['SWARMER', 'PYRO_SPRAYER', 'BASTION', 'WEAVER'] },
-        { x: -240, y: -380, delay: 7.5, archetypes: ['GEO_BOMBER', 'SPLITTER', 'STALKER', 'BASTION'] },
+        { x: 420, y: 260, delay: 2.0, archetypes: ['SWARMER', 'PYRO_SPRAYER', 'STALKER', 'CRYO_SNIPER'] },
+        { x: 420, y: -260, delay: 2.0, archetypes: ['VOLT_SPRINTER', 'GEO_BOMBER', 'LANCER', 'VORTEX_DRONE'] },
+        { x: -240, y: 380, delay: 7.5, archetypes: ['SWARMER', 'BASTION', 'CRYO_SNIPER', 'STALKER'] },
+        { x: -240, y: -380, delay: 7.5, archetypes: ['GEO_BOMBER', 'VORTEX_DRONE', 'LANCER', 'BASTION'] },
       ];
     }
     if (sector === 3) {
       return [
-        { x: 440, y: 260, delay: 2.0, archetypes: ['SWARMER', 'PYRO_SPRAYER', 'WEAVER', 'SPLITTER', 'BASTION'] },
-        { x: 440, y: -260, delay: 2.0, archetypes: ['GEO_BOMBER', 'BASTION', 'STALKER', 'WEAVER'] },
-        { x: 240, y: 390, delay: 7.0, archetypes: ['PYRO_SPRAYER', 'WEAVER', 'SPLITTER', 'STALKER', 'STALKER'] },
-        { x: -200, y: -390, delay: 7.0, archetypes: ['SWARMER', 'GEO_BOMBER', 'BASTION', 'SPLITTER'] },
-        { x: 540, y: 0, delay: 13.0, archetypes: ['BASTION', 'WEAVER', 'PYRO_SPRAYER', 'GEO_BOMBER'] },
+        { x: 440, y: 260, delay: 2.0, archetypes: ['SWARMER', 'LANCER', 'WEAVER', 'MENDER', 'BASTION'], eliteIndices: [4] },
+        { x: 440, y: -260, delay: 2.0, archetypes: ['GEO_BOMBER', 'CRYO_SNIPER', 'SPLITTER', 'VOLT_SPRINTER'] },
+        { x: 240, y: 390, delay: 7.0, archetypes: ['PYRO_SPRAYER', 'WEAVER', 'MINELAYER', 'STALKER', 'LANCER'] },
+        { x: -200, y: -390, delay: 7.0, archetypes: ['SWARMER', 'VORTEX_DRONE', 'BASTION', 'SPLITTER'] },
+        { x: 540, y: 0, delay: 12.5, archetypes: ['MENDER', 'MINELAYER', 'WEAVER', 'CRYO_SNIPER'] },
       ];
     }
     if (sector === 4) {
       return [
-        { x: 440, y: 280, delay: 2.0, archetypes: ['SWARMER', 'PYRO_SPRAYER', 'BASTION', 'WEAVER', 'STALKER'] },
-        { x: 440, y: -280, delay: 2.0, archetypes: ['GEO_BOMBER', 'SWARMER', 'SPLITTER', 'STALKER', 'BASTION'] },
-        { x: 220, y: 400, delay: 7.0, archetypes: ['PYRO_SPRAYER', 'BASTION', 'WEAVER', 'SPLITTER', 'STALKER'] },
-        { x: -200, y: -400, delay: 7.0, archetypes: ['GEO_BOMBER', 'SWARMER', 'WEAVER', 'STALKER', 'BASTION'] },
-        { x: 560, y: 0, delay: 13.0, archetypes: ['WEAVER', 'PYRO_SPRAYER', 'GEO_BOMBER', 'SPLITTER', 'BASTION'] },
+        { x: 440, y: 280, delay: 2.0, archetypes: ['LANCER', 'PYRO_SPRAYER', 'OBELISK', 'MENDER', 'STALKER'], eliteIndices: [2] },
+        { x: 440, y: -280, delay: 2.0, archetypes: ['GEO_BOMBER', 'VOLT_SPRINTER', 'SPLITTER', 'VORTEX_DRONE', 'BASTION'] },
+        { x: 220, y: 400, delay: 7.0, archetypes: ['CRYO_SNIPER', 'BASTION', 'WEAVER', 'MINELAYER', 'LANCER'] },
+        { x: -200, y: -400, delay: 7.0, archetypes: ['SWARMER', 'VORTEX_DRONE', 'MENDER', 'STALKER', 'GEO_BOMBER'], eliteIndices: [3] },
+        { x: 560, y: 0, delay: 12.0, archetypes: ['OBELISK', 'WEAVER', 'MINELAYER', 'SPLITTER', 'CRYO_SNIPER'] },
       ];
     }
 
-    const extra = Math.min(6, Math.floor((sector - 4) / 2) + 1);
-    const s1: EnemyArchetype[] = ['SWARMER', 'PYRO_SPRAYER', 'BASTION', 'WEAVER', 'STALKER'];
-    const s2: EnemyArchetype[] = ['SWARMER', 'GEO_BOMBER', 'SPLITTER', 'WEAVER', 'STALKER'];
-    const s3: EnemyArchetype[] = ['PYRO_SPRAYER', 'BASTION', 'SPLITTER', 'STALKER', 'WEAVER'];
-    const s4: EnemyArchetype[] = ['GEO_BOMBER', 'WEAVER', 'BASTION', 'STALKER', 'SPLITTER'];
-    for (let i = 0; i < extra; i++) {
-      s1.push(i % 2 === 0 ? 'PYRO_SPRAYER' : 'STALKER');
-      s2.push(i % 2 === 0 ? 'GEO_BOMBER' : 'BASTION');
-      s3.push(i % 2 === 0 ? 'WEAVER' : 'PYRO_SPRAYER');
-      s4.push(i % 2 === 0 ? 'BASTION' : 'GEO_BOMBER');
+    // Endless escalating sectors (6+): growing rifts, growing squad sizes, tighter delays, and scaling elites
+    const riftCount = Math.min(9, 4 + Math.floor(sector / 2));
+    const perRift = Math.min(9, 4 + Math.floor((sector - 2) / 2));
+    const totalEnemies = riftCount * perRift;
+    let elitesRemaining = Math.min(Math.floor(totalEnemies * 0.45), 1 + Math.floor(sector / 2));
+    const waveGap = Math.max(3.5, 6.2 - sector * 0.14);
+
+    const specs: RiftWaveSpec[] = [];
+    for (let r = 0; r < riftCount; r++) {
+      const pt = RIFT_COORDS[r % RIFT_COORDS.length]!;
+      const archs: EnemyArchetype[] = [];
+      const eliteIndices: number[] = [];
+      for (let k = 0; k < perRift; k++) {
+        const idx = (sector * 7 + r * 5 + k * 3) % ARCHETYPE_POOL.length;
+        archs.push(ARCHETYPE_POOL[idx]!);
+      }
+      if (elitesRemaining > 0) {
+        const maxInRift = Math.min(elitesRemaining, Math.ceil(perRift * 0.45));
+        for (let eIdx = 0; eIdx < maxInRift; eIdx++) {
+          eliteIndices.push((eIdx * 2 + r) % perRift);
+          elitesRemaining--;
+        }
+      }
+      const delay = r < 2 ? 2.0 : Number((2.0 + Math.floor(r / 2) * waveGap).toFixed(2));
+      specs.push({
+        x: pt.x,
+        y: pt.y,
+        delay,
+        archetypes: archs,
+        eliteIndices: eliteIndices.length > 0 ? eliteIndices : undefined,
+      });
     }
-    return [
-      { x: 440, y: 270, delay: 2.0, archetypes: s1 },
-      { x: 440, y: -270, delay: 2.0, archetypes: s2 },
-      { x: 220, y: 390, delay: 7.0, archetypes: s3 },
-      { x: -180, y: -390, delay: 11.5, archetypes: s4 },
-    ];
+    return specs;
   }
 
   public step(
     dt: number,
     activeEnemyCount: number,
     _player: PlayerState,
-    spawnEnemy: (archetype: EnemyArchetype, x: number, y: number) => void,
+    spawnEnemy: (archetype: EnemyArchetype, x: number, y: number, isElite?: boolean) => void,
     events: SimEvent[]
   ): void {
     if (this.multiplier > 1) {
@@ -337,7 +422,7 @@ export class WaveDirector {
             this.blocks,
             this.obstacles
           );
-          spawnEnemy(r.archetypes[k]!, safe.x, safe.y);
+          spawnEnemy(r.archetypes[k]!, safe.x, safe.y, Boolean(r.eliteIndices?.includes(k)));
         }
         events.push({ type: 'vfx_burst', x: r.x, y: r.y, colorHex: 0xb429ff, count: 24, radius: 70 });
         events.push({ type: 'vfx_ring', x: r.x, y: r.y, radius: 95, colorHex: 0x00f5ff });
@@ -354,17 +439,25 @@ export class WaveDirector {
     }
   }
 
-  public onEnemyKilled(archetype: EnemyArchetype, scoreMult = 1): void {
+  public onEnemyKilled(archetype: EnemyArchetype, scoreMult = 1, isElite = false): void {
     const basePoints =
       archetype === 'WARDEN' ? 2500 :
+      archetype === 'OBELISK' ? 240 :
+      archetype === 'MINELAYER' ? 200 :
+      archetype === 'VORTEX_DRONE' ? 190 :
       archetype === 'BASTION' ? 180 :
+      archetype === 'MENDER' ? 180 :
       archetype === 'GEO_BOMBER' ? 175 :
       archetype === 'WEAVER' ? 160 :
+      archetype === 'CRYO_SNIPER' ? 160 :
       archetype === 'SPLITTER' ? 150 :
       archetype === 'PYRO_SPRAYER' ? 145 :
+      archetype === 'LANCER' ? 140 :
+      archetype === 'VOLT_SPRINTER' ? 135 :
       archetype === 'STALKER' ? 130 : 60;
 
-    this.score += Math.round(basePoints * this.multiplier * scoreMult);
+    const eliteMult = isElite ? 2 : 1;
+    this.score += Math.round(basePoints * eliteMult * this.multiplier * scoreMult);
     this.multiplier = Math.min(16, this.multiplier + 1);
     this.multiplierTimer = 4.0;
   }

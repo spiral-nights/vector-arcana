@@ -161,6 +161,11 @@ body {
   box-shadow: 0 0 10px rgba(255, 42, 42, 0.7);
 }
 
+.bar-fill.armor {
+  background: linear-gradient(90deg, #ff8800, #ffd166);
+  box-shadow: 0 0 10px rgba(255, 168, 40, 0.65);
+}
+
 .bar-fill.overdrive {
   background: linear-gradient(90deg, #bd00ff, #ffee00);
   box-shadow: 0 0 10px rgba(189, 0, 255, 0.6);
@@ -234,38 +239,55 @@ body {
 }
 
 .hud-bottom {
+  position: fixed;
+  left: 16px;
+  bottom: 14px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
 }
 
 .queue-preview {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 5px 14px;
+  gap: 8px;
+  padding: 4px 10px;
   border-radius: 999px;
   background: rgba(8, 12, 24, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.15);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.08em;
-  min-height: 28px;
+  min-height: 24px;
+  pointer-events: none;
 }
 
 .hotbar {
   display: flex;
-  gap: 8px;
-  padding: 8px 12px;
-  background: rgba(6, 9, 18, 0.86);
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 8px;
+  background: rgba(6, 9, 18, 0.84);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 0 24px rgba(0, 0, 0, 0.65);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.65);
+  pointer-events: none;
+}
+
+.hotbar-row {
+  display: flex;
+  gap: 5px;
+  pointer-events: none;
+}
+
+.hotbar-row-bottom {
+  padding-left: 12px;
 }
 
 .hotbar-slot {
-  width: 54px;
-  height: 58px;
+  width: 44px;
+  height: 46px;
   border-radius: 6px;
   border: 1.5px solid rgba(255, 255, 255, 0.18);
   background: rgba(12, 16, 30, 0.9);
@@ -273,36 +295,44 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
-  padding: 5px 4px 4px;
+  padding: 3px;
   position: relative;
+  pointer-events: none;
   transition: transform 0.1s, box-shadow 0.12s, border-color 0.12s;
 }
 
 .hotbar-slot.queued {
-  transform: translateY(-4px);
+  transform: translateY(-3px);
 }
 
 .hotbar-key {
   position: absolute;
-  top: 3px;
-  left: 5px;
-  font-size: 10px;
+  top: 2px;
+  left: 4px;
+  font-size: 9px;
   font-weight: 700;
-  opacity: 0.85;
+  opacity: 0.88;
 }
 
 .hotbar-name {
-  font-size: 9px;
-  letter-spacing: 0.06em;
+  font-size: 8px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   opacity: 0.9;
 }
 
 .controls-hint {
-  font-size: 11px;
+  position: fixed;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
   color: var(--muted);
   letter-spacing: 0.05em;
   text-shadow: 0 1px 4px #000;
+  opacity: 0.65;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .minimap-panel {
