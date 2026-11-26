@@ -17,8 +17,7 @@ A single-player, top-down 2.5D arcade horde roguelite combining real-time combin
 | **Move** | Click or Hold `LMB` (toward cursor) or `Arrow Keys` | `Arrow Keys` |
 | **Aim** | Mouse Cursor | Mouse Cursor |
 | **Forward Cast** | `RMB` | `LMB` |
-| **360° Nova Cast** | `Spacebar` (or `Shift + RMB`) | `RMB` or `Spacebar` |
-| **Self Cast** | `MMB` or `C` | `MMB` or `C` |
+| **360° Nova Cast** | `Spacebar`, `MMB`, or `Shift + RMB` | `RMB`, `Spacebar`, or `MMB` |
 | **Phase Dash / Blade Slash** | `Shift + LMB` (or `Shift`) | `Shift` |
 
 ## Architecture

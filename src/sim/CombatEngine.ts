@@ -12,7 +12,7 @@ import {
 import { getAugmentStacks } from './Augments';
 import { createEnemy, getWaveScaling, normalizeAngle, stepEnemyAI } from './EnemyAI';
 import { getDifficultyConfig, getShipDef } from './Ships';
-import { computeComposition, ResolvedSelfCast, ResolvedSpell } from './SpellResolver';
+import { computeComposition, ResolvedSpell } from './SpellResolver';
 import {
   ArenaBlock,
   ArenaObstacle,
@@ -425,146 +425,6 @@ export class CombatEngine {
     events.push({ type: 'damage_number', x, y: y - 24, text: 'SANCTUARY PULSE!', colorHex: 0xe6f0ff, big: true });
   }
 
-  public castSelf(player: PlayerState, selfCast: ResolvedSelfCast, events: SimEvent[]): void {
-    const comp = selfCast.composition;
-    const counts = comp.counts;
-
-    switch (selfCast.effect) {
-      case 'SHIELD_WARD': {
-        player.wardRemaining = 6;
-        player.wardMaxDuration = 6;
-        player.wardElement = selfCast.wardElement;
-        if (!selfCast.wardElement) {
-          const sanctStacks = getAugmentStacks(this.augments, 'SANCTUARY_PULSE');
-          const domeHp = Math.round(260 * (1 + 0.45 * sanctStacks));
-          const domeRadius = Math.round(118 * (1 + 0.2 * sanctStacks));
-          this.shields.length = 0;
-          this.shields.push({
-            id: this.nextId++,
-            x: player.x,
-            y: player.y,
-            angle: player.aimAngle,
-            arc: Math.PI,
-            radius: domeRadius,
-            hp: domeHp,
-            maxHp: domeHp,
-            life: 6.5,
-            maxLife: 6.5,
-            isNova: true,
-            followPlayer: false,
-            colorHex: selfCast.colorHex,
-            colors: comp.colors,
-          });
-          this.emitSanctuaryPulse(player.x, player.y, sanctStacks, events);
-          events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: selfCast.colorHex, count: 24, radius: 60 });
-          events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: domeRadius, colorHex: selfCast.colorHex });
-        } else {
-          events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: selfCast.colorHex, count: 24, radius: 60 });
-          events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 118, colorHex: selfCast.colorHex });
-        }
-        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 160, radius: 140, colorHex: selfCast.colorHex });
-        events.push({ type: 'sfx', sound: 'ward', elements: selfCast.elements });
-        break;
-      }
-
-      case 'KINETIC_ARMOR': {
-        player.armorHp = Math.min(player.maxArmorHp, player.armorHp + selfCast.armorAmount);
-        const radius = 120 + comp.totalPower * 25;
-        this.applyAoEDamage(player.x, player.y, radius, 26 * (counts.KINETIC ?? 1), selfCast.elements, 260, events);
-        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius, colorHex: selfCast.colorHex });
-        events.push({ type: 'vfx_shards', x: player.x, y: player.y, colors: comp.colors, count: 14, speedScale: 0.9 });
-        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 200, radius: radius + 20 });
-        events.push({ type: 'screen_shake', intensity: 4 });
-        events.push({ type: 'sfx', sound: 'rock', elements: selfCast.elements });
-        break;
-      }
-
-      case 'NANO_PULSE': {
-        const nanoStacks = counts.NANO ?? 1;
-        const count = 4 + nanoStacks * 2;
-        const speed = 540;
-        for (let i = 0; i < count; i++) {
-          const a = player.aimAngle + (i / count) * Math.PI * 2;
-          this.projectiles.push({
-            id: this.nextId++,
-            owner: 'PLAYER',
-            kind: 'NANO_BOLT',
-            x: player.x + Math.cos(a) * 18,
-            y: player.y + Math.sin(a) * 18,
-            vx: Math.cos(a) * speed,
-            vy: Math.sin(a) * speed,
-            radius: 9,
-            damage: 24 + comp.totalPower * 4,
-            pierce: 1,
-            life: 1.4,
-            maxLife: 1.4,
-            colorHex: ELEMENT_META.NANO.colorHex,
-            colors: comp.colors,
-            elements: selfCast.elements,
-            composition: comp,
-            hitIds: [],
-            spin: 0,
-          });
-        }
-        events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: selfCast.colorHex, count: 18, radius: 55 });
-        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 95, colorHex: selfCast.colorHex });
-        events.push({ type: 'sfx', sound: 'beam', elements: selfCast.elements });
-        break;
-      }
-
-      case 'VOID_BURST': {
-        const radius = 130 + comp.totalPower * 35;
-        const accent = this.getSpellAccentColor(selfCast.elements, comp);
-        const burstColors = this.getSpellParticleColors(selfCast.elements, comp.colors);
-        this.applyAoEDamage(player.x, player.y, radius, 42 * comp.totalPower, selfCast.elements, -160, events);
-        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius, colorHex: accent });
-        events.push({ type: 'vfx_burst', x: player.x, y: player.y, colorHex: accent, count: 28, radius: radius * 0.7 });
-        events.push({ type: 'vfx_shards', x: player.x, y: player.y, colors: burstColors, count: 18, speedScale: 1.1 });
-        events.push({ type: 'grid_well', x: player.x, y: player.y, strength: 240 + comp.totalPower * 40, radius: radius + 40, colorHex: accent });
-        events.push({ type: 'screen_shake', intensity: 4.5 });
-        events.push({ type: 'sfx', sound: 'beam', elements: selfCast.elements });
-        break;
-      }
-
-      case 'VOLT_NOVA': {
-        const voltStacks = counts.VOLT ?? 1;
-        const superStacks = getAugmentStacks(this.augments, 'SUPERCONDUCTOR');
-        const arcs = 4 + voltStacks * 3;
-        const range = Math.round((210 + voltStacks * 65) * (1 + 0.2 * superStacks));
-        this.castLightningBurst(player.x, player.y, player.aimAngle, arcs, range, 32 * voltStacks, selfCast.elements, comp, true, events);
-        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: range * 0.7, colorHex: selfCast.colorHex });
-        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 160 + voltStacks * 35, radius: range * 0.8 });
-        events.push({ type: 'sfx', sound: 'lightning', elements: selfCast.elements });
-        break;
-      }
-
-      case 'ELEMENT_AOE': {
-        if (selfCast.elements.includes('FLUX') || selfCast.elements.includes('PLASMA') || selfCast.elements.includes('CRYO') || selfCast.elements.includes('CRYSTAL')) {
-          player.ignitedTimer = 0;
-        }
-        const { rangeMult } = this.computeSprayGeometry(selfCast.elements, comp.totalPower);
-        const radius = Math.round((135 + comp.totalPower * 45) * rangeMult);
-        const fluxStacks = getAugmentStacks(this.augments, 'FLUX_TIDAL_SURGE');
-        const knockback = selfCast.elements.includes('FLUX') ? 185 * (1 + 0.4 * fluxStacks) : 0;
-        this.applyAoEDamage(player.x, player.y, radius, 28 * comp.totalPower, selfCast.elements, knockback, events, true);
-        events.push({
-          type: 'vfx_spray',
-          x: player.x,
-          y: player.y,
-          angle: player.aimAngle,
-          spread: Math.PI * 2,
-          range: radius,
-          colors: comp.weightedColors,
-          isNova: true,
-          elements: selfCast.elements,
-        });
-        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius, colorHex: selfCast.colorHex });
-        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 150 + comp.totalPower * 35, radius: radius + 20 });
-        events.push({ type: 'sfx', sound: selfCast.elements.includes('FLUX') ? 'cleanse' : 'spray' });
-        break;
-      }
-    }
-  }
 
   public startCharge(player: PlayerState, spell: ResolvedSpell): void {
     const capStacks = getAugmentStacks(this.augments, 'ARCANE_CAPACITOR');
@@ -601,7 +461,7 @@ export class CombatEngine {
       const speed = (220 + kineticCount * 22) + r * (600 + kineticCount * 45);
       const range = 160 + r * (780 + kineticCount * 45);
       const life = range / speed;
-      const radius = Math.round(((16 + kineticCount * 7) + r * 7) * (1 + 0.25 * aftershockStacks));
+      const radius = Math.round(((11 + kineticCount * 5) + r * 5) * (1 + 0.25 * aftershockStacks));
       const damage = Math.round(75 * kineticCount * (0.5 + 0.7 * r) * (1 + 0.25 * aftershockStacks));
       const pierce = 2 + kineticCount;
 
@@ -1073,8 +933,8 @@ export class CombatEngine {
       case 'ROCK_THROW': {
         const kineticCount = counts.KINETIC ?? 1;
         const aftershockStacks = getAugmentStacks(this.augments, 'KINETIC_AFTERSHOCK');
-        const count = 2 + comp.totalPower * 2;
-        const radius = Math.round((18 + kineticCount * 8) * (1 + 0.25 * aftershockStacks));
+        const count = 1 + comp.totalPower;
+        const radius = Math.round((13 + kineticCount * 5) * (1 + 0.25 * aftershockStacks));
         const speed = 470 + kineticCount * 35;
         const damage = Math.round(68 * kineticCount * (1 + 0.25 * aftershockStacks));
         const pierce = 2 + kineticCount;
@@ -1083,8 +943,8 @@ export class CombatEngine {
           const a = angle + (i / count) * Math.PI * 2;
           this.spawnRock(player.x, player.y, a, speed, radius, damage, pierce, 1.8, color, comp, spell.elements);
         }
-        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 140 + comp.totalPower * 65, colorHex: rockAccent });
-        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 210 + comp.totalPower * 40, radius: 160 + comp.totalPower * 40 });
+        events.push({ type: 'vfx_ring', x: player.x, y: player.y, radius: 95 + comp.totalPower * 40, colorHex: rockAccent });
+        events.push({ type: 'grid_impulse', x: player.x, y: player.y, strength: 210 + comp.totalPower * 40, radius: 110 + comp.totalPower * 25 });
         events.push({ type: 'screen_shake', intensity: 4 + comp.totalPower * 1.5 });
         events.push({ type: 'sfx', sound: 'rock', elements: spell.elements });
         break;
@@ -1325,7 +1185,7 @@ export class CombatEngine {
     const kineticCount = counts.KINETIC ?? 1;
     const singStacks = p.elements.includes('VOID') ? getAugmentStacks(this.augments, 'SINGULARITY_PULL') : 0;
     const aftershockStacks = getAugmentStacks(this.augments, 'KINETIC_AFTERSHOCK');
-    const blastRadius = (95 + kineticCount * 38) * (singStacks > 0 ? 1.3 : 1) * (1 + 0.35 * aftershockStacks);
+    const blastRadius = (68 + kineticCount * 24) * (singStacks > 0 ? 1.3 : 1) * (1 + 0.35 * aftershockStacks);
 
     const rockAccent = this.getSpellAccentColor(p.elements, p.composition);
     const rockShardCols = this.getSpellParticleColors(p.elements, p.colors);
@@ -1386,7 +1246,7 @@ export class CombatEngine {
     }
 
     if (p.elements.includes('FLUX') && (hitTarget || hits.length > 0)) {
-      this.applyWaterSplash(p.x, p.y, 110, events);
+      this.applyWaterSplash(p.x, p.y, 90, events);
     }
 
     const voidCount = counts.VOID ?? 0;
@@ -1915,7 +1775,6 @@ export class CombatEngine {
     dt: number,
     player: PlayerState,
     castHeld: boolean,
-    _selfHeld: boolean,
     wave: number,
     pillars: readonly ArenaPillar[],
     onKill: (archetype: EnemyArchetype, isElite: boolean) => void,
@@ -3072,21 +2931,10 @@ export class CombatEngine {
       }
     }
 
-    // Remove dead enemies & handle Splitter death splits
+    // Remove dead enemies
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i]!;
       if (e.hp <= 0) {
-        const wasFrozen = Boolean(e.statuses.FROZEN);
-        if (e.archetype === 'SPLITTER' && !wasFrozen) {
-          for (let s = 0; s < 2; s++) {
-            const a = s * Math.PI + Math.random() * 0.4;
-            spawnedMinions.push({
-              archetype: 'SWARMER',
-              x: e.x + Math.cos(a) * 20,
-              y: e.y + Math.sin(a) * 20,
-            });
-          }
-        }
         const killColor =
           e.archetype === 'WARDEN'
             ? 0xff2e97
@@ -3100,7 +2948,9 @@ export class CombatEngine {
             ? ELEMENT_META.THERMAL.colorHex
             : e.archetype === 'GEO_BOMBER'
             ? ELEMENT_META.KINETIC.colorHex
-            : e.archetype === 'SPLITTER' || e.archetype === 'VOLT_SPRINTER'
+            : e.archetype === 'CINDER_WISP'
+            ? 0xff6a00
+            : e.archetype === 'VOLT_SPRINTER'
             ? 0xfff733
             : e.archetype === 'MENDER'
             ? 0x39ff14
@@ -3126,7 +2976,9 @@ export class CombatEngine {
             ? 0xffaa22
             : e.archetype === 'GEO_BOMBER'
             ? 0xffaa44
-            : e.archetype === 'SPLITTER' || e.archetype === 'VOLT_SPRINTER'
+            : e.archetype === 'CINDER_WISP'
+            ? 0xffd27a
+            : e.archetype === 'VOLT_SPRINTER'
             ? 0xffaa22
             : e.archetype === 'MENDER'
             ? 0xc4ffcf

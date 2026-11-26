@@ -29,8 +29,7 @@ No `1–8` number keys are used in combat; all 8 elements sit under the left han
 | Click or Hold `LMB` or `Arrow Keys` | Move (click-to-move waypoint or directional) |
 | Mouse Cursor | Aim direction |
 | `RMB` | **Forward Cast** |
-| `Spacebar` (or `Shift + RMB`) | **360° Nova Cast** |
-| `MMB` or `C` | **Self Cast** |
+| `Spacebar`, `MMB` (or `Shift + RMB`) | **360° Nova Cast** |
 | `Shift + LMB` (or `Shift` tap) | **Phase Dash / Blade Slash** |
 | `Esc` | Pause / Resume |
 
@@ -38,8 +37,7 @@ No `1–8` number keys are used in combat; all 8 elements sit under the left han
 For trackpad or keyboard-move players, an optional HUD toggle switches mouse buttons while preserving `Q W E R` / `A S D F`:
 - `Arrow Keys`: Move
 - `LMB`: Forward Cast
-- `RMB` or `Spacebar`: 360° Nova Cast
-- `MMB` or `C`: Self Cast
+- `RMB`, `Spacebar` or `MMB`: 360° Nova Cast
 - `Shift`: Phase Dash / Blade Slash
 
 ---
@@ -94,14 +92,8 @@ On Forward Cast (`RMB` in Classic), the resolver inspects the queue from **Prior
 | **10** | **Phase Slash** | `Shift + LMB` / `Shift` Dash | 180-unit dash with i-frames + wide geometric cleave imbued with queued elements (+ elemental trail if `BARRIER` queued). |
 
 ### Secondary Cast Modes
-- **Self Cast (`MMB` / `C`):**
-  - `[BARRIER]`: 360° Geodesic Personal Shield Dome; `[BARRIER + Element]`: 6s Personal Hexagonal Ward (75% DR vs element + contact damage).
-  - `[KINETIC]`: Temporary Kinetic Armor Plating + local seismic knockback shockwave.
-  - `[NANO]`: Continuous channeled self-healing while button is held.
-  - `[VOID]`: Local radial dark-arcane burst + inward gravity well (no cross-arena beam).
-  - `[VOLT]`: Multi-directional radial lightning bolts around the ship.
-  - `[THERMAL]` / `[FLUX]` / `[CRYO]` / `[PLASMA]` / `[CRYSTAL]`: Self cleanse/status effect + radial elemental AoE.
-- **Nova Cast (`Shift + RMB`):** Converts spells into a 360° circular ring/burst centered on the player.
+- **Nova Cast (`Space` / `MMB` / `Shift + RMB`):** Converts spells into a 360° circular ring/burst centered on the player.
+- Casting is always immediate: no time dilation, and every cast uses the normal fixed 60 Hz timestep.
 
 ---
 
@@ -128,8 +120,10 @@ On Forward Cast (`RMB` in Classic), the resolver inspects the queue from **Prior
   2. **Barrier Bastion (Silver-White Hexagon):** Slow directional phalanx (`46 u/s`) with frontal shield + close-range telegraphed shockwave ring.
   3. **Cryo Stalker (Cyan Diamond):** `0.7s` aim telegraph before firing a 3-needle frost fan, then blinks to flank.
   4. **Beam Weaver (Violet Octagon):** `1.4s` charge telegraph line before firing a continuous clashable laser beam.
-  5. **Singularity Splitter (Amber/Violet Nested Cube):** Lobs telegraphed gravity mortar rings and splits into 2 Skirmishers on death unless killed while **`FROZEN`**.
-  6. **Sector Warden (Boss — Every 5 Sectors):** Massive core with 3 rotating shield plates, sweeping clashable beams, and Skirmisher spawns.
+  5. **Cinder Wisp (Amber Ember Core):** Orbits at range, telegraphs a `0.9s` flare ring, dashes, then leaves its burn hazard where it lands — never under the player.
+  6. **Sector Warden (Boss — Every 5 Sectors):** Massive core with 3 rotating shield plates, sweeping clashable beams, forward slam hazards, and escort spawns.
+
+- **Fairness Rule for Ground Hazards:** Enemy hazards are always placed at the enemy's own position or a telegraphed offset in front of it. No enemy may spawn a hazard directly on the player's position, so every ground attack can be read and walked out of.
 
 ---
 

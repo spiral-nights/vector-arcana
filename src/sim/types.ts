@@ -94,7 +94,7 @@ export type DeliveryType =
   | 'SPRAY'
   | 'PHASE_SLASH';
 
-export type CastMode = 'FORWARD' | 'NOVA' | 'SELF' | 'DASH';
+export type CastMode = 'FORWARD' | 'NOVA' | 'DASH';
 export type ControlPreset = 'CLASSIC' | 'ARROWS_LMB';
 export type OverflowMode = 'FIFO' | 'IGNORE';
 
@@ -114,7 +114,7 @@ export type EnemyArchetype =
   | 'PYRO_SPRAYER'
   | 'GEO_BOMBER'
   | 'WEAVER'
-  | 'SPLITTER'
+  | 'CINDER_WISP'
   | 'WARDEN'
   | 'LANCER'
   | 'VOLT_SPRINTER'
@@ -469,7 +469,6 @@ export interface SimInput {
   queuedElements: BaseElement[];
   castAction: CastMode | null;
   castHeld: boolean;
-  selfHeld: boolean;
   dashPressed: boolean;
 }
 

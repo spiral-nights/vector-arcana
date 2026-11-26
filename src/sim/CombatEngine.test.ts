@@ -15,7 +15,6 @@ function makeInput(overrides: Partial<SimInput> = {}): SimInput {
     queuedElements: [],
     castAction: null,
     castHeld: false,
-    selfHeld: false,
     dashPressed: false,
     ...overrides,
   };
@@ -188,65 +187,6 @@ describe('GameSim — Click-to-Move & Post-Nova Movement', () => {
   });
 });
 
-describe('CombatEngine — Per-Element Self-Casting', () => {
-  it('launches homing NANO_BOLTs on self-cast and heals +6 HP when killing Nano-marked enemies', () => {
-    const sim = new GameSim();
-    sim.combat.enemies = [];
-    sim.waveDirector.rifts = [];
-    sim.getSnapshot().player.hp = 60;
-    queueAndStep(sim, ['NANO', 'NANO']);
-    sim.step(makeInput({ castAction: 'SELF' }));
-    expect(sim.getSnapshot().projectiles.filter((p) => p.kind === 'NANO_BOLT').length).toBeGreaterThanOrEqual(8);
-
-    const marked = sim.combat.spawnEnemy('SWARMER', 200, 0, 1);
-    sim.combat.applyElementalHit(marked, 20, ['NANO'], 1, 0, []);
-    expect(marked.nanoMarkTimer).toBeGreaterThan(0);
-    marked.hp = 0;
-    sim.step(makeInput());
-    expect(sim.getSnapshot().player.hp).toBe(66);
-  });
-
-  it('triggers local VOID burst with gravity well and zero beams', () => {
-    const sim = new GameSim();
-    queueAndStep(sim, ['VOID', 'VOID']);
-    sim.step(makeInput({ castAction: 'SELF' }));
-    expect(sim.getSnapshot().beams.length).toBe(0);
-    const events = sim.drainEvents();
-    expect(events.some((e) => e.type === 'grid_well')).toBe(true);
-    expect(events.some((e) => e.type === 'vfx_ring')).toBe(true);
-  });
-
-  it('triggers multi-directional VOLT lightning bolts around player on self-cast', () => {
-    const sim = new GameSim();
-    queueAndStep(sim, ['VOLT', 'VOLT']);
-    sim.step(makeInput({ castAction: 'SELF' }));
-    const bolts = sim.drainEvents().filter((e) => e.type === 'vfx_lightning');
-    expect(bolts.length).toBeGreaterThanOrEqual(7);
-  });
-
-  it('grants KINETIC armor plating and shockwave on self-cast', () => {
-    const sim = new GameSim();
-    queueAndStep(sim, ['KINETIC', 'KINETIC']);
-    sim.step(makeInput({ castAction: 'SELF' }));
-    expect(sim.getSnapshot().player.armorHp).toBe(70);
-    expect(sim.drainEvents().some((e) => e.type === 'vfx_ring')).toBe(true);
-  });
-
-  it('spawns 360° shield dome on [BARRIER] self-cast and sets wardElement on [BARRIER, THERMAL]', () => {
-    const sim1 = new GameSim();
-    queueAndStep(sim1, ['BARRIER']);
-    sim1.step(makeInput({ castAction: 'SELF' }));
-    expect(sim1.getSnapshot().shields.length).toBe(1);
-    expect(sim1.getSnapshot().shields[0]?.isNova).toBe(true);
-
-    const sim2 = new GameSim();
-    queueAndStep(sim2, ['BARRIER', 'THERMAL']);
-    sim2.step(makeInput({ castAction: 'SELF' }));
-    expect(sim2.getSnapshot().player.wardElement).toBe('THERMAL');
-    expect(sim2.getSnapshot().player.wardRemaining).toBeGreaterThan(0);
-  });
-});
-
 describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Director', () => {
   it('deals 1.4x VOLT damage to PRIMED targets and freezes PRIMED targets hit by CRYO', () => {
     const sim = new GameSim();
@@ -330,23 +270,26 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     expect(e.shieldHp).toBe(0);
   });
 
-  it('SPLITTER spawns 2 Swarmers on normal death, and 0 when killed while FROZEN', () => {
-    const simNormal = new GameSim();
-    simNormal.combat.enemies = [];
-    simNormal.waveDirector.rifts = [];
-    const s1 = simNormal.combat.spawnEnemy('SPLITTER', 300, 0, 1);
-    s1.hp = 0;
-    simNormal.step(makeInput());
-    expect(simNormal.getSnapshot().enemies.filter((e) => e.archetype === 'SWARMER').length).toBe(2);
+  it('CINDER_WISP never spawns hazards on the player without a wind-up, and plants them at its own position', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    const px = sim.getSnapshot().player.x;
+    const py = sim.getSnapshot().player.y;
+    const wisp = sim.combat.spawnEnemy('CINDER_WISP', px + 220, py, 1);
+    wisp.aiTimer = 0;
 
-    const simFrozen = new GameSim();
-    simFrozen.combat.enemies = [];
-    simFrozen.waveDirector.rifts = [];
-    const s2 = simFrozen.combat.spawnEnemy('SPLITTER', 300, 0, 1);
-    s2.statuses.FROZEN = { type: 'FROZEN', remaining: 2, stacks: 1, potency: 1 };
-    s2.hp = 0;
-    simFrozen.step(makeInput());
-    expect(simFrozen.getSnapshot().enemies.filter((e) => e.archetype === 'SWARMER').length).toBe(0);
+    sim.step(makeInput());
+    expect(sim.getSnapshot().hazards.length).toBe(0);
+    expect(wisp.aiState).toBe('CHARGE');
+
+    for (let i = 0; i < 90; i++) sim.step(makeInput());
+    const hazard = sim.getSnapshot().hazards[0];
+    expect(hazard).toBeDefined();
+    if (hazard) {
+      // The hazard is planted where the wisp landed, never under the player for free.
+      expect(Math.hypot(hazard.x - wisp.x, hazard.y - wisp.y)).toBeLessThan(30);
+    }
   });
 
   it('WEAVER enters Beam Clash against opposing player VOID beam and detonates when overpowered', () => {
@@ -718,7 +661,7 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     expect(snap.pools.length).toBe(0);
   });
 
-  it('keeps Forward Shield and large 360° Sanctuary Dome anchored in place when cast', () => {
+  it('keeps Forward Shield and Nova Sanctuary Dome anchored in place when cast', () => {
     const sim = new GameSim();
     sim.combat.enemies = [];
     sim.waveDirector.rifts = [];
@@ -734,9 +677,9 @@ describe('Milestone 3 — Primer Combos, Enemy Archetypes, Beam Clash & Wave Dir
     }
     expect(sim.getSnapshot().shields.find((s) => s.id === forwardShieldId)!.x).toBe(initShieldX);
 
-    // Self-Cast Sanctuary Dome is large (118px) and anchored stationary
+    // Nova Barrier Dome is large (118px) and anchored stationary
     queueAndStep(sim, ['BARRIER']);
-    sim.step(makeInput({ castAction: 'SELF' }));
+    sim.step(makeInput({ castAction: 'NOVA' }));
     const dome = sim.getSnapshot().shields[0]!;
     expect(dome.radius).toBe(118);
     expect(dome.isNova).toBe(true);
@@ -1457,5 +1400,67 @@ describe('CombatEngine — Max Health Cap, Spray Wall Blocking, Endless Scaling 
     obelisk.aiTimer = 0.01;
     sim.step(makeInput());
     expect(sim.getSnapshot().projectiles.filter((pr) => pr.kind === 'PLASMA_ORB').length).toBe(4);
+  });
+});
+
+describe('CombatEngine — No Hazards Under The Player', () => {
+  it('MINELAYER lays its mines in its own wake, never on the player', () => {
+    const sim = new GameSim();
+    sim.combat.enemies = [];
+    sim.waveDirector.rifts = [];
+    const px = sim.getSnapshot().player.x;
+    const py = sim.getSnapshot().player.y;
+    const miner = sim.combat.spawnEnemy('MINELAYER', px + 240, py, 1);
+    miner.aiTimer = 0;
+
+    sim.step(makeInput());
+    const hazards = sim.getSnapshot().hazards;
+    expect(hazards.length).toBeGreaterThan(0);
+    for (const h of hazards) {
+      expect(Math.hypot(h.x - px, h.y - py)).toBeGreaterThan(90);
+    }
+  });
+
+  it('WARDEN never drops hazards on the player across all phases', () => {
+    for (const phase of [1, 2, 3]) {
+      const sim = new GameSim();
+      sim.combat.enemies = [];
+      sim.waveDirector.rifts = [];
+      const px = sim.getSnapshot().player.x;
+      const py = sim.getSnapshot().player.y;
+      const boss = sim.combat.spawnEnemy('WARDEN', px + 360, py, 5);
+      boss.hp = boss.maxHp * (phase === 3 ? 0.2 : phase === 2 ? 0.5 : 0.9);
+      boss.bossPhase = phase;
+      boss.aiTimer = 0;
+
+      for (let i = 0; i < 240; i++) {
+        sim.step(makeInput());
+        for (const h of sim.getSnapshot().hazards) {
+          expect(Math.hypot(h.x - px, h.y - py)).toBeGreaterThan(60);
+        }
+      }
+    }
+  });
+});
+
+describe('CombatEngine — Rock Weight', () => {
+  it('throws fewer, smaller rocks on a ring (Nova) KINETIC cast', () => {
+    const sim = new GameSim();
+    queueAndStep(sim, ['KINETIC']);
+    sim.step(makeInput({ castAction: 'NOVA' }));
+    const rocks = sim.getSnapshot().projectiles.filter((p) => p.kind === 'ROCK');
+    expect(rocks.length).toBe(2);
+    expect(rocks[0]!.radius).toBe(18);
+  });
+
+  it('keeps the charged single rock compact', () => {
+    const sim = new GameSim();
+    queueAndStep(sim, ['KINETIC']);
+    sim.step(makeInput({ castAction: 'FORWARD', castHeld: true }));
+    for (let i = 0; i < 6; i++) sim.step(makeInput({ castHeld: true }));
+    sim.step(makeInput({ castHeld: false }));
+    const rock = sim.getSnapshot().projectiles.find((p) => p.kind === 'ROCK');
+    expect(rock).toBeDefined();
+    expect(rock!.radius).toBeLessThanOrEqual(20);
   });
 });

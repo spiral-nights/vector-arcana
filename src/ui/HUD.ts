@@ -224,7 +224,7 @@ export class HUD {
           <div class="modal-title">Vector Arcana</div>
           <div class="modal-sub">
             Queue up to 3 elements with <strong>Q W E R</strong> / <strong>A S D F</strong>.<br/>
-            Hold <strong>LMB</strong> or <strong>Arrows</strong> to move · <strong>RMB</strong> Forward Cast · <strong>Space</strong> / <strong>Shift+RMB</strong> Nova · <strong>MMB/C</strong> Self · <strong>Shift+LMB</strong> Phase Dash.
+            Hold <strong>LMB</strong> or <strong>Arrows</strong> to move · <strong>RMB</strong> Forward Cast · <strong>Space</strong> / <strong>MMB</strong> / <strong>Shift+RMB</strong> Area Nova · <strong>Shift+LMB</strong> Phase Dash.
           </div>
           <div class="hangar-label">Art Style</div>
           <div class="seg-group" style="max-width:340px;margin:0 auto 14px;">
@@ -729,10 +729,10 @@ export class HUD {
   public setPreset(preset: ControlPreset): void {
     if (preset === 'CLASSIC') {
       this.ctrlBtn.textContent = 'CLASSIC';
-      this.hintEl.textContent = 'LMB: Click/Hold Move · RMB: Cast · Space: Area Nova · MMB/C: Self · Shift+LMB: Phase Slash';
+      this.hintEl.textContent = 'LMB: Click/Hold Move · RMB: Cast · Space/MMB: Area Nova · Shift+LMB: Phase Slash';
     } else {
       this.ctrlBtn.textContent = 'ARROWS + LMB';
-      this.hintEl.textContent = 'Arrows: Move · LMB: Cast · RMB/Space: Area Nova · MMB/C: Self · Shift: Phase Slash';
+      this.hintEl.textContent = 'Arrows: Move · LMB: Cast · RMB/Space/MMB: Area Nova · Shift: Phase Slash';
     }
   }
 
@@ -857,7 +857,8 @@ export class HUD {
         e.archetype === 'PYRO_SPRAYER' || e.archetype === 'LANCER' ? '#ff6a00' :
         e.archetype === 'GEO_BOMBER' ? '#a86b3e' :
         e.archetype === 'WEAVER' || e.archetype === 'OBELISK' ? '#b429ff' :
-        e.archetype === 'SPLITTER' || e.archetype === 'VOLT_SPRINTER' ? '#fff733' :
+        e.archetype === 'CINDER_WISP' ? '#ff6a00' :
+        e.archetype === 'VOLT_SPRINTER' ? '#fff733' :
         e.archetype === 'MENDER' ? '#39ff14' :
         e.archetype === 'VORTEX_DRONE' ? '#1a88ff' :
         e.archetype === 'MINELAYER' ? '#ff5e99' : '#ff2e97';

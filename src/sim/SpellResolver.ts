@@ -150,25 +150,6 @@ export function computeComposition(elements: readonly QueueElement[]): ElementCo
   };
 }
 
-export type SelfEffectType =
-  | 'SHIELD_WARD'
-  | 'KINETIC_ARMOR'
-  | 'NANO_PULSE'
-  | 'VOID_BURST'
-  | 'VOLT_NOVA'
-  | 'ELEMENT_AOE'
-  | 'NONE';
-
-export interface ResolvedSelfCast {
-  effect: SelfEffectType;
-  elements: QueueElement[];
-  composition: ElementComposition;
-  healPerSec: number;
-  armorAmount: number;
-  wardElement: QueueElement | null;
-  colorHex: number;
-}
-
 export interface ResolvedSpell {
   delivery: DeliveryType;
   isNova: boolean;
@@ -180,88 +161,6 @@ export interface ResolvedSpell {
   stackPower: number;
   uniqueCount: number;
   hasBarrierTrail: boolean;
-}
-
-export function resolveSelfCast(queue: readonly QueueElement[]): ResolvedSelfCast {
-  const comp = computeComposition(queue);
-  if (queue.length === 0) {
-    return {
-      effect: 'NONE',
-      elements: [],
-      composition: comp,
-      healPerSec: 0,
-      armorAmount: 0,
-      wardElement: null,
-      colorHex: 0x00f5ff,
-    };
-  }
-  if (queue.includes('BARRIER')) {
-    const payload = queue.find((e) => e !== 'BARRIER') ?? null;
-    const colorHex = payload ? ELEMENT_META[payload].colorHex : ELEMENT_META.BARRIER.colorHex;
-    return {
-      effect: 'SHIELD_WARD',
-      elements: [...queue],
-      composition: comp,
-      healPerSec: 0,
-      armorAmount: 0,
-      wardElement: payload,
-      colorHex,
-    };
-  }
-  if (queue.includes('KINETIC')) {
-    const kineticStacks = comp.counts.KINETIC ?? 1;
-    return {
-      effect: 'KINETIC_ARMOR',
-      elements: [...queue],
-      composition: comp,
-      healPerSec: 0,
-      armorAmount: Math.min(105, 35 * kineticStacks),
-      wardElement: null,
-      colorHex: comp.primaryColorHex,
-    };
-  }
-  if (queue.includes('NANO')) {
-    return {
-      effect: 'NANO_PULSE',
-      elements: [...queue],
-      composition: comp,
-      healPerSec: 0,
-      armorAmount: 0,
-      wardElement: null,
-      colorHex: ELEMENT_META.NANO.colorHex,
-    };
-  }
-  if (queue.includes('VOID')) {
-    return {
-      effect: 'VOID_BURST',
-      elements: [...queue],
-      composition: comp,
-      healPerSec: 0,
-      armorAmount: 0,
-      wardElement: null,
-      colorHex: comp.primaryColorHex,
-    };
-  }
-  if (queue.includes('VOLT')) {
-    return {
-      effect: 'VOLT_NOVA',
-      elements: [...queue],
-      composition: comp,
-      healPerSec: 0,
-      armorAmount: 0,
-      wardElement: null,
-      colorHex: comp.primaryColorHex,
-    };
-  }
-  return {
-    effect: 'ELEMENT_AOE',
-    elements: [...queue],
-    composition: comp,
-    healPerSec: 0,
-    armorAmount: 0,
-    wardElement: null,
-    colorHex: comp.primaryColorHex,
-  };
 }
 
 export function resolveSpell(
@@ -285,7 +184,7 @@ export function resolveSpell(
     };
   }
 
-  if (queue.length === 0 || castMode === 'SELF') {
+  if (queue.length === 0) {
     return null;
   }
 

@@ -6,7 +6,7 @@ import {
 import { getAugmentStacks, rollAugmentChoices } from './Augments';
 import { CombatEngine } from './CombatEngine';
 import { getDifficultyConfig, getShipDef } from './Ships';
-import { enqueueElement, resolveSelfCast, resolveSpell } from './SpellResolver';
+import { enqueueElement, resolveSpell } from './SpellResolver';
 import { WaveDirector } from './WaveDirector';
 import {
   AugmentDef,
@@ -237,35 +237,23 @@ export class GameSim {
     }
 
     if (input.castAction && p.castCooldown <= 0) {
-      if (input.castAction === 'SELF') {
-        const selfCast = resolveSelfCast(p.queue);
-        if (selfCast.effect !== 'NONE') {
-          this.combat.stopChannel(p);
-          this.combat.cancelCharge(p);
-          this.combat.castSelf(p, selfCast, this.events);
-          tryTriggerOverclock(new Set(selfCast.elements).size);
-          p.queue = [];
-          p.castCooldown = 0.16 * getOcCooldownMult();
-        }
-      } else if (input.castAction === 'FORWARD' || input.castAction === 'NOVA') {
-        const spell = resolveSpell(p.queue, input.castAction);
-        if (spell) {
-          this.combat.stopChannel(p);
-          this.combat.cancelCharge(p);
-          if (spell.isChannelable && input.castHeld) {
-            this.combat.startChannel(p, spell, this.events);
-          } else if (spell.isChargeable) {
-            this.combat.startCharge(p, spell);
-            if (!input.castHeld) {
-              this.combat.releaseCharge(p, this.events, 0.08);
-            }
-          } else {
-            this.combat.castSpell(p, spell, input.aimX, input.aimY, this.events);
+      const spell = resolveSpell(p.queue, input.castAction);
+      if (spell) {
+        this.combat.stopChannel(p);
+        this.combat.cancelCharge(p);
+        if (spell.isChannelable && input.castHeld) {
+          this.combat.startChannel(p, spell, this.events);
+        } else if (spell.isChargeable) {
+          this.combat.startCharge(p, spell);
+          if (!input.castHeld) {
+            this.combat.releaseCharge(p, this.events, 0.08);
           }
-          tryTriggerOverclock(spell.uniqueCount);
-          p.queue = [];
-          p.castCooldown = 0.16 * getOcCooldownMult();
+        } else {
+          this.combat.castSpell(p, spell, input.aimX, input.aimY, this.events);
         }
+        tryTriggerOverclock(spell.uniqueCount);
+        p.queue = [];
+        p.castCooldown = 0.16 * getOcCooldownMult();
       }
     }
 
@@ -312,7 +300,7 @@ export class GameSim {
         }
       }
 
-      const baseSpeed = 165 * shipDef.speedMult * getOcMoveMult();
+      const baseSpeed = 190 * shipDef.speedMult * getOcMoveMult();
       const maxSpeed = p.channel ? baseSpeed * 0.68 : p.charge ? baseSpeed * 0.65 : baseSpeed;
       const accel = 13;
       p.vx += (mx * maxSpeed - p.vx) * Math.min(1, accel * FIXED_DT);
@@ -384,7 +372,6 @@ export class GameSim {
       FIXED_DT,
       p,
       input.castHeld,
-      input.selfHeld,
       this.waveDirector.wave,
       this.waveDirector.pillars,
       (arch, isElite) => this.waveDirector.onEnemyKilled(arch, diffCfg.scoreMult, isElite),

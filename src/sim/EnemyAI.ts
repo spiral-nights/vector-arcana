@@ -139,13 +139,13 @@ export function createEnemy(
       base.affinity = 'VOID';
       base.weakness = 'NANO';
       break;
-    case 'SPLITTER':
+    case 'CINDER_WISP':
       base.radius = 20;
-      base.hp = Math.round(135 * hpScale);
+      base.hp = Math.round(125 * hpScale);
       base.maxHp = base.hp;
-      base.aiTimer = 1.5;
-      base.affinity = 'VOLT';
-      base.weakness = 'KINETIC';
+      base.aiTimer = 1.9;
+      base.affinity = 'THERMAL';
+      base.weakness = 'CRYO';
       break;
     case 'LANCER':
       base.radius = 16;
@@ -252,6 +252,21 @@ export interface EnemyAIHooks {
   spawnMinion: (archetype: EnemyArchetype, x: number, y: number) => void;
   spawnHazard: (x: number, y: number, radius: number, delay: number, damage: number, colorHex: number) => void;
   damagePlayer: (amount: number, sourceEnemy?: EnemyEntity) => void;
+}
+
+function spawnBossHazard(
+  e: EnemyEntity,
+  angle: number,
+  distance: number,
+  radius: number,
+  delay: number,
+  damage: number,
+  colorHex: number,
+  hooks: EnemyAIHooks,
+  boundary: readonly Vec2[]
+): void {
+  const pos = clampArena(e.x + Math.cos(angle) * distance, e.y + Math.sin(angle) * distance, radius * 0.6, boundary);
+  hooks.spawnHazard(pos.x, pos.y, radius, delay, damage, colorHex);
 }
 
 export function stepEnemyAI(
@@ -426,16 +441,49 @@ export function stepEnemyAI(
       break;
     }
 
-    case 'SPLITTER': {
-      e.angle = targetAngle;
-      const spd = 68 * speedMult;
-      e.vx += (dirX * spd + sepX - e.vx) * Math.min(1, 7 * dt);
-      e.vy += (dirY * spd + sepY - e.vy) * Math.min(1, 7 * dt);
-
+    case 'CINDER_WISP': {
       e.aiTimer -= dt * rateMult;
-      if (e.aiTimer <= 0 && dist < 460) {
-        e.aiTimer = 2.3;
-        hooks.spawnHazard(player.x, player.y, 72, 1.0, Math.round(20 * dmgMult), 0xfff733);
+      if (e.aiState === 'SEEK') {
+        e.angle = targetAngle;
+        const desired = 235;
+        const move = dist > desired + 30 ? 0.85 : dist < desired - 40 ? -0.7 : 0.1;
+        const spd = 96 * speedMult;
+        e.vx += (dirX * move * spd + sepX - e.vx) * Math.min(1, 6 * dt);
+        e.vy += (dirY * move * spd + sepY - e.vy) * Math.min(1, 6 * dt);
+        if (e.aiTimer <= 0 && dist < 430) {
+          e.aiState = 'CHARGE';
+          e.aiTimer = 0.9;
+          e.beamAngle = targetAngle;
+          events.push({ type: 'vfx_ring', x: e.x, y: e.y, radius: 44, colorHex: 0xff6a00, duration: 0.85 });
+        }
+      } else if (e.aiState === 'CHARGE') {
+        e.vx *= 0.86;
+        e.vy *= 0.86;
+        e.beamAngle = normalizeAngle(
+          e.beamAngle + Math.max(-1.1 * dt, Math.min(1.1 * dt, normalizeAngle(targetAngle - e.beamAngle)))
+        );
+        e.angle = e.beamAngle;
+        if (e.aiTimer <= 0) {
+          e.aiState = 'FIRE';
+          e.aiTimer = 0.5;
+          e.vx = Math.cos(e.beamAngle) * 330 * speedMult;
+          e.vy = Math.sin(e.beamAngle) * 330 * speedMult;
+          events.push({ type: 'vfx_burst', x: e.x, y: e.y, colorHex: 0xff6a00, count: 8, radius: 26 });
+        }
+      } else if (e.aiState === 'FIRE') {
+        if (e.aiTimer <= 0) {
+          hooks.spawnHazard(e.x, e.y, 74, 1.15, Math.round(18 * dmgMult), 0xff6a00);
+          e.aiState = 'COOLDOWN';
+          e.aiTimer = 1.25;
+        }
+      } else {
+        e.angle = targetAngle;
+        e.vx *= 0.94;
+        e.vy *= 0.94;
+        if (e.aiTimer <= 0) {
+          e.aiState = 'SEEK';
+          e.aiTimer = 1.9;
+        }
       }
       break;
     }
@@ -766,9 +814,9 @@ export function stepEnemyAI(
         e.aiTimer = 2.3;
         const mineCount = e.isElite ? 3 : 2;
         for (let k = 0; k < mineCount; k++) {
-          const lead = k * 0.45;
-          const tx = player.x + player.vx * lead + (k - (mineCount - 1) * 0.5) * 45;
-          const ty = player.y + player.vy * lead + (Math.random() - 0.5) * 40;
+          const spread = (k - (mineCount - 1) * 0.5) * 58;
+          const tx = e.x - dirX * (28 + k * 26) - dirY * spread;
+          const ty = e.y - dirY * (28 + k * 26) + dirX * spread;
           const safe = clampArena(tx, ty, 64, arenaBoundary);
           hooks.spawnHazard(safe.x, safe.y, 68, 1.15 + k * 0.22, Math.round(18 * dmgMult), 0xff5e99);
         }
@@ -824,10 +872,11 @@ export function stepEnemyAI(
           e.aiTimer = phase === 3 ? 0.95 : phase === 2 ? 1.1 : 1.3;
           e.beamAngle = targetAngle;
           if (phase >= 2) {
-            hooks.spawnHazard(player.x, player.y, 92, 0.9, Math.round(24 * dmgMult), 0xff2e97);
+            spawnBossHazard(e, e.beamAngle, 165, 92, 1.25, Math.round(24 * dmgMult), 0xff2e97, hooks, arenaBoundary);
           }
           if (phase === 3) {
-            hooks.spawnHazard(player.x + dirX * 95, player.y + dirY * 95, 86, 1.05, Math.round(22 * dmgMult), 0xff6a00);
+            spawnBossHazard(e, e.beamAngle - 0.5, 200, 86, 1.35, Math.round(22 * dmgMult), 0xff6a00, hooks, arenaBoundary);
+            spawnBossHazard(e, e.beamAngle + 0.5, 200, 86, 1.35, Math.round(22 * dmgMult), 0xff6a00, hooks, arenaBoundary);
           }
         }
       } else if (e.aiState === 'CHARGE') {
@@ -841,7 +890,7 @@ export function stepEnemyAI(
               const fa = targetAngle + off;
               hooks.spawnProjectile(e.x, e.y, Math.cos(fa) * 310, Math.sin(fa) * 310, Math.round(14 * dmgMult));
             }
-            hooks.spawnHazard(player.x, player.y, 82, 0.95, Math.round(22 * dmgMult), 0xff2e97);
+            spawnBossHazard(e, e.beamAngle, 150, 82, 1.3, Math.round(22 * dmgMult), 0xff2e97, hooks, arenaBoundary);
           } else if (phase === 2) {
             hooks.spawnBeam(e, e.beamAngle - 0.26, -0.26);
             hooks.spawnBeam(e, e.beamAngle + 0.26, 0.26);
@@ -864,14 +913,7 @@ export function stepEnemyAI(
               hooks.spawnProjectile(e.x, e.y, Math.cos(na) * 340, Math.sin(na) * 340, Math.round(15 * dmgMult));
             }
             for (const angOff of [-0.45, 0, 0.45]) {
-              hooks.spawnHazard(
-                player.x + Math.cos(targetAngle + angOff) * 75,
-                player.y + Math.sin(targetAngle + angOff) * 75,
-                84,
-                0.9,
-                Math.round(22 * dmgMult),
-                0xff2e97
-              );
+              spawnBossHazard(e, e.beamAngle + angOff, 185, 84, 1.4, Math.round(22 * dmgMult), 0xff2e97, hooks, arenaBoundary);
             }
             const sa = Math.random() * Math.PI * 2;
             const pos = clampArena(e.x + Math.cos(sa) * 78, e.y + Math.sin(sa) * 78, 22, arenaBoundary);

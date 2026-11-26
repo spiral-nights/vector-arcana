@@ -27,7 +27,6 @@ function makeInput(overrides: Partial<SimInput> = {}): SimInput {
     queuedElements: [],
     castAction: null,
     castHeld: false,
-    selfHeld: false,
     dashPressed: false,
     ...overrides,
   };

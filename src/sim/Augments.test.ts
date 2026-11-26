@@ -14,7 +14,6 @@ function makeInput(overrides: Partial<SimInput> = {}): SimInput {
     queuedElements: [],
     castAction: null,
     castHeld: false,
-    selfHeld: false,
     dashPressed: false,
     ...overrides,
   };
@@ -341,7 +340,7 @@ describe('Construct Augments — Catalog, Draft & All 6 Mechanics', () => {
     const px = sim.getSnapshot().player.x;
     const knockEnemy = sim.combat.spawnEnemy('SWARMER', px + 70, 0, 1);
     queueAndStep(sim, ['BARRIER']);
-    sim.step(makeInput({ castAction: 'SELF' }));
+    sim.step(makeInput({ castAction: 'NOVA' }));
     expect(sim.getSnapshot().shields[0]!.maxHp).toBeGreaterThan(260);
     expect(knockEnemy.vx).toBeGreaterThan(100);
 

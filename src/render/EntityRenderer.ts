@@ -61,8 +61,8 @@ function getEnemyWatercolorPalette(archetype: EnemyEntity['archetype']): {
       return { base: 0xd98842, highlight: 0xffd494, pool: 0x733c12 };
     case 'WEAVER':
       return { base: 0xc44dff, highlight: 0xf5a6ff, pool: 0x621299 };
-    case 'SPLITTER':
-      return { base: 0xffe600, highlight: 0xfff899, pool: 0xb87600 };
+    case 'CINDER_WISP':
+      return { base: 0xff6a00, highlight: 0xffd27a, pool: 0xa62e00 };
     case 'LANCER':
       return { base: 0xff4518, highlight: 0xffc266, pool: 0x991200 };
     case 'VOLT_SPRINTER':
@@ -1504,36 +1504,48 @@ export class EntityRenderer {
       const tele = this.makeTelegraphGroup(0xb429ff, 2.8);
       bodyGroup.add(tele);
       bodyGroup.userData.telegraphs = [tele];
-    } else if (e.archetype === 'SPLITTER') {
-      // Twin-hull Volt yellow catamaran carrier with central splitting reactor (weak to KINETIC)
-      baseColor = 0xfff733;
+    } else if (e.archetype === 'CINDER_WISP') {
+      // Compact ember core ringed by orbiting flame shards (weak to CRYO)
+      baseColor = 0xff6a00;
       hullMat = new THREE.MeshStandardMaterial({
-        color: 0x4d4306,
+        color: 0x4d1a04,
         emissive: baseColor,
-        emissiveIntensity: 0.35,
-        roughness: 0.4,
-        metalness: 0.35,
+        emissiveIntensity: 0.55,
+        roughness: 0.3,
+        metalness: 0.3,
       });
-      for (const side of [-1, 1]) {
-        const pod = new THREE.Mesh(new THREE.BoxGeometry(r * 1.65, r * 0.45, 11), hullMat);
-        pod.position.set(0, side * r * 0.56, 2);
-        bodyGroup.add(pod);
-      }
-      const gem = new THREE.Mesh(
-        new THREE.OctahedronGeometry(r * 0.42, 0),
-        new THREE.MeshStandardMaterial({ color: 0xfff733, emissive: 0xffaa22, emissiveIntensity: 0.75 })
+      const core = new THREE.Mesh(new THREE.DodecahedronGeometry(r * 0.5, 0), hullMat);
+      const heart = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(r * 0.26, 0),
+        new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xffb347, emissiveIntensity: 0.95 })
       );
-      gem.position.z = 6;
-      const shipPts = [
-        { x: r * 1.1, y: r * 0.78 },
-        { x: -r * 0.9, y: r * 0.85 },
-        { x: -r * 0.45, y: 0 },
-        { x: -r * 0.9, y: -r * 0.85 },
-        { x: r * 1.1, y: -r * 0.78 },
-        { x: r * 0.55, y: 0 },
-      ];
-      trimObj = new THREE.Mesh(buildRibbonGeometry(shipPts, 2.5, true, 8), createNeonRibbonMaterial(baseColor, 1.2, 0.95));
-      bodyGroup.add(gem, trimObj, createGlowSprite(baseColor, r * 2.2, 0.2));
+      heart.position.z = 5;
+      bodyGroup.add(core, heart);
+
+      const shardGroup = new THREE.Group();
+      for (let s = 0; s < 3; s++) {
+        const a = (s / 3) * Math.PI * 2;
+        const shard = new THREE.Mesh(
+          buildRibbonGeometry(
+            [
+              { x: Math.cos(a) * r * 0.55, y: Math.sin(a) * r * 0.55 },
+              { x: Math.cos(a + 0.5) * r * 1.15, y: Math.sin(a + 0.5) * r * 1.15 },
+              { x: Math.cos(a + 0.26) * r * 1.35, y: Math.sin(a + 0.26) * r * 1.35 },
+            ],
+            2.4,
+            false,
+            6
+          ),
+          createNeonRibbonMaterial(0xffd27a, 1.3, 0.95)
+        );
+        shardGroup.add(shard);
+      }
+      bodyGroup.add(shardGroup);
+
+      const wispPts = createPolygonPts(5, r * 0.95);
+      trimObj = new THREE.Mesh(buildRibbonGeometry(wispPts, 2.5, true, 6), createNeonRibbonMaterial(baseColor, 1.25, 0.95));
+      bodyGroup.add(trimObj, createGlowSprite(baseColor, r * 2.4, 0.28));
+      bodyGroup.userData.spinChild = shardGroup;
     } else if (e.archetype === 'LANCER') {
       // Needle-spearhead Thermal rammer with swept rear stabilizers
       baseColor = 0xff4518;
@@ -1887,17 +1899,18 @@ export class EntityRenderer {
         { pts: [{ x: r * 0.4, y: 0 }, { x: -r * 0.5, y: 0 }], w: 2.2 },
         { pts: createPolygonPts(4, r * 0.35), closed: true, w: 2.0 },
       ];
-    } else if (e.archetype === 'SPLITTER') {
-      outerPts = [
-        { x: r * 1.1, y: r * 0.78 },
-        { x: -r * 0.9, y: r * 0.85 },
-        { x: -r * 0.45, y: 0 },
-        { x: -r * 0.9, y: -r * 0.85 },
-        { x: r * 1.1, y: -r * 0.78 },
-        { x: r * 0.55, y: 0 },
-      ];
+    } else if (e.archetype === 'CINDER_WISP') {
+      outerPts = createPolygonPts(8, r * 0.92);
       innerStrokes = [
-        { pts: createPolygonPts(4, r * 0.38), closed: true, w: 2.2 },
+        { pts: createPolygonPts(5, r * 0.44), closed: true, w: 2.2 },
+        {
+          pts: [{ x: r * 0.28, y: r * 0.42 }, { x: -r * 0.26, y: r * 0.66 }, { x: -r * 0.08, y: r * 0.22 }],
+          w: 2.0,
+        },
+        {
+          pts: [{ x: r * 0.28, y: -r * 0.42 }, { x: -r * 0.26, y: -r * 0.66 }, { x: -r * 0.08, y: -r * 0.22 }],
+          w: 2.0,
+        },
       ];
     } else if (e.archetype === 'LANCER') {
       outerPts = [

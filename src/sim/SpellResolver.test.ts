@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeComposition, enqueueElement, formatSpellPreview, resolveSelfCast, resolveSpell } from './SpellResolver';
+import { computeComposition, enqueueElement, formatSpellPreview, resolveSpell } from './SpellResolver';
 import { ELEMENT_META, QueueElement } from './types';
 
 function buildQueue(els: Parameters<typeof enqueueElement>[1][]): QueueElement[] {
@@ -143,22 +143,6 @@ describe('SpellResolver — 10-Spell Priority Table', () => {
     const spell = resolveSpell(['THERMAL'], 'NOVA');
     expect(spell?.delivery).toBe('SPRAY');
     expect(spell?.isNova).toBe(true);
-  });
-});
-
-describe('SpellResolver — Self Cast', () => {
-  it('resolves all 6 per-element self-cast effects cleanly', () => {
-    expect(resolveSelfCast(['BARRIER']).effect).toBe('SHIELD_WARD');
-    expect(resolveSelfCast(['BARRIER', 'THERMAL']).wardElement).toBe('THERMAL');
-    expect(resolveSelfCast(['KINETIC', 'KINETIC']).effect).toBe('KINETIC_ARMOR');
-    expect(resolveSelfCast(['KINETIC', 'KINETIC']).armorAmount).toBe(70);
-    expect(resolveSelfCast(['NANO', 'NANO']).effect).toBe('NANO_PULSE');
-    expect(resolveSelfCast(['NANO', 'NANO']).healPerSec).toBe(0);
-    expect(resolveSelfCast(['VOID']).effect).toBe('VOID_BURST');
-    expect(resolveSelfCast(['VOLT']).effect).toBe('VOLT_NOVA');
-    expect(resolveSelfCast(['FLUX']).effect).toBe('ELEMENT_AOE');
-    expect(resolveSelfCast(['THERMAL']).effect).toBe('ELEMENT_AOE');
-    expect(resolveSelfCast(['CRYO']).effect).toBe('ELEMENT_AOE');
   });
 });
 

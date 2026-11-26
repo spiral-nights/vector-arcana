@@ -169,7 +169,7 @@ const ARCHETYPE_POOL: readonly EnemyArchetype[] = [
   'CRYO_SNIPER',
   'VORTEX_DRONE',
   'WEAVER',
-  'SPLITTER',
+  'CINDER_WISP',
   'MENDER',
   'MINELAYER',
   'OBELISK',
@@ -330,19 +330,19 @@ export class WaveDirector {
     if (sector === 3) {
       return [
         { x: 440, y: 260, delay: 2.0, archetypes: ['SWARMER', 'LANCER', 'WEAVER', 'MENDER', 'BASTION'], eliteIndices: [4] },
-        { x: 440, y: -260, delay: 2.0, archetypes: ['GEO_BOMBER', 'CRYO_SNIPER', 'SPLITTER', 'VOLT_SPRINTER'] },
+        { x: 440, y: -260, delay: 2.0, archetypes: ['GEO_BOMBER', 'CRYO_SNIPER', 'CINDER_WISP', 'VOLT_SPRINTER'] },
         { x: 240, y: 390, delay: 7.0, archetypes: ['PYRO_SPRAYER', 'WEAVER', 'MINELAYER', 'STALKER', 'LANCER'] },
-        { x: -200, y: -390, delay: 7.0, archetypes: ['SWARMER', 'VORTEX_DRONE', 'BASTION', 'SPLITTER'] },
+        { x: -200, y: -390, delay: 7.0, archetypes: ['SWARMER', 'VORTEX_DRONE', 'BASTION', 'CINDER_WISP'] },
         { x: 540, y: 0, delay: 12.5, archetypes: ['MENDER', 'MINELAYER', 'WEAVER', 'CRYO_SNIPER'] },
       ];
     }
     if (sector === 4) {
       return [
         { x: 440, y: 280, delay: 2.0, archetypes: ['LANCER', 'PYRO_SPRAYER', 'OBELISK', 'MENDER', 'STALKER'], eliteIndices: [2] },
-        { x: 440, y: -280, delay: 2.0, archetypes: ['GEO_BOMBER', 'VOLT_SPRINTER', 'SPLITTER', 'VORTEX_DRONE', 'BASTION'] },
+        { x: 440, y: -280, delay: 2.0, archetypes: ['GEO_BOMBER', 'VOLT_SPRINTER', 'CINDER_WISP', 'VORTEX_DRONE', 'BASTION'] },
         { x: 220, y: 400, delay: 7.0, archetypes: ['CRYO_SNIPER', 'BASTION', 'WEAVER', 'MINELAYER', 'LANCER'] },
         { x: -200, y: -400, delay: 7.0, archetypes: ['SWARMER', 'VORTEX_DRONE', 'MENDER', 'STALKER', 'GEO_BOMBER'], eliteIndices: [3] },
-        { x: 560, y: 0, delay: 12.0, archetypes: ['OBELISK', 'WEAVER', 'MINELAYER', 'SPLITTER', 'CRYO_SNIPER'] },
+        { x: 560, y: 0, delay: 12.0, archetypes: ['OBELISK', 'WEAVER', 'MINELAYER', 'CINDER_WISP', 'CRYO_SNIPER'] },
       ];
     }
 
@@ -450,7 +450,7 @@ export class WaveDirector {
       archetype === 'GEO_BOMBER' ? 175 :
       archetype === 'WEAVER' ? 160 :
       archetype === 'CRYO_SNIPER' ? 160 :
-      archetype === 'SPLITTER' ? 150 :
+      archetype === 'CINDER_WISP' ? 150 :
       archetype === 'PYRO_SPRAYER' ? 145 :
       archetype === 'LANCER' ? 140 :
       archetype === 'VOLT_SPRINTER' ? 135 :
