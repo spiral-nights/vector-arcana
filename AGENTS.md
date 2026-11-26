@@ -253,9 +253,16 @@ sessions, so shaders must not assume the clock advances.
 `SynthAudio.play(sound: SfxId, colorHex?, elements?)` is a `switch` over the `SfxId` union in
 `src/sim/types.ts`; all sound is procedural Web Audio, there are no sample files. Adding a sound
 means: extend `SfxId`, add the `case` in `SynthAudio.ts`, emit `{ type: 'sfx', sound, elements }`
-from the sim. `MusicPlayer` streams `music/Last_Quarter_Surge.mp3` and needs `setPhase(snapshot.phase)`
+from the sim. `MusicPlayer` streams `music/Last_Quarter_Surge.mp3` (~157 s) and needs `setPhase(snapshot.phase)`
 each frame plus `restart()` on a new run. Both require a user-gesture `unlock()` (already wired into
 every mouse/key handler); never start audio without it.
+
+Looping uses two `HTMLAudioElement` decks crossfading at `min(TARGET_FADE_START_SEC, duration - 4)`.
+Both decks also have `loop = true` as a safety net, and a rejected `next.play()` (browser autoplay
+policy blocking the second element) aborts the crossfade instead of promoting a silent deck. Without
+those two guards the track stops dead at the end of the first play-through. `src/audio/MusicPlayer.test.ts`
+simulates the decks headlessly with a fake `Audio` element — keep that test green when touching the
+fade math, and remember its loop is async because the `play()` rejection runs as a microtask.
 
 ### HUD
 

@@ -22,8 +22,8 @@ export class MusicPlayer {
     const b = new Audio(battleMusicUrl);
     a.preload = 'auto';
     b.preload = 'auto';
-    a.loop = false;
-    b.loop = false;
+    a.loop = true;
+    b.loop = true;
     this.decks = [a, b];
   }
 
@@ -136,7 +136,18 @@ export class MusicPlayer {
         // Ignore unbuffered seek
       }
       next.volume = 0;
-      next.play().catch(() => {});
+      next.play().catch(() => {
+        // Playback of the incoming deck was blocked: keep the looping active deck audible
+        // and abandon this crossfade instead of switching to a silent deck.
+        this.crossfading = false;
+        this.crossfadeElapsed = 0;
+        next.volume = 0;
+        try {
+          next.pause();
+        } catch {
+          // Ignore pause on an unstarted element
+        }
+      });
     }
 
     if (this.crossfading) {
@@ -156,6 +167,11 @@ export class MusicPlayer {
         this.activeIdx = nextIdx;
         this.crossfading = false;
         this.crossfadeElapsed = 0;
+        const promoted = this.decks[this.activeIdx];
+        if (promoted.paused) {
+          promoted.currentTime = 0;
+          promoted.play().catch(() => {});
+        }
       }
     } else {
       active.volume = baseVol;
