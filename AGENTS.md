@@ -94,8 +94,10 @@ the event is dropped.
 `resolveSpell(queue, castMode)` in `src/sim/SpellResolver.ts:267` is a **strict top-to-bottom
 `if/else if` chain** — the order of the branches *is* the spell priority table. Current ranking:
 `DASH → PHASE_SLASH` shortcut, then `BARRIER` alone → `SHIELD`, `BARRIER+KINETIC|CRYSTAL` → `WALL`,
-`BARRIER+VOID|NANO` → `MINES`, `BARRIER+elemental` → `STORM`, then `KINETIC` → `ROCK_THROW`,
-`CRYSTAL` → `CRYSTAL_SHARDS`, `VOID|NANO` → `BEAM`, `VOLT` → `LIGHTNING_BOLT`, remaining elemental
+`BARRIER+VOLT` → `STORM` (even with `VOID|NANO` attached), `BARRIER+VOID|NANO` → `MINES`,
+`BARRIER+elemental` → `STORM`, then `KINETIC` → `ROCK_THROW`, `CRYSTAL` → `CRYSTAL_SHARDS`,
+`VOLT` → `LIGHTNING_BOLT` (outranks `VOID|NANO`, which stay attached as elements), `VOID|NANO` →
+`BEAM` (beats lightning when `PLASMA` is also present), remaining elemental
 → `SPRAY`. Inserting a branch anywhere but its correct priority silently reclassifies every
 ambiguous composition, and `src/sim/SpellResolver.test.ts` pins the outcomes.
 There is **no self-cast**: `CastMode` is only `'FORWARD' | 'NOVA' | 'DASH'`, and every cast goes

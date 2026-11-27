@@ -85,12 +85,20 @@ describe('SpellResolver — 10-Spell Priority Table', () => {
     expect(resolveSpell(['BARRIER', 'CRYSTAL'], 'FORWARD')?.delivery).toBe('WALL');
   });
 
-  it('3. Mines when BARRIER + (VOID | NANO)', () => {
+  it('3. Storm when BARRIER + VOLT, even with VOID | NANO attached', () => {
+    const storm = resolveSpell(['BARRIER', 'VOLT', 'VOID'], 'FORWARD');
+    expect(storm?.delivery).toBe('STORM');
+    expect(storm?.composition.colors).toContain(ELEMENT_META.VOLT.colorHex);
+    expect(storm?.composition.colors).toContain(ELEMENT_META.VOID.colorHex);
+    expect(resolveSpell(['BARRIER', 'NANO', 'VOLT'], 'FORWARD')?.delivery).toBe('STORM');
+  });
+
+  it('4. Mines when BARRIER + (VOID | NANO) without VOLT', () => {
     expect(resolveSpell(['BARRIER', 'VOID'], 'FORWARD')?.delivery).toBe('MINES');
     expect(resolveSpell(['BARRIER', 'NANO'], 'FORWARD')?.delivery).toBe('MINES');
   });
 
-  it('4. Storm when BARRIER + (THERMAL | CRYO | VOLT | FLUX | PLASMA), never containing KINETIC', () => {
+  it('5. Storm when BARRIER + (THERMAL | CRYO | VOLT | FLUX | PLASMA), never containing KINETIC', () => {
     expect(resolveSpell(['BARRIER', 'THERMAL'], 'FORWARD')?.delivery).toBe('STORM');
     expect(resolveSpell(['BARRIER', 'CRYO'], 'FORWARD')?.delivery).toBe('STORM');
     expect(resolveSpell(['BARRIER', 'VOLT'], 'FORWARD')?.delivery).toBe('STORM');
@@ -104,30 +112,41 @@ describe('SpellResolver — 10-Spell Priority Table', () => {
     expect(mixedStorm?.composition.colors).toContain(ELEMENT_META.THERMAL.colorHex);
   });
 
-  it('5. Rock Throw when KINETIC without BARRIER', () => {
+  it('6. Rock Throw when KINETIC without BARRIER', () => {
     const spell = resolveSpell(['KINETIC', 'KINETIC', 'THERMAL'], 'FORWARD');
     expect(spell?.delivery).toBe('ROCK_THROW');
     expect(spell?.stackPower).toBe(2);
   });
 
-  it('6. Crystal Shards when CRYSTAL without BARRIER/KINETIC', () => {
+  it('7. Crystal Shards when CRYSTAL without BARRIER/KINETIC', () => {
     expect(resolveSpell(['CRYSTAL', 'VOID'], 'FORWARD')?.delivery).toBe('CRYSTAL_SHARDS');
     expect(resolveSpell(['CRYSTAL', 'VOID', 'THERMAL'], 'FORWARD')?.delivery).toBe('CRYSTAL_SHARDS');
   });
 
-  it('7. Beam when (VOID | NANO) without higher priority, regardless of lower-priority stacks', () => {
+  it('8. Lightning Bolt when VOLT outranks beam, keeping beam elements attached', () => {
+    expect(resolveSpell(['VOLT', 'THERMAL'], 'FORWARD')?.delivery).toBe('LIGHTNING_BOLT');
+    expect(resolveSpell(['VOLT', 'THERMAL', 'THERMAL'], 'FORWARD')?.delivery).toBe('LIGHTNING_BOLT');
+    const voltVoid = resolveSpell(['VOLT', 'VOID'], 'FORWARD');
+    expect(voltVoid?.delivery).toBe('LIGHTNING_BOLT');
+    expect(voltVoid?.composition.colors).toContain(ELEMENT_META.VOID.colorHex);
+    const voltNano = resolveSpell(['VOLT', 'NANO'], 'FORWARD');
+    expect(voltNano?.delivery).toBe('LIGHTNING_BOLT');
+    expect(voltNano?.composition.colors).toContain(ELEMENT_META.NANO.colorHex);
+  });
+
+  it('9. Beam when (VOID | NANO) without VOLT, or when PLASMA is also present', () => {
     expect(resolveSpell(['VOID', 'THERMAL'], 'FORWARD')?.delivery).toBe('BEAM');
     expect(resolveSpell(['VOID', 'THERMAL', 'THERMAL'], 'FORWARD')?.delivery).toBe('BEAM');
     expect(resolveSpell(['NANO', 'PLASMA'], 'FORWARD')?.delivery).toBe('BEAM');
     expect(resolveSpell(['FLUX', 'VOID', 'THERMAL'], 'FORWARD')?.delivery).toBe('BEAM');
+
+    const beamPlasmaVolt = resolveSpell(['VOID', 'VOLT', 'PLASMA'], 'FORWARD');
+    expect(beamPlasmaVolt?.delivery).toBe('BEAM');
+    expect(beamPlasmaVolt?.composition.colors).toContain(ELEMENT_META.VOLT.colorHex);
+    expect(beamPlasmaVolt?.composition.colors).toContain(ELEMENT_META.PLASMA.colorHex);
   });
 
-  it('8. Lightning Bolt when VOLT without higher priority', () => {
-    expect(resolveSpell(['VOLT', 'THERMAL'], 'FORWARD')?.delivery).toBe('LIGHTNING_BOLT');
-    expect(resolveSpell(['VOLT', 'THERMAL', 'THERMAL'], 'FORWARD')?.delivery).toBe('LIGHTNING_BOLT');
-  });
-
-  it('9. Spray for THERMAL/CRYO/FLUX/PLASMA alone', () => {
+  it('10. Spray for THERMAL/CRYO/FLUX/PLASMA alone', () => {
     for (const el of ['THERMAL', 'CRYO', 'FLUX', 'PLASMA'] as const) {
       expect(resolveSpell([el], 'FORWARD')?.delivery).toBe('SPRAY');
     }

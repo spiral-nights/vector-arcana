@@ -202,6 +202,8 @@ export function resolveSpell(
     delivery = 'SHIELD';
   } else if (has('BARRIER') && hasAny('KINETIC', 'CRYSTAL')) {
     delivery = 'WALL';
+  } else if (has('BARRIER') && has('VOLT')) {
+    delivery = 'STORM';
   } else if (has('BARRIER') && hasAny('VOID', 'NANO')) {
     delivery = 'MINES';
   } else if (has('BARRIER') && hasAny('THERMAL', 'CRYO', 'VOLT', 'FLUX', 'PLASMA')) {
@@ -211,11 +213,11 @@ export function resolveSpell(
     stackPower = composition.counts.KINETIC ?? 1;
   } else if (has('CRYSTAL')) {
     delivery = 'CRYSTAL_SHARDS';
-  } else if (hasAny('VOID', 'NANO')) {
-    delivery = 'BEAM';
-  } else if (has('VOLT')) {
+  } else if (has('VOLT') && !(hasAny('VOID', 'NANO') && has('PLASMA'))) {
     delivery = 'LIGHTNING_BOLT';
     stackPower = composition.counts.VOLT ?? 1;
+  } else if (hasAny('VOID', 'NANO')) {
+    delivery = 'BEAM';
   } else if (hasAny('THERMAL', 'CRYO', 'FLUX', 'PLASMA')) {
     delivery = 'SPRAY';
   }
